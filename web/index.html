@@ -1,4 +1,21 @@
 <!doctype html>
+<!--
+C++ combinator DSL
+Copyright (C) 2026  David W. Gero
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see <http://www.gnu.org/licenses/>.
+-->
 <html lang="en">
 <head>
     <meta charset="utf-8">
@@ -106,7 +123,8 @@
         }
 
         #help[aria-expanded="true"],
-        #combinator-info[aria-expanded="true"] {
+        #combinator-info[aria-expanded="true"],
+        #about[aria-expanded="true"] {
             border-color: #315be8;
             background: #315be8;
             color: white;
@@ -162,8 +180,22 @@
             font: 0.9rem/1.5 system-ui, sans-serif;
         }
 
-        #combinator-info-dialog {
+        #combinator-info-dialog,
+        #about-dialog {
             width: min(40rem, calc(100% - 2rem));
+        }
+
+        .license-text {
+            margin: 0;
+            font: 0.9rem/1.5 system-ui, sans-serif;
+        }
+
+        .license-text p {
+            margin: 0 0 1rem;
+        }
+
+        .license-text p:last-child {
+            margin-bottom: 0;
         }
 
         .combinator-table {
@@ -247,6 +279,9 @@
                     aria-haspopup="dialog"
                     aria-controls="combinator-info-dialog"
                     aria-expanded="false">Combinator Info</button>
+                <button id="about" type="button" aria-haspopup="dialog"
+                    aria-controls="about-dialog"
+                    aria-expanded="false">About</button>
                 <span id="status" role="status">Loading WebAssembly…</span>
             </div>
         </form>
@@ -324,6 +359,31 @@
                 <tr><th scope="row">Zazu</th><td><code>Zxy = x(xy)</code></td></tr>
             </tbody>
         </table>
+        <form method="dialog" class="dialog-controls">
+            <button type="submit">Close</button>
+        </form>
+    </dialog>
+
+    <dialog id="about-dialog" aria-labelledby="about-title">
+        <h2 id="about-title" tabindex="-1"
+            data-dialog-initial-focus>About</h2>
+        <div class="license-text">
+            <p>C++ combinator DSL<br>Copyright (C) 2026  David W. Gero</p>
+            <p>This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.</p>
+            <p>This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.</p>
+            <p>A copy of the GNU General Public License, Version 3, is available
+at &lt;<a href="http://gnu.org/licenses/gpl-3.0.html#license-text"
+                    target="_blank" rel="noopener noreferrer">http://gnu.org/licenses/gpl-3.0.html#license-text</a>&gt;.</p>
+            <p>The source for this program is available at
+                &lt;<a href="https://github.com/dwgero/combDSL1" target="_blank"
+                    rel="noopener noreferrer">https://github.com/dwgero/combDSL1</a>&gt;.</p>
+        </div>
         <form method="dialog" class="dialog-controls">
             <button type="submit">Close</button>
         </form>
