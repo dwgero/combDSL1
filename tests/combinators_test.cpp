@@ -383,6 +383,7 @@ int main() {
     char const* raw_string_pointer = "word";
     char const* null_raw_string = nullptr;
     const auto raw_string_basis = basis("RawText", 1, "word");
+    const auto zero_arity_basis = basis("Qzero", 0, K);
     auto seven_character_basis = basis("1234567", 1, I);
     std::string copied_basis_name = "Alias";
     auto copied_name_basis = basis(copied_basis_name, 1, I);
@@ -776,7 +777,9 @@ int main() {
     const auto embedded_double_backslash_basis =
         basis("A\\\\B", 1, I);
     test("double backslash inside basis name",
-         single_step(parse("A\\\\B x")), "Ix");
+         single_step(parse("A\\\\B x")), "x");
+    test("basis step exposes double backslash basis definition",
+         single_step(parse("A\\\\B x"), true), "Ix");
     test_parse_failure("unseparated double backslash basis is unknown",
                        "A\\\\Bx", 0);
     test("parse escaped backslash inside word",
@@ -831,7 +834,9 @@ int main() {
     }
 
     test("parse single-character M without a delimiter",
-         single_step(parse("Mx")), "SIIx");
+         single_step(parse("Mx")), "xx");
+    test("basis step exposes parsed M definition",
+         single_step(parse("Mx"), true), "SIIx");
     test("parse single-character T without a delimiter",
          parse("Tx"), "Tx");
     test("parse single-character C without a delimiter",
@@ -847,40 +852,44 @@ int main() {
     test("parse G2 exact match", single_step(parse("G2")), "G2");
     test("parse separated V4", single_step(parse("V4 x y z")), "V4 xyz");
     test("basis automatically registers seven-character name",
-         single_step(parse("1234567 x")), "Ix");
+         single_step(parse("1234567 x")), "x");
     test("basis registration copies mutable name",
-         single_step(parse("Alias x")), "Ix");
+         single_step(parse("Alias x")), "x");
+    test("basis step exposes registered basis definition",
+         single_step(parse("Alias x"), true), "Ix");
     test("basis registration uses visible null-terminated name",
-         single_step(parse("Trimmed x")), "Ix");
+         single_step(parse("Trimmed x")), "x");
     test("mutated basis source name is not registered", parse("otherx"),
          "otherx");
     test("registered basis outlives local handle",
-         single_step(parse("Scope x")), "Ix");
+         single_step(parse("Scope x")), "x");
     test("lowercase registered basis uses an exact token",
-         single_step(parse("foo x")), "Ix");
+         single_step(parse("foo x")), "x");
     test("unseparated lowercase name remains symbols",
          parse("foox"), "foox");
     test("single-character registered basis", single_step(parse("Jx")),
-         "Ix");
+         "x");
     test("registered bases use exact token lookup",
          single_step(parse("Jlong x")), "Kx");
     test("longer basis may start with primitive",
-         single_step(parse("Sfoo x")), "Ix");
+         single_step(parse("Sfoo x")), "x");
     test("primitive prefix wins when the longer token is not exact",
          single_step(parse("Sfoox")), "fo(oo)x");
     test("exact primitive name remains reserved",
          single_step(parse("Kxy")), "x");
     test("first duplicate basis registration wins",
-         single_step(parse("Dupe x")), "Ix");
+         single_step(parse("Dupe x")), "x");
     test("later duplicate basis remains usable", duplicate_basis(x), "Kx");
-    test("registered move-only basis",
-         single_step(parse("MovOnly x")), "K<move-only>x");
-    test("registered move-only basis reduces",
+    test("registered move-only basis contracts",
+         single_step(parse("MovOnly x")), "<move-only>");
+    test("basis step exposes registered move-only basis definition",
+         single_step(parse("MovOnly x"), true), "K<move-only>x");
+    test("second step leaves contracted registered move-only basis",
          single_step(single_step(parse("MovOnly x"))), "<move-only>");
     test("registered move-only basis remains reusable",
-         single_step(parse("MovOnly y")), "K<move-only>y");
+         single_step(parse("MovOnly y")), "<move-only>");
     test("basis registry is shared across translation units",
-         single_step(parse("Extern x")), "Ix");
+         single_step(parse("Extern x")), "x");
 
     test_parse_failure("parse empty input", "", 0);
     test_parse_failure("parse whitespace-only input", " \t", 2);
@@ -1058,8 +1067,19 @@ int main() {
     test("single step expands nested deferred Y",
          single_step(nested_y_step),
          "x(u(u<deferred Y(u)>))");
-    test("single step expands nested basis",
-         single_step(quote(x)(quote(M)(u))), "x(SIIu)");
+    test("single step contracts nested basis",
+         single_step(quote(x)(quote(M)(u))), "x(uu)");
+    test("basis step exposes nested basis definition",
+         single_step(quote(x)(quote(M)(u)), true), "x(SIIu)");
+    test("single step expands zero-arity basis without arguments",
+         single_step(quote(zero_arity_basis)), "K");
+    test("single step expands zero-arity basis with trailing arguments",
+         single_step(quote(zero_arity_basis)(x)(y)(z)), "Kxyz");
+    test("basis step leaves zero-arity basis behavior unchanged",
+         single_step(quote(zero_arity_basis)(x)(y)(z), true), "Kxyz");
+    test("two steps reduce zero-arity basis with trailing arguments",
+         single_step(single_step(
+             quote(zero_arity_basis)(x)(y)(z))), "xz");
     test("quoted SK operand prints I", quote(x)(quote(S)(K)(y)), "xI");
     test("quoted native SK operand prints I", quote(x(S(K)(y))), "xI");
     test("quote preserves nested quoted application", quote(x(quote(I)(y))),
@@ -1073,21 +1093,50 @@ int main() {
          single_step(quote(S)(x)(y)(move_only_named{})),
          "x<move-only>(y<move-only>)");
     test("single step undersaturated M", single_step(quote(M)), "M");
-    test("single step expands M", single_step(quote(M)(x)), "SIIx");
-    test("single step expands native M application", single_step(quote(M(x))),
-         "SIIx");
-    test("single step M with trailing argument", single_step(quote(M)(x)(y)),
-         "SIIxy");
-    test("two steps M", single_step(single_step(quote(M)(x))), "Ix(Ix)");
+    test("basis step leaves undersaturated M unchanged",
+         single_step(quote(M), true), "M");
+    test("single step contracts M", single_step(quote(M)(x)), "xx");
+    test("explicit default basis mode contracts M",
+         single_step(quote(M)(x), false), "xx");
+    test("basis step exposes M definition",
+         single_step(quote(M)(x), true), "SIIx");
+    test("second basis step reduces exposed M definition",
+         single_step(single_step(quote(M)(x), true), true), "Ix(Ix)");
+    test("single step contracts native M application",
+         single_step(quote(M(x))), "xx");
+    test("single step M with trailing argument",
+         single_step(quote(M)(x)(y)), "xxy");
+    test("basis step exposes M definition with trailing argument",
+         single_step(quote(M)(x)(y), true), "SIIxy");
+    test("single step preserves reducible basis argument",
+         single_step(quote(M)(quote(I)(u))), "Iu(Iu)");
+    test("single step preserves reducible trailing argument",
+         single_step(quote(M)(x)(quote(I)(u))), "xx(Iu)");
+    test("second default step leaves contracted M unchanged",
+         single_step(single_step(quote(M)(x))), "xx");
     test("single step undersaturated T", single_step(quote(T)(x)), "Tx");
-    test("single step expands T", single_step(quote(T)(x)(y)), "S(K(SI))Kxy");
+    test("basis step leaves undersaturated T unchanged",
+         single_step(quote(T)(x), true), "Tx");
+    test("single step contracts T", single_step(quote(T)(x)(y)), "yx");
+    test("basis step exposes T definition",
+         single_step(quote(T)(x)(y), true), "S(K(SI))Kxy");
+    test("single step contracts basis containing another basis",
+         single_step(quote(C)(x)(y)(z)), "xzy");
+    const auto fixed_point_basis = basis("FY", 1, Y);
+    test("single step stops at deferred Y in a basis result",
+         single_step(quote(fixed_point_basis)(x)),
+         "x<deferred Y(x)>");
+    test("basis step exposes fixed-point basis definition",
+         single_step(quote(fixed_point_basis)(x), true), "Yx");
     const auto quoted_move_only_basis = [] {
         auto move_only_basis = basis("QB", 1, K(move_only_named{}));
         return quote(std::move(move_only_basis));
     }();
-    test("single step expands move-only basis",
-         single_step(quoted_move_only_basis(x)), "K<move-only>x");
-    test("two steps move-only basis",
+    test("single step contracts move-only basis",
+         single_step(quoted_move_only_basis(x)), "<move-only>");
+    test("basis step exposes move-only basis definition",
+         single_step(quoted_move_only_basis(x), true), "K<move-only>x");
+    test("second default step leaves contracted move-only basis",
          single_step(single_step(quoted_move_only_basis(x))), "<move-only>");
     test("eval prints only reduced expression",
          [&] { eval(quoted_ski_x); },
@@ -1325,10 +1374,19 @@ int main() {
          "Press Enter for one reduction step; type q then Enter to quit.\n"
          "x(Yu)\n"
          "x(u<deferred Y(u)>)\n");
-    test("single step loop expands nested basis",
+    test("single step loop contracts nested basis",
          [&] {
              std::istringstream input("\nq\n");
              single_step_loop(quote(x)(quote(M)(u)), input);
+         },
+         "Press Enter for one reduction step; type q then Enter to quit.\n"
+         "x(Mu)\n"
+         "x(uu)\n");
+    test("single step loop exposes nested basis with basis step",
+         [&] {
+             std::istringstream input("\nq\n");
+             single_step_loop(
+                 quote(x)(quote(M)(u)), input, std::cout, true);
          },
          "Press Enter for one reduction step; type q then Enter to quit.\n"
          "x(Mu)\n"
@@ -1383,8 +1441,15 @@ int main() {
          },
          "x(Ku<deferred Y(Ku)>)\n"
          "xu\n");
-    test("single step run expands nested basis",
+    test("single step run contracts nested basis",
          [&] { single_step_run(quote(x)(quote(M)(u))); },
+         "x(uu)\n");
+    test("single step run exposes nested basis with basis step",
+         [&] {
+             std::istringstream input;
+             single_step_run(
+                 quote(x)(quote(M)(u)), std::cout, input, true);
+         },
          "x(SIIu)\n"
          "x(Iu(Iu))\n"
          "x(u(Iu))\n"
@@ -1452,6 +1517,13 @@ int main() {
          },
          "restored");
     test("seven-character basis", seven_character_basis, "1234567");
+    test("zero-arity basis without arguments", zero_arity_basis, "Qzero");
+    test("zero-arity basis with one argument",
+         zero_arity_basis(x), "Kx");
+    test("zero-arity basis with enough arguments",
+         zero_arity_basis(x)(y), "x");
+    test("zero-arity basis preserves trailing arguments",
+         zero_arity_basis(x)(y)(z), "xz");
     test("copied basis name", copied_name_basis, "Alias");
     test("deferred basis", deferred_basis, "D");
     test("null-terminated basis", null_terminated_basis, "Trimmed");
@@ -1740,14 +1812,10 @@ int main() {
         check(parser_syntax_basis_rejected);
     }
 
-    bool zero_arity_basis_rejected = false;
-    try {
-        static_cast<void>(basis("Qzero", 0, I));
-    } catch (std::invalid_argument const&) {
-        zero_arity_basis_rejected = true;
-    }
-    check(zero_arity_basis_rejected);
-    test_parse_failure("failed basis is not registered", "Qzero", 0);
+    test("parsed zero-arity basis expands without arguments",
+         single_step(parse("Qzero")), "K");
+    test("parsed zero-arity basis expands with trailing arguments",
+         single_step(parse("Qzero x y z")), "Kxyz");
 
     auto move_only_basis = basis("P", 1, K(std::make_unique<int>(31)));
     using move_only_basis_type = decltype(move_only_basis);

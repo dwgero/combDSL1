@@ -4,6 +4,7 @@ const baseUrl = new URL(".", self.location.href);
 let modulePromise;
 let busy = false;
 let steppingRequestId;
+let steppingBasisStep = false;
 
 const errorMessage = error =>
     error instanceof Error ? error.message : String(error);
@@ -43,6 +44,7 @@ self.addEventListener("message", async event => {
                     String(message.source));
                 if (result.success) {
                     steppingRequestId = message.id;
+                    steppingBasisStep = Boolean(message.basisStep);
                 }
                 self.postMessage({
                     type: "step-ready",
@@ -51,7 +53,8 @@ self.addEventListener("message", async event => {
                 });
             } else {
                 const result = message.singleStep
-                    ? module.singleStepRun(String(message.source))
+                    ? module.singleStepRun(
+                        String(message.source), Boolean(message.basisStep))
                     : module.parseEval(String(message.source));
                 self.postMessage({type: "result", id: message.id, result});
             }
@@ -72,9 +75,10 @@ self.addEventListener("message", async event => {
         busy = true;
         try {
             const module = await modulePromise;
-            const result = module.takeSingleStep();
+            const result = module.takeSingleStep(steppingBasisStep);
             if (!result.success || !result.reduced) {
                 steppingRequestId = undefined;
+                steppingBasisStep = false;
             }
             self.postMessage({
                 type: "step-result",
@@ -83,6 +87,7 @@ self.addEventListener("message", async event => {
             });
         } catch (error) {
             steppingRequestId = undefined;
+            steppingBasisStep = false;
             self.postMessage({
                 type: "fatal",
                 id: message.id,

@@ -40,13 +40,14 @@ std::optional<combdsl::quoted_expression> stepped_expression;
 }
 
 [[nodiscard]] evaluation_result single_step_run_input(
-    std::string const& source) {
+    std::string const& source, bool basis_step) {
     std::istringstream input;
     std::ostringstream output;
 
     try {
         combdsl::single_step_run(
-            combdsl::parse(combdsl::input_escape(source)), output, input);
+            combdsl::parse(combdsl::input_escape(source)), output, input,
+            basis_step);
         return {true, output.str(), {}};
     } catch (std::exception const& error) {
         return {false, {}, error.what()};
@@ -70,13 +71,13 @@ std::optional<combdsl::quoted_expression> stepped_expression;
     }
 }
 
-[[nodiscard]] single_step_result take_single_step() {
+[[nodiscard]] single_step_result take_single_step(bool basis_step) {
     if (!stepped_expression.has_value()) {
         return {false, false, {}, "no expression is ready to step"};
     }
 
     try {
-        auto next = combdsl::single_step(*stepped_expression);
+        auto next = combdsl::single_step(*stepped_expression, basis_step);
         if (combdsl::detail::quoted_access::root(next) ==
             combdsl::detail::quoted_access::root(*stepped_expression)) {
             stepped_expression.reset();

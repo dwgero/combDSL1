@@ -4,10 +4,14 @@
     const form = document.querySelector("#evaluation-form");
     const source = document.querySelector("#source");
     const singleStep = document.querySelector("#single-step");
+    const basisStep = document.querySelector("#basis-step");
     const keyStep = document.querySelector("#key-step");
     const cancel = document.querySelector("#cancel");
     const help = document.querySelector("#help");
     const helpDialog = document.querySelector("#help-dialog");
+    const combinatorInfo = document.querySelector("#combinator-info");
+    const combinatorInfoDialog = document.querySelector(
+        "#combinator-info-dialog");
     const status = document.querySelector("#status");
     const output = document.querySelector("#output");
 
@@ -18,6 +22,7 @@
     let activeRequest;
     let ready = false;
     let singleStepEnabled = false;
+    let basisStepEnabled = false;
     let keyStepEnabled = false;
 
     const errorMessage = error =>
@@ -26,6 +31,7 @@
     const updateControls = () => {
         const evaluating = activeRequest !== undefined;
         singleStep.disabled = !ready || evaluating;
+        basisStep.disabled = !ready || evaluating;
         keyStep.disabled = !ready || evaluating;
         cancel.disabled = !evaluating;
         source.readOnly = evaluating;
@@ -36,6 +42,10 @@
             "aria-pressed", String(singleStepEnabled));
         singleStep.textContent = `Single Step: ${
             singleStepEnabled ? "On" : "Off"}`;
+        basisStep.setAttribute(
+            "aria-pressed", String(basisStepEnabled));
+        basisStep.textContent = `Basis Step: ${
+            basisStepEnabled ? "On" : "Off"}`;
         keyStep.setAttribute(
             "aria-pressed", String(keyStepEnabled));
         keyStep.textContent = `Key Step: ${
@@ -169,7 +179,7 @@
                     status.textContent = "Press a key for the next step";
                 } else {
                     activeRequest = undefined;
-                    status.textContent = "Normal form";
+                    status.textContent = "Normal form reached";
                 }
                 updateControls();
                 return;
@@ -240,6 +250,7 @@
             id: ++nextRequestId,
             source: startingExpression,
             singleStep: singleStepEnabled,
+            basisStep: basisStepEnabled,
             keyStep: keyStepEnabled,
             stepReady: false,
             stepPending: false,
@@ -259,6 +270,7 @@
                 id: submittedRequest.id,
                 source: submittedRequest.source,
                 singleStep: submittedRequest.singleStep,
+                basisStep: submittedRequest.basisStep,
                 keyStep: submittedRequest.keyStep,
             });
         });
@@ -269,6 +281,11 @@
         if (singleStepEnabled) {
             keyStepEnabled = false;
         }
+        updateModeButtons();
+    });
+
+    basisStep.addEventListener("click", () => {
+        basisStepEnabled = !basisStepEnabled;
         updateModeButtons();
     });
 
@@ -291,39 +308,47 @@
         startWorker();
     });
 
-    help.addEventListener("click", () => {
-        helpDialog.showModal();
-    });
+    const configureDialog = (button, dialog) => {
+        button.addEventListener("click", () => {
+            dialog.showModal();
+            button.setAttribute("aria-expanded", "true");
+            dialog.querySelector("[data-dialog-initial-focus]")?.focus();
+        });
 
-    helpDialog.addEventListener("click", event => {
-        if (event.target !== helpDialog) {
-            return;
-        }
+        dialog.addEventListener("click", event => {
+            if (event.target !== dialog) {
+                return;
+            }
 
-        const bounds = helpDialog.getBoundingClientRect();
-        const inside = event.clientX >= bounds.left &&
-            event.clientX <= bounds.right &&
-            event.clientY >= bounds.top &&
-            event.clientY <= bounds.bottom;
-        if (!inside) {
-            helpDialog.close();
-        }
-    });
+            const bounds = dialog.getBoundingClientRect();
+            const inside = event.clientX >= bounds.left &&
+                event.clientX <= bounds.right &&
+                event.clientY >= bounds.top &&
+                event.clientY <= bounds.bottom;
+            if (!inside) {
+                dialog.close();
+            }
+        });
 
-    helpDialog.addEventListener("keydown", event => {
-        if (event.key === "Escape") {
-            event.preventDefault();
-            helpDialog.close();
-        }
-    });
+        dialog.addEventListener("keydown", event => {
+            if (event.key === "Escape") {
+                event.preventDefault();
+                dialog.close();
+            }
+        });
 
-    helpDialog.addEventListener("close", () => {
-        if (activeRequest?.keyStep) {
-            source.focus();
-        } else {
-            help.focus();
-        }
-    });
+        dialog.addEventListener("close", () => {
+            button.setAttribute("aria-expanded", "false");
+            if (activeRequest?.keyStep) {
+                source.focus();
+            } else {
+                button.focus();
+            }
+        });
+    };
+
+    configureDialog(help, helpDialog);
+    configureDialog(combinatorInfo, combinatorInfoDialog);
 
     source.addEventListener("keydown", event => {
         if (event.key === "Enter" && !event.isComposing) {
@@ -345,7 +370,7 @@
             request.stepPending || event.ctrlKey || event.metaKey ||
             event.altKey || event.key === "Tab" ||
             event.key === "Shift" ||
-            helpDialog.open ||
+            helpDialog.open || combinatorInfoDialog.open ||
             event.target instanceof HTMLButtonElement) {
             return;
         }

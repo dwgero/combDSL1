@@ -92,13 +92,21 @@
             opacity: 0.5;
         }
 
-        #single-step[aria-pressed="true"] {
+        #single-step[aria-pressed="true"],
+        #basis-step[aria-pressed="true"] {
             border-color: #315be8;
             background: #315be8;
             color: white;
         }
 
         #key-step[aria-pressed="true"] {
+            border-color: #315be8;
+            background: #315be8;
+            color: white;
+        }
+
+        #help[aria-expanded="true"],
+        #combinator-info[aria-expanded="true"] {
             border-color: #315be8;
             background: #315be8;
             color: white;
@@ -149,6 +157,42 @@
             line-height: 1.5;
         }
 
+        .dialog-intro {
+            margin: 0 0 1rem;
+            font: 0.9rem/1.5 system-ui, sans-serif;
+        }
+
+        #combinator-info-dialog {
+            width: min(40rem, calc(100% - 2rem));
+        }
+
+        .combinator-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .combinator-table th,
+        .combinator-table td {
+            border-bottom: 1px solid
+                color-mix(in srgb, CanvasText 15%, Canvas);
+            padding: 0.5rem 0.65rem;
+            text-align: left;
+            vertical-align: top;
+        }
+
+        .combinator-table thead th {
+            padding-top: 0;
+            font: 700 0.85rem system-ui, sans-serif;
+        }
+
+        .combinator-table tbody th {
+            font: 650 0.9rem system-ui, sans-serif;
+        }
+
+        .combinator-table code {
+            white-space: nowrap;
+        }
+
         .dialog-controls {
             display: flex;
             justify-content: flex-end;
@@ -191,33 +235,97 @@
             <div class="controls">
                 <button id="single-step" type="button"
                     aria-pressed="false" disabled>Single Step: Off</button>
+                <button id="basis-step" type="button"
+                    aria-pressed="false" disabled>Basis Step: Off</button>
                 <button id="key-step" type="button"
                     aria-pressed="false" disabled>Key Step: Off</button>
                 <button id="cancel" type="button" disabled>Cancel</button>
                 <button id="help" type="button" aria-haspopup="dialog"
-                    aria-controls="help-dialog">Help</button>
+                    aria-controls="help-dialog"
+                    aria-expanded="false">Help</button>
+                <button id="combinator-info" type="button"
+                    aria-haspopup="dialog"
+                    aria-controls="combinator-info-dialog"
+                    aria-expanded="false">Combinator Info</button>
                 <span id="status" role="status">Loading WebAssembly…</span>
             </div>
         </form>
     </main>
 
     <dialog id="help-dialog" aria-labelledby="help-title">
-        <h2 id="help-title">Step modes</h2>
+        <h2 id="help-title">Stepping options</h2>
         <dl>
             <dt>Single Step</dt>
             <dd>
                 Runs automatically and displays every reduction until normal
                 form is reached or Cancel is selected.
             </dd>
+            <dt>Basis Step</dt>
+            <dd>
+                Changes how Single Step and Key Step handle named bases
+                defined by compound combinators. All the bird combinators (see
+                Combinator Info) except S, K, I, and Y are named bases. Off
+                contracts a saturated named basis directly (for example,
+                <code>Mx</code> becomes <code>xx</code>). On exposes its
+                underlying definition as a separate reduction first (so
+                <code>Mx</code> becomes <code>SIIx</code>).
+            </dd>
             <dt>Key Step</dt>
             <dd>
-                Pauses after parsing. Press any ordinary key for exactly one
-                reduction. After the last expression is displayed, press one
-                more key to confirm normal form. Cancel ends the session.
+                Pauses after initial expression scanning. Press any ordinary
+                key for exactly one reduction. When normal form is reached,
+                the next keypress ends the reduction. Cancel also ends the
+                reduction.
             </dd>
         </dl>
         <form method="dialog" class="dialog-controls">
             <button type="submit" autofocus>Close</button>
+        </form>
+    </dialog>
+
+    <dialog id="combinator-info-dialog"
+        aria-labelledby="combinator-info-title">
+        <h2 id="combinator-info-title" tabindex="-1"
+            data-dialog-initial-focus>Bird combinators</h2>
+        <p class="dialog-intro">
+            Most of the birds come from Raymond Smullyan's book
+            <a href="https://en.wikipedia.org/wiki/To_Mock_a_Mockingbird"
+                target="_blank" rel="noopener noreferrer"><cite>To Mock a
+                Mockingbird</cite></a>.
+            Application is left-associative, meaning xyz at the head of an
+            expression or right after a ( acts like ((xy)z).
+        </p>
+        <table class="combinator-table"
+            aria-label="Bird combinator reduction rules">
+            <thead>
+                <tr>
+                    <th scope="col">Bird</th>
+                    <th scope="col">Reduction</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr><th scope="row">Albatross</th><td><code>Axy = x(yx)</code></td></tr>
+                <tr><th scope="row">Bluebird</th><td><code>Bxyz = x(yz)</code></td></tr>
+                <tr><th scope="row">Cardinal</th><td><code>Cxyz = xzy</code></td></tr>
+                <tr><th scope="row">Dove</th><td><code>Dxyzw = xy(zw)</code></td></tr>
+                <tr><th scope="row">Identity</th><td><code>Ix = x</code></td></tr>
+                <tr><th scope="row">Kestrel</th><td><code>Kxy = x</code></td></tr>
+                <tr><th scope="row">Lark</th><td><code>Lxy = x(yy)</code></td></tr>
+                <tr><th scope="row">Mockingbird</th><td><code>Mx = xx</code></td></tr>
+                <tr><th scope="row">Nightingale</th><td><code>Nxy = xyx</code></td></tr>
+                <tr><th scope="row">Owl</th><td><code>Oxy = y(xy)</code></td></tr>
+                <tr><th scope="row">Peacock</th><td><code>Pxyz = y(xz)</code></td></tr>
+                <tr><th scope="row">Robin</th><td><code>Rxyz = yzx</code></td></tr>
+                <tr><th scope="row">Sage</th><td><code>Yx = x(Yx)</code></td></tr>
+                <tr><th scope="row">Starling</th><td><code>Sxyz = xz(yz)</code></td></tr>
+                <tr><th scope="row">Thrush</th><td><code>Txy = yx</code></td></tr>
+                <tr><th scope="row">Vireo</th><td><code>Vxyz = zxy</code></td></tr>
+                <tr><th scope="row">Warbler</th><td><code>Wxy = xyy</code></td></tr>
+                <tr><th scope="row">Zazu</th><td><code>Zxy = x(xy)</code></td></tr>
+            </tbody>
+        </table>
+        <form method="dialog" class="dialog-controls">
+            <button type="submit">Close</button>
         </form>
     </dialog>
 </body>

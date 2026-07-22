@@ -1238,7 +1238,7 @@ public:
         std::size_t arity,
         Value&& expression)
         : name_(name),
-          arity_(validated_arity(arity)),
+          arity_(arity),
           expression_(std::forward<Value>(expression)) {}
 
     template <class Value>
@@ -1248,7 +1248,7 @@ public:
         std::size_t arity,
         Value&& expression)
         : name_(std::move(name)),
-          arity_(validated_arity(arity)),
+          arity_(arity),
           expression_(std::forward<Value>(expression)) {}
 
     void print_to(std::ostream& output) const {
@@ -1307,15 +1307,6 @@ public:
     }
 
 private:
-    [[nodiscard]] static constexpr std::size_t validated_arity(
-        std::size_t arity) {
-        if (arity == 0) {
-            throw std::invalid_argument(
-                "combdsl::basis arity must be at least 1");
-        }
-        return arity;
-    }
-
     detail::basis_label name_;
     std::size_t arity_;
     [[no_unique_address]] Expression expression_;
@@ -1342,10 +1333,6 @@ private:
         detail::basis_label name,
         std::size_t arity,
         Value&& expression) {
-        if (arity == 0) {
-            throw std::invalid_argument(
-                "combdsl::basis arity must be at least 1");
-        }
         return basis_thunk{
             std::move(name),
             arity,
@@ -1580,6 +1567,7 @@ enum class quoted_node_kind {
     fixed_point,
     application,
     recursive_y,
+    basis_argument,
     basis
 };
 
@@ -1768,6 +1756,31 @@ private:
     quoted_expression generator_;
 };
 
+class quoted_basis_argument_node final : public quoted_node {
+public:
+    explicit quoted_basis_argument_node(quoted_expression argument)
+        : argument_(std::move(argument)) {}
+
+    [[nodiscard]] quoted_node_kind kind() const noexcept override {
+        return quoted_node_kind::basis_argument;
+    }
+
+    void print_to(std::ostream& output) const override {
+        argument_.print_to(output);
+    }
+
+    void print_as_operand_to(std::ostream& output) const override {
+        argument_.print_as_operand_to(output);
+    }
+
+    [[nodiscard]] quoted_expression const& argument() const noexcept {
+        return argument_;
+    }
+
+private:
+    quoted_expression argument_;
+};
+
 class quoted_basis_node_base : public quoted_node {
 public:
     [[nodiscard]] quoted_node_kind kind() const noexcept final {
@@ -1820,6 +1833,12 @@ make_quoted_application(quoted_expression function,
 make_quoted_recursive_y(quoted_expression generator) {
     return quoted_access::make(
         std::make_shared<quoted_recursive_y_node>(std::move(generator)));
+}
+
+[[nodiscard]] inline quoted_expression
+make_quoted_basis_argument(quoted_expression argument) {
+    return quoted_access::make(
+        std::make_shared<quoted_basis_argument_node>(std::move(argument)));
 }
 
 template <class Value>
@@ -2086,8 +2105,42 @@ quoted_expression quote(Value&& value) {
 
 namespace detail {
 
+struct reduction_options {
+    bool basis_step = false;
+    bool reduce_bare_recursive_y = true;
+};
+
+[[nodiscard]] inline std::optional<quoted_expression>
+reduce_next_redex(quoted_expression const& expression,
+                  reduction_options options);
+
 [[nodiscard]] inline quoted_expression
-reduce_at_head(quoted_expression expression) {
+restore_basis_arguments(quoted_expression const& expression) {
+    auto const& root = quoted_access::root(expression);
+    switch (root->kind()) {
+    case quoted_node_kind::basis_argument:
+        return static_cast<quoted_basis_argument_node const&>(*root)
+            .argument();
+    case quoted_node_kind::application: {
+        auto const& application =
+            static_cast<quoted_application_node const&>(*root);
+        return make_quoted_application(
+            restore_basis_arguments(application.function()),
+            restore_basis_arguments(application.argument()));
+    }
+    case quoted_node_kind::recursive_y: {
+        auto const& recursive =
+            static_cast<quoted_recursive_y_node const&>(*root);
+        return make_quoted_recursive_y(
+            restore_basis_arguments(recursive.generator()));
+    }
+    default:
+        return expression;
+    }
+}
+
+[[nodiscard]] inline quoted_expression
+reduce_at_head(quoted_expression expression, reduction_options options) {
     std::vector<quoted_expression> reversed_arguments;
     auto head = expression;
 
@@ -2140,6 +2193,10 @@ reduce_at_head(quoted_expression expression) {
         }
         break;
     case quoted_node_kind::recursive_y: {
+        if (!options.reduce_bare_recursive_y &&
+            reversed_arguments.empty()) {
+            break;
+        }
         auto const& recursive =
             static_cast<quoted_recursive_y_node const&>(
                 *quoted_access::root(head));
@@ -2150,7 +2207,27 @@ reduce_at_head(quoted_expression expression) {
         auto const& basis = static_cast<quoted_basis_node_base const&>(
             *quoted_access::root(head));
         if (reversed_arguments.size() >= basis.arity()) {
-            return append_arguments(basis.body(), 0);
+            if (options.basis_step || basis.arity() == 0) {
+                return append_arguments(basis.body(), 0);
+            }
+
+            auto result = basis.body();
+            for (std::size_t index = 0; index < basis.arity(); ++index) {
+                result = result(make_quoted_basis_argument(
+                    reversed_arguments[index]));
+            }
+
+            constexpr reduction_options basis_reduction{
+                .basis_step = false,
+                .reduce_bare_recursive_y = false,
+            };
+            while (auto reduced =
+                       reduce_next_redex(result, basis_reduction)) {
+                result = std::move(*reduced);
+            }
+
+            return append_arguments(restore_basis_arguments(result),
+                                    basis.arity());
         }
         break;
     }
@@ -2162,8 +2239,9 @@ reduce_at_head(quoted_expression expression) {
 }
 
 [[nodiscard]] inline std::optional<quoted_expression>
-reduce_next_redex(quoted_expression const& expression) {
-    auto reduced = reduce_at_head(expression);
+reduce_next_redex(quoted_expression const& expression,
+                  reduction_options options) {
+    auto reduced = reduce_at_head(expression, options);
     if (quoted_access::root(reduced) != quoted_access::root(expression)) {
         return reduced;
     }
@@ -2176,12 +2254,12 @@ reduce_next_redex(quoted_expression const& expression) {
     auto const& application =
         static_cast<quoted_application_node const&>(*root);
     if (auto reduced_function =
-            reduce_next_redex(application.function())) {
+            reduce_next_redex(application.function(), options)) {
         return make_quoted_application(
             std::move(*reduced_function), application.argument());
     }
     if (auto reduced_argument =
-            reduce_next_redex(application.argument())) {
+            reduce_next_redex(application.argument(), options)) {
         return make_quoted_application(
             application.function(), std::move(*reduced_argument));
     }
@@ -2192,8 +2270,10 @@ reduce_next_redex(quoted_expression const& expression) {
 } // namespace detail
 
 [[nodiscard]] inline quoted_expression
-single_step(quoted_expression expression) {
-    if (auto reduced = detail::reduce_next_redex(expression)) {
+single_step(quoted_expression expression, bool basis_step = false) {
+    if (auto reduced = detail::reduce_next_redex(
+            expression,
+            detail::reduction_options{.basis_step = basis_step})) {
         return std::move(*reduced);
     }
 
@@ -2270,7 +2350,8 @@ enum class evaluation_interrupt_result {
 inline void eval(
     quoted_expression expression,
     std::ostream& output = std::cout,
-    std::istream& input = std::cin) {
+    std::istream& input = std::cin,
+    bool basis_step = false) {
     detail::scoped_evaluation_sigint_handler sigint_handler;
     auto print_expression = [&output](quoted_expression const& current) {
         current.print_to(output);
@@ -2298,7 +2379,7 @@ inline void eval(
             expression_was_printed = true;
         }
 
-        auto next = single_step(expression);
+        auto next = single_step(expression, basis_step);
         auto const no_reduction =
             detail::quoted_access::root(next) ==
             detail::quoted_access::root(expression);
@@ -2324,7 +2405,8 @@ inline void eval(
 inline void single_step_loop(
     quoted_expression expression,
     std::istream& input = std::cin,
-    std::ostream& output = std::cout) {
+    std::ostream& output = std::cout,
+    bool basis_step = false) {
     detail::print_layout(
         output,
         "Press Enter for one reduction step; type q then Enter to quit.\n");
@@ -2341,7 +2423,7 @@ inline void single_step_loop(
             continue;
         }
 
-        auto next = single_step(expression);
+        auto next = single_step(expression, basis_step);
         if (detail::quoted_access::root(next) ==
             detail::quoted_access::root(expression)) {
             return;
@@ -2357,7 +2439,8 @@ inline void single_step_loop(
 inline void single_step_run(
     quoted_expression expression,
     std::ostream& output = std::cout,
-    std::istream& input = std::cin);
+    std::istream& input = std::cin,
+    bool basis_step = false);
 
 namespace detail {
 
@@ -2375,7 +2458,8 @@ namespace detail {
 inline void single_step_run(
     quoted_expression expression,
     std::ostream& output,
-    std::istream& input) {
+    std::istream& input,
+    bool basis_step) {
     detail::scoped_evaluation_sigint_handler sigint_handler;
 
     output.flush();
@@ -2385,7 +2469,7 @@ inline void single_step_run(
             return;
         }
 
-        auto next = single_step(expression);
+        auto next = single_step(expression, basis_step);
         if (!detail::wait_after_single_step_run_interrupt(input, output)) {
             return;
         }
@@ -2829,24 +2913,27 @@ private:
 inline void parse_eval(
     std::string_view source,
     std::ostream& output = std::cout,
-    std::istream& input = std::cin) {
-    eval(parse(source), output, input);
+    std::istream& input = std::cin,
+    bool basis_step = false) {
+    eval(parse(source), output, input, basis_step);
 }
 
 inline void read_parse_eval(
     std::istream& input = std::cin,
-    std::ostream& output = std::cout) {
+    std::ostream& output = std::cout,
+    bool basis_step = false) {
     std::string source;
     if (std::getline(input, source)) {
-        parse_eval(source, output, input);
+        parse_eval(source, output, input, basis_step);
     }
 }
 
 inline void parse_and_step(
     std::string_view source,
     std::ostream& output = std::cout,
-    std::istream& input = std::cin) {
-    single_step_run(parse(source), output, input);
+    std::istream& input = std::cin,
+    bool basis_step = false) {
+    single_step_run(parse(source), output, input, basis_step);
 }
 
 #define BASIS(name, arity, expression) \

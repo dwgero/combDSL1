@@ -138,6 +138,8 @@ Cardinal (`C`), Dove (`D`), Identity (`I`), Kestrel (`K`), Lark (`L`),
 Mockingbird (`M`), Owl (`O`), Robin (`R`), Starling (`S`), Thrush (`T`),
 Vireo (`V`), and Warbler (`W`), using the capital first letter of each name.
 The Sage bird has been defined as `Y`, to match current conventions.
+The following additional bird combinators have also been defined: Albatross
+(`A`), Nightingale (`N`), Peacock (`P`), and Zazu (`Z`).
 The `basis(name, arity, combinator_expression)` function assigns an atomic
 printed name to any other combinator expression without changing its behavior.
 Named callables are deferred and cached like `S`, `K`, and `I`; copies share
@@ -149,13 +151,17 @@ const auto y = symbol('y');
 
 const auto M = basis("M", 1, S(I)(I));
 const auto T = basis("T", 2, S(K(S(I)))(K));
+const auto Qzero = basis("Qzero", 0, K);
 
-M();     // M
-M(x)();  // xx
-K(M)();  // KM
-T();        // T
-T(x)();     // Tx
-T(x)(y)();  // yx
+M();            // M
+M(x)();         // xx
+K(M)();         // KM
+T();            // T
+T(x)();         // Tx
+T(x)(y)();      // yx
+Qzero();        // Qzero
+Qzero(x)();     // Kx
+Qzero(x)(y)();  // x
 
 auto copied_M = M;
 assert(&force(copied_M) == &force(M));
@@ -163,7 +169,9 @@ assert(&force(copied_M) == &force(M));
 
 The arity controls when the named basis expands: undersaturated applications
 retain the basis name, while reaching the declared argument count evaluates
-the stored combinator. Arity must be at least one.
+the stored combinator. An arity of zero is always saturated, so its stored
+combinator is applied to every following argument. With no following arguments,
+printing the basis still prints its name as usual.
 
 Expression printing separates a multi-character basis name from adjacent
 non-parenthesis tokens. Parentheses act as boundaries and stay attached on
@@ -214,11 +222,16 @@ Trailing operands are preserved. Unknown and undersaturated heads are skipped
 while the search continues through their explicit subexpressions. `S`, `K`,
 `I`, `Y`, deferred recursive `Y` nodes, and saturated named bases can all
 reduce in nested positions. `Y` exposes its recursive operand without forcing
-it, and a saturated named basis expands by one step:
+it. By default, a saturated basis with positive arity applies its declared
+reduction as one step while leaving its operands unevaluated. Pass `true` as
+the second argument to `single_step` to make expansion of the stored
+definition a separate step instead. Zero-arity bases retain their existing
+expansion behavior in either mode:
 
 ```cpp
-single_step(quote(Y)(x))(); // x<deferred Y(x)>
-single_step(quote(M)(x))(); // SIIx
+single_step(quote(Y)(x))();       // x<deferred Y(x)>
+single_step(quote(M)(x))();       // xx
+single_step(quote(M)(x), true)(); // SIIx
 ```
 
 Quoted application nodes are immutable and shared, so an `S` reduction can
@@ -235,6 +248,8 @@ eval(quote(S)(K)(I)(x)); // prints: x
 
 A different output stream can be supplied as the second argument, and an
 input stream can be supplied as the third. The input defaults to `std::cin`.
+An optional trailing `basis_step` boolean selects the same named-basis
+behavior for every reduction performed by `eval`.
 SIGINT (normally Ctrl-C) pauses evaluation at the next reduction boundary and
 prints the current expression as one line. Press Enter to resume, or enter `q`
 or `Q` to quit; end-of-input also quits. If a reduction finished before the
@@ -255,7 +270,8 @@ single_step_loop(quote(S)(K)(I)(x));
 waiting for input. It prints the expression after each successful reduction
 and returns when no eligible reduction remains; it does not print the starting
 expression. Its output defaults to `std::cout`, and its input defaults to
-`std::cin`:
+`std::cin`. `single_step_loop` and `single_step_run` also accept an optional
+trailing `basis_step` boolean:
 
 ```cpp
 single_step_run(quote(S)(K)(I)(x));
@@ -302,7 +318,9 @@ parse_eval("K (I x) y"); // prints: x
 
 `parse_eval` parses a string and passes the resulting quoted expression to
 `eval`. Its output and input streams can be supplied as the second and third
-arguments; they default to `std::cout` and `std::cin`.
+arguments; they default to `std::cout` and `std::cin`. A trailing
+`basis_step` boolean is forwarded by `parse_eval`, `read_parse_eval`, and
+`parse_and_step`.
 
 `read_parse_eval` reads exactly one line and passes it to `parse_eval`:
 
@@ -458,10 +476,14 @@ and displaying every reduction produced by
 results area with a blank line between them. The Key Step button starts a
 manual reduction session: after submitting an expression, each ordinary
 keypress performs exactly one `single_step`, and Cancel ends the session. The
-Single Step and Key Step modes are mutually exclusive. The browser prints the
+Single Step and Key Step modes are mutually exclusive. The independent Basis
+Step button controls whether either stepping mode exposes a saturated named
+basis definition as a separate step. With Basis Step off, `Mx` goes directly
+to `xx`; with it on, the first step is `SIIx`. The browser prints the
 submitted starting expression immediately, then appends the output beneath it.
 Cancelling an evaluation appends `[cancelled]` beneath its starting expression.
-The Help button summarizes both stepping modes in a keyboard-accessible dialog.
+The Help button summarizes all stepping options in a keyboard-accessible
+dialog.
 
 For another CMake project, link the interface target after adding this project:
 
