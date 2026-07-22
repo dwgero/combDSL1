@@ -185,9 +185,20 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             width: min(40rem, calc(100% - 2rem));
         }
 
+        #combinator-info-dialog {
+            max-height: calc(100vh - 2rem);
+            max-height: calc(100dvh - 2rem);
+            overflow-y: auto;
+            overscroll-behavior-y: contain;
+        }
+
+        #help-dialog dl,
+        .license-text {
+            font: 0.9rem/1.5 system-ui, sans-serif;
+        }
+
         .license-text {
             margin: 0;
-            font: 0.9rem/1.5 system-ui, sans-serif;
         }
 
         .license-text p {
@@ -267,10 +278,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             <div class="controls">
                 <button id="single-step" type="button"
                     aria-pressed="false" disabled>Single Step: Off</button>
-                <button id="basis-step" type="button"
-                    aria-pressed="false" disabled>Basis Step: Off</button>
                 <button id="key-step" type="button"
                     aria-pressed="false" disabled>Key Step: Off</button>
+                <button id="basis-step" type="button"
+                    aria-pressed="false" disabled>Basis Step: Off</button>
                 <button id="cancel" type="button" disabled>Cancel</button>
                 <button id="help" type="button" aria-haspopup="dialog"
                     aria-controls="help-dialog"
@@ -295,22 +306,23 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
                 Runs automatically and displays every reduction until normal
                 form is reached or Cancel is selected.
             </dd>
-            <dt>Basis Step</dt>
-            <dd>
-                Changes how Single Step and Key Step handle named bases
-                defined by compound combinators. All the bird combinators (see
-                Combinator Info) except S, K, I, and Y are named bases. Off
-                contracts a saturated named basis directly (for example,
-                <code>Mx</code> becomes <code>xx</code>). On exposes its
-                underlying definition as a separate reduction first (so
-                <code>Mx</code> becomes <code>SIIx</code>).
-            </dd>
             <dt>Key Step</dt>
             <dd>
                 Pauses after initial expression scanning. Press any ordinary
                 key for exactly one reduction. When normal form is reached,
                 the next keypress ends the reduction. Cancel also ends the
                 reduction.
+            </dd>
+            <dt>Basis Step</dt>
+            <dd>
+                Changes how Single Step and Key Step handle named bases
+                defined by compound combinators. All the bird combinators (see
+                Combinator Info) except S, K, I, and Y are named bases. Basis
+                Step: Off contracts a saturated named basis directly (for
+                example, <code>Mx</code> becomes <code>xx</code>). Basis Step:
+                On exposes its underlying definition as a separate reduction
+                first (so
+                <code>Mx</code> becomes <code>SIIx</code>).
             </dd>
         </dl>
         <form method="dialog" class="dialog-controls">
@@ -321,7 +333,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
     <dialog id="combinator-info-dialog"
         aria-labelledby="combinator-info-title">
         <h2 id="combinator-info-title" tabindex="-1"
-            data-dialog-initial-focus>Bird combinators</h2>
+            data-dialog-initial-focus>Bird Combinators</h2>
         <p class="dialog-intro">
             Most of the birds come from Raymond Smullyan's book
             <a href="https://en.wikipedia.org/wiki/To_Mock_a_Mockingbird"
@@ -329,6 +341,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
                 Mockingbird</cite></a>.
             Application is left-associative, meaning xyz at the head of an
             expression or right after a ( acts like ((xy)z).
+            Note that the xyz in Cxyz is not at the head; C is.
         </p>
         <table class="combinator-table"
             aria-label="Bird combinator reduction rules">

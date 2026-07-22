@@ -133,7 +133,8 @@ or printed.
 
 `M` and `T` are among the named bases provided by
 `<combdsl/combinators.hpp>`. Many of the bird combinators in Raymond Smullyan's
-book *To Mock a Mockingbird* have been defined, including Bluebird (`B`),
+book [*To Mock a Mockingbird*](https://en.wikipedia.org/wiki/To_Mock_a_Mockingbird)
+have been defined, including Bluebird (`B`),
 Cardinal (`C`), Dove (`D`), Identity (`I`), Kestrel (`K`), Lark (`L`),
 Mockingbird (`M`), Owl (`O`), Robin (`R`), Starling (`S`), Thrush (`T`),
 Vireo (`V`), and Warbler (`W`), using the capital first letter of each name.
