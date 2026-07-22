@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="icon" href="data:,">
+    <title>Combinator Read-Eval-Print</title>
+    <style>
+        :root {
+            color-scheme: light dark;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Consolas,
+                "Liberation Mono", monospace;
+            background: Canvas;
+            color: CanvasText;
+        }
+
+        html,
+        body {
+            width: 100%;
+            height: 100%;
+        }
+
+        body {
+            margin: 0;
+            overflow: hidden;
+        }
+
+        main {
+            box-sizing: border-box;
+            width: 100%;
+            height: 100%;
+            min-height: 0;
+            padding: 1.5rem;
+            display: grid;
+            grid-template-rows: auto minmax(0, 1fr) auto;
+            gap: 1.25rem;
+            overflow: hidden;
+        }
+
+        h1 {
+            margin: 0;
+            font-family: system-ui, sans-serif;
+            font-size: clamp(1.5rem, 4vw, 2.25rem);
+            text-align: center;
+        }
+
+        label {
+            display: block;
+            margin: 0 0 0.5rem;
+            font-family: system-ui, sans-serif;
+            font-size: 0.95rem;
+            font-weight: 650;
+        }
+
+        textarea,
+        pre {
+            box-sizing: border-box;
+            width: 100%;
+            border: 1px solid color-mix(in srgb, CanvasText 25%, Canvas);
+            border-radius: 0.5rem;
+            background: color-mix(in srgb, CanvasText 4%, Canvas);
+            color: CanvasText;
+            font: inherit;
+            overflow-wrap: anywhere;
+            white-space: pre-wrap;
+        }
+
+        textarea {
+            min-height: 7rem;
+            padding: 0.8rem;
+            resize: vertical;
+        }
+
+        .controls {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 0.75rem;
+            margin: 0.75rem 0 0;
+        }
+
+        button {
+            border: 1px solid color-mix(in srgb, CanvasText 30%, Canvas);
+            border-radius: 0.45rem;
+            padding: 0.55rem 0.9rem;
+            font: 600 0.9rem system-ui, sans-serif;
+            cursor: pointer;
+        }
+
+        button:disabled {
+            cursor: default;
+            opacity: 0.5;
+        }
+
+        #single-step[aria-pressed="true"] {
+            border-color: #315be8;
+            background: #315be8;
+            color: white;
+        }
+
+        #key-step[aria-pressed="true"] {
+            border-color: #315be8;
+            background: #315be8;
+            color: white;
+        }
+
+        #status {
+            margin-left: auto;
+            font: 0.85rem system-ui, sans-serif;
+            color: color-mix(in srgb, CanvasText 68%, Canvas);
+        }
+
+        dialog {
+            box-sizing: border-box;
+            width: min(32rem, calc(100% - 2rem));
+            max-height: calc(100% - 2rem);
+            border: 1px solid color-mix(in srgb, CanvasText 25%, Canvas);
+            border-radius: 0.65rem;
+            padding: 1.25rem;
+            background: Canvas;
+            color: CanvasText;
+            overflow: auto;
+        }
+
+        dialog::backdrop {
+            background: rgb(0 0 0 / 45%);
+        }
+
+        dialog h2 {
+            margin: 0 0 1rem;
+            font: 650 1.15rem system-ui, sans-serif;
+        }
+
+        dialog dl {
+            margin: 0;
+        }
+
+        dialog dt {
+            margin-top: 1rem;
+            font-weight: 700;
+        }
+
+        dialog dt:first-child {
+            margin-top: 0;
+        }
+
+        dialog dd {
+            margin: 0.25rem 0 0;
+            line-height: 1.5;
+        }
+
+        .dialog-controls {
+            display: flex;
+            justify-content: flex-end;
+            margin-top: 1.25rem;
+        }
+
+        .result {
+            min-height: 0;
+            display: flex;
+            flex-direction: column;
+        }
+
+        pre {
+            min-height: 0;
+            flex: 1;
+            margin: 0;
+            padding: 0.8rem;
+            overflow: auto;
+            overscroll-behavior: contain;
+        }
+
+        pre [data-kind="error"] {
+            color: #c33;
+        }
+    </style>
+    <script src="./app.js" defer></script>
+</head>
+<body>
+    <main>
+        <h1>Combinator Read-Eval-Print</h1>
+
+        <section class="result" aria-label="Evaluation results">
+            <pre id="output" aria-live="polite" tabindex="0"></pre>
+        </section>
+
+        <form id="evaluation-form">
+            <label for="source">Combinator Expression</label>
+            <textarea id="source" name="source" spellcheck="false"
+                autocapitalize="off" wrap="soft">SKIx</textarea>
+            <div class="controls">
+                <button id="single-step" type="button"
+                    aria-pressed="false" disabled>Single Step: Off</button>
+                <button id="key-step" type="button"
+                    aria-pressed="false" disabled>Key Step: Off</button>
+                <button id="cancel" type="button" disabled>Cancel</button>
+                <button id="help" type="button" aria-haspopup="dialog"
+                    aria-controls="help-dialog">Help</button>
+                <span id="status" role="status">Loading WebAssembly…</span>
+            </div>
+        </form>
+    </main>
+
+    <dialog id="help-dialog" aria-labelledby="help-title">
+        <h2 id="help-title">Step modes</h2>
+        <dl>
+            <dt>Single Step</dt>
+            <dd>
+                Runs automatically and displays every reduction until normal
+                form is reached or Cancel is selected.
+            </dd>
+            <dt>Key Step</dt>
+            <dd>
+                Pauses after parsing. Press any ordinary key for exactly one
+                reduction. After the last expression is displayed, press one
+                more key to confirm normal form. Cancel ends the session.
+            </dd>
+        </dl>
+        <form method="dialog" class="dialog-controls">
+            <button type="submit" autofocus>Close</button>
+        </form>
+    </dialog>
+</body>
+</html>
