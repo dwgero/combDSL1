@@ -2700,7 +2700,9 @@ public:
             fail("unexpected ')'");
         }
 
-        auto result = parse_expression();
+        auto result = begins_set_definition()
+            ? parse_set_definition()
+            : parse_expression();
         skip_whitespace();
         if (!at_end()) {
             fail("unexpected ')'");
@@ -2709,6 +2711,63 @@ public:
     }
 
 private:
+    [[nodiscard]] bool begins_set_definition() const noexcept {
+        constexpr std::string_view keyword = "set";
+        auto const remaining = source_.substr(position_);
+        return remaining.starts_with(keyword) &&
+               remaining.size() > keyword.size() &&
+               is_whitespace(remaining[keyword.size()]);
+    }
+
+    [[nodiscard]] quoted_expression parse_set_definition() {
+        constexpr std::size_t keyword_size = 3;
+        position_ += keyword_size;
+        skip_whitespace();
+
+        auto const name_position = position_;
+        while (!at_end() &&
+               !is_basis_token_delimiter(position_) &&
+               current() != '=') {
+            ++position_;
+        }
+        if (position_ == name_position) {
+            fail("expected a basis name");
+        }
+
+        auto const name_text =
+            source_.substr(name_position, position_ - name_position);
+        auto name = validated_set_basis_name(name_text, name_position);
+
+        skip_whitespace();
+        if (at_end() || current() != '=') {
+            fail("expected '='");
+        }
+        ++position_;
+
+        auto body = parse_expression();
+        skip_whitespace();
+        if (!at_end()) {
+            fail("unexpected ')'");
+        }
+
+        auto result = make_quoted_basis_snapshot(
+            name, 0, std::move(body));
+        register_parser_basis(name.view(), result);
+        return result;
+    }
+
+    [[nodiscard]] basis_label validated_set_basis_name(
+        std::string_view name,
+        std::size_t name_position) const {
+        try {
+            return basis_label(name);
+        } catch (std::length_error const& error) {
+            throw parse_error(name_position + 7, error.what());
+        } catch (std::invalid_argument const& error) {
+            throw parse_error(name_position, error.what());
+        }
+    }
+
     [[nodiscard]] quoted_expression parse_expression() {
         std::optional<quoted_expression> result;
         skip_whitespace();

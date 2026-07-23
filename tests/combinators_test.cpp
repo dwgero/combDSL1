@@ -769,6 +769,30 @@ int main() {
     test("parse right nested operand", parse("x(yz)"), "x(yz)");
     test("parse grouped operand", parse("S ( K I ) x"), "S(KI)x");
     test("parse redundant groups", parse("((SK)I)x"), "SKIx");
+    test("set defines a zero-arity basis",
+         parse("set SetK=K"), "SetK");
+    test("set basis expands with trailing arguments",
+         single_step(parse("SetK x y")), "Kxy");
+    test("set accepts parser whitespace",
+         parse(" \tset\nWsSet \r=\v I\f"), "WsSet");
+    test("whitespace-defined set basis expands",
+         single_step(parse("WsSet x")), "Ix");
+    test("set accepts a compound combinator expression",
+         parse("set SetM = S(I)(I)"), "SetM");
+    test("compound set basis expands as one zero-arity step",
+         single_step(parse("SetM x")), "SIIx");
+    test("set without required whitespace remains symbols",
+         parse("setx"), "setx");
+    test("bare set remains symbols", parse("set"), "set");
+    test("first set definition",
+         parse("set DynDup=I"), "DynDup");
+    test("later duplicate set definition remains usable",
+         single_step(parse("set DynDup=K")), "K");
+    test("first set definition wins parser lookup",
+         single_step(parse("DynDup x")), "Ix");
+    test("set primitive definition remains usable for that parse",
+         single_step(parse("set K=I")), "I");
+    test("set cannot replace a primitive", parse("K"), "K");
     test("parse left association reduction", single_step(parse("KIxy")),
          "Iy");
     test("parse parentheses override association",
@@ -940,6 +964,24 @@ int main() {
     test_parse_failure("parse dangling backslash", "\\", 1);
     test_parse_failure("parse invalid backslash escape", "\\q", 0);
     test_parse_failure("parse bare quote", "\"word\"", 0);
+    test_parse_failure("set requires a basis name", "set = I", 4);
+    test_parse_failure("set requires an equals sign", "set NoEq I", 9);
+    test_parse_failure("set requires an expression", "set Empty = \t", 13);
+    test_parse_failure("set rejects an overlong basis name",
+                       "set Eight888=I", 11);
+    test_parse_failure("set rejects an invalid basis name",
+                       "set (Bad=I", 4);
+    test_parse_failure("set name ends at a left parenthesis",
+                       "set Qparen(I=K", 10);
+    test_parse_failure("parenthesized set name is not registered",
+                       "Qparen", 0);
+    test_parse_failure("set rejects an invalid expression",
+                       "set Qbad = K@", 12);
+    test_parse_failure("failed set does not register its name", "Qbad", 0);
+    test_parse_failure("set rejects a trailing close parenthesis",
+                       "set Qtail=I)", 11);
+    test_parse_failure("trailing set error does not register its name",
+                       "Qtail", 0);
     test("basis name beginning with single backslash rejected",
          [] {
              try {
@@ -969,6 +1011,8 @@ int main() {
          "invalid");
 
     test("parse eval", [&] { parse_eval("K(Ix)y"); }, "x\n");
+    test("parse eval uses a set basis",
+         [&] { parse_eval("SetK x y"); }, "x\n");
     test("parse eval treats q as a symbol", [&] { parse_eval("q"); }, "q\n");
     test("read parse eval",
          [&] {
@@ -1004,6 +1048,17 @@ int main() {
              }
          },
          "0");
+    test("read parse eval preserves set definitions between lines",
+         [] {
+             std::istringstream input(
+                 "set ReplK=K\n"
+                 "ReplK x y\n");
+             std::ostringstream output;
+             read_parse_eval(input, output);
+             read_parse_eval(input, output);
+             std::cout << output.str();
+         },
+         "K\nx\n");
     test("read parse eval uses its input to resume",
          [&] {
              static_cast<void>(

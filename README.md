@@ -171,8 +171,8 @@ assert(&force(copied_M) == &force(M));
 The arity controls when the named basis expands: undersaturated applications
 retain the basis name, while reaching the declared argument count evaluates
 the stored combinator. An arity of zero is always saturated, so its stored
-combinator is applied to every following argument. With no following arguments,
-printing the basis still prints its name as usual.
+combinator is immediately applied to every following argument. With no
+following arguments, printing the basis still prints its name as usual.
 
 Expression printing separates a multi-character basis name from adjacent
 non-parenthesis tokens. Parentheses act as boundaries and stay attached on
@@ -316,6 +316,21 @@ parse_and_step("K (I x) y");
 
 parse_eval("K (I x) y"); // prints: x
 ```
+
+At the start of a line, `set` followed by whitespace defines and registers a
+zero-arity named basis from the expression after `=`:
+
+```cpp
+parse("set Double = S(I)(I)");       // Double
+single_step(parse("Double x"));     // SIIx
+parse_eval("Double x");             // prints: xx
+```
+
+Whitespace before `set` and around `=` is optional, while at least one
+whitespace character must separate `set` from the name. The declaration acts
+like `basis(name, 0, expression)`: names use the normal basis restrictions,
+the first registered definition wins, and `S`, `K`, `I`, and `Y` retain their
+primitive meanings. A malformed declaration does not register its name.
 
 `parse_eval` parses a string and passes the resulting quoted expression to
 `eval`. Its output and input streams can be supplied as the second and third
