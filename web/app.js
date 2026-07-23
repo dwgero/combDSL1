@@ -158,7 +158,9 @@
         updateControls();
 
         try {
-            worker = new Worker(new URL("./worker.js", document.baseURI));
+            const workerUrl = new URL("./worker.js", document.baseURI);
+            workerUrl.searchParams.set("v", Date.now().toString());
+            worker = new Worker(workerUrl);
             const currentWorker = worker;
             terminateWorker = () => {
                 terminationExpected = true;
@@ -216,8 +218,14 @@
                         message.result.output,
                         "output",
                         request.colorize);
-                    request.stepReady = true;
-                    status.textContent = "Press a key for the next step";
+                    if (message.result.complete) {
+                        activeRequest = undefined;
+                        status.textContent = "Normal form reached";
+                    } else {
+                        request.stepReady = true;
+                        status.textContent =
+                            "Press a key for the next step";
+                    }
                 } else {
                     activeRequest = undefined;
                     status.textContent = "Normal form reached";

@@ -36,6 +36,7 @@ struct evaluation_result {
 struct single_step_result {
     bool success;
     bool reduced;
+    bool complete;
     std::string output;
     std::string error;
 };
@@ -80,6 +81,7 @@ std::optional<combdsl::quoted_expression> stepped_expression;
         auto expression =
             combdsl::parse(combdsl::input_escape(source));
         std::ostringstream output;
+        bool reduced = false;
 
         for (;;) {
             std::ostringstream step_output;
@@ -87,11 +89,17 @@ std::optional<combdsl::quoted_expression> stepped_expression;
                 expression, step_output, basis_step);
             if (combdsl::detail::quoted_access::root(next) ==
                 combdsl::detail::quoted_access::root(expression)) {
+                if (reduced) {
+                    combdsl::detail::print_quoted_html(
+                        output, expression);
+                    output << '\n';
+                }
                 break;
             }
 
             output << step_output.str();
             expression = std::move(next);
+            reduced = true;
         }
 
         return {true, output.str(), {}};
@@ -120,7 +128,8 @@ std::optional<combdsl::quoted_expression> stepped_expression;
 [[nodiscard]] single_step_result take_single_step(
     bool basis_step, bool colorize) {
     if (!stepped_expression.has_value()) {
-        return {false, false, {}, "no expression is ready to step"};
+        return {
+            false, false, false, {}, "no expression is ready to step"};
     }
 
     try {
@@ -133,21 +142,37 @@ std::optional<combdsl::quoted_expression> stepped_expression;
         if (combdsl::detail::quoted_access::root(next) ==
             combdsl::detail::quoted_access::root(*stepped_expression)) {
             stepped_expression.reset();
-            return {true, false, {}, {}};
+            return {true, false, true, {}, {}};
         }
 
         stepped_expression = std::move(next);
-        if (!colorize) {
+        auto following = combdsl::single_step(
+            *stepped_expression, basis_step);
+        bool complete =
+            combdsl::detail::quoted_access::root(following) ==
+            combdsl::detail::quoted_access::root(
+                *stepped_expression);
+        if (colorize) {
+            if (complete) {
+                combdsl::detail::print_quoted_html(
+                    output, *stepped_expression);
+                output << '\n';
+            }
+        } else {
             stepped_expression->print_to(output);
             output << '\n';
         }
-        return {true, true, output.str(), {}};
+        if (complete) {
+            stepped_expression.reset();
+        }
+        return {true, true, complete, output.str(), {}};
     } catch (std::exception const& error) {
         stepped_expression.reset();
-        return {false, false, {}, error.what()};
+        return {false, false, false, {}, error.what()};
     } catch (...) {
         stepped_expression.reset();
-        return {false, false, {}, "unknown evaluation error"};
+        return {
+            false, false, false, {}, "unknown evaluation error"};
     }
 }
 
@@ -162,6 +187,7 @@ EMSCRIPTEN_BINDINGS(combdsl_browser) {
     emscripten::value_object<single_step_result>("SingleStepResult")
         .field("success", &single_step_result::success)
         .field("reduced", &single_step_result::reduced)
+        .field("complete", &single_step_result::complete)
         .field("output", &single_step_result::output)
         .field("error", &single_step_result::error);
 

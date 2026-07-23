@@ -18,7 +18,16 @@
 
 "use strict";
 
-const baseUrl = new URL(".", self.location.href);
+const workerUrl = new URL(self.location.href);
+const baseUrl = new URL(".", workerUrl);
+const assetVersion = workerUrl.searchParams.get("v");
+const assetUrl = file => {
+    const url = new URL(file, baseUrl);
+    if (assetVersion !== null) {
+        url.searchParams.set("v", assetVersion);
+    }
+    return url.href;
+};
 let modulePromise;
 let busy = false;
 let steppingRequestId;
@@ -29,9 +38,9 @@ const errorMessage = error =>
     error instanceof Error ? error.message : String(error);
 
 try {
-    importScripts(new URL("combdsl.js", baseUrl).href);
+    importScripts(assetUrl("combdsl.js"));
     modulePromise = createCombdslModule({
-        locateFile: file => new URL(file, baseUrl).href,
+        locateFile: assetUrl,
     });
     modulePromise.then(
         () => self.postMessage({type: "ready"}),
@@ -102,7 +111,7 @@ self.addEventListener("message", async event => {
             const module = await modulePromise;
             const result = module.takeSingleStep(
                 steppingBasisStep, steppingColorize);
-            if (!result.success || !result.reduced) {
+            if (!result.success || !result.reduced || result.complete) {
                 steppingRequestId = undefined;
                 steppingBasisStep = false;
                 steppingColorize = false;

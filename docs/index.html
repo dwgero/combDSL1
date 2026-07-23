@@ -327,9 +327,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             <dt>Key Step</dt>
             <dd>
                 Pauses after initial expression scanning. Press any ordinary
-                key for exactly one reduction. When normal form is reached,
-                the next keypress ends the reduction. Cancel also ends the
-                reduction.
+                key for exactly one reduction. When that reduction reaches
+                normal form, the session ends immediately. Cancel also ends
+                the reduction.
             </dd>
             <dt>Basis Step</dt>
             <dd>
@@ -349,8 +349,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
                 When Single Step or Key Step is active, it highlights the
                 first, second, and third arguments of each reduction in red,
                 green, and blue, and carries those highlights into the
-                reduced result. It may remain on when neither stepping mode
-                is active; ordinary evaluation ignores it.
+                reduced result. After the final reduction, the normal form is
+                displayed without color at the left margin. Colorize may
+                remain on when neither stepping mode is active; ordinary
+                evaluation ignores it.
             </dd>
         </dl>
         <form method="dialog" class="dialog-controls">

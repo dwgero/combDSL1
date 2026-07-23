@@ -536,17 +536,19 @@ and displaying every reduction produced by
 `single_step_run(parse(input_escape(source)))`. Evaluations accumulate in the
 results area with a blank line between them. The Key Step button starts a
 manual reduction session: after submitting an expression, each ordinary
-keypress performs exactly one `single_step`, and Cancel ends the session. The
-Single Step and Key Step modes are mutually exclusive. The independent Basis
-Step button controls whether either stepping mode exposes a saturated named
-basis definition as a separate step. With Basis Step off, `Mx` goes directly
-to `xx`; with it on, the first step is `SIIx`. While either stepping mode is
+keypress performs exactly one `single_step`. The keypress that performs the
+final reduction also ends the session; Cancel ends it at any time. The Single
+Step and Key Step modes are mutually exclusive. The independent Basis Step
+button controls whether either stepping mode exposes a saturated named basis
+definition as a separate step. With Basis Step off, `Mx` goes directly to
+`xx`; with it on, the first step is `SIIx`. While either stepping mode is
 active, the Colorize button uses `color_step` to highlight the first, second,
 and third arguments of each reduction in red, green, and blue and carries
-those highlights into the reduced result. The browser prints the submitted
-starting expression immediately, then appends the output beneath it. Basis
-Step and Colorize may remain on when neither stepping mode is active; ordinary
-evaluation ignores both settings. Cancelling an evaluation appends
+those highlights into the reduced result. After the final colorized reduction,
+the normal form is printed without color at the left margin. The browser prints
+the submitted starting expression immediately, then appends the output beneath
+it. Basis Step and Colorize may remain on when neither stepping mode is active;
+ordinary evaluation ignores both settings. Cancelling an evaluation appends
 `[cancelled]` beneath its starting expression. The Help button summarizes all
 stepping options in a keyboard-accessible dialog.
 
