@@ -23,6 +23,7 @@ let modulePromise;
 let busy = false;
 let steppingRequestId;
 let steppingBasisStep = false;
+let steppingColorize = false;
 
 const errorMessage = error =>
     error instanceof Error ? error.message : String(error);
@@ -63,6 +64,7 @@ self.addEventListener("message", async event => {
                 if (result.success) {
                     steppingRequestId = message.id;
                     steppingBasisStep = Boolean(message.basisStep);
+                    steppingColorize = Boolean(message.colorize);
                 }
                 self.postMessage({
                     type: "step-ready",
@@ -71,8 +73,13 @@ self.addEventListener("message", async event => {
                 });
             } else {
                 const result = message.singleStep
-                    ? module.singleStepRun(
-                        String(message.source), Boolean(message.basisStep))
+                    ? (message.colorize
+                        ? module.colorStepRun(
+                            String(message.source),
+                            Boolean(message.basisStep))
+                        : module.singleStepRun(
+                            String(message.source),
+                            Boolean(message.basisStep)))
                     : module.parseEval(String(message.source));
                 self.postMessage({type: "result", id: message.id, result});
             }
@@ -93,10 +100,12 @@ self.addEventListener("message", async event => {
         busy = true;
         try {
             const module = await modulePromise;
-            const result = module.takeSingleStep(steppingBasisStep);
+            const result = module.takeSingleStep(
+                steppingBasisStep, steppingColorize);
             if (!result.success || !result.reduced) {
                 steppingRequestId = undefined;
                 steppingBasisStep = false;
+                steppingColorize = false;
             }
             self.postMessage({
                 type: "step-result",
@@ -106,6 +115,7 @@ self.addEventListener("message", async event => {
         } catch (error) {
             steppingRequestId = undefined;
             steppingBasisStep = false;
+            steppingColorize = false;
             self.postMessage({
                 type: "fatal",
                 id: message.id,

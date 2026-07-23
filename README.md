@@ -219,6 +219,49 @@ single_step(expression)();             // Kx(Ix)
 single_step(single_step(expression))(); // x
 ```
 
+`color_step` performs the same single reduction, returns the uncolored
+resulting expression, and prints the before and after expressions as a
+two-line HTML fragment. Its output defaults to `std::cout`; a different
+stream can be passed as the second argument. Like `single_step`, it also
+accepts `basis_step` as a second argument; when supplying both, pass the
+output stream before `basis_step`.
+
+For the redex selected by that step, the first required argument is shown red,
+the second green (`#00cc00`), and the third blue. This applies to `S`, `K`,
+`I`, `Y`, deferred recursive `Y` nodes, and named bases with positive arity.
+Only the first three required arguments are colored; trailing arguments and
+additional basis arguments remain uncolored. The wrappers follow their
+arguments into the after expression, so an argument keeps its color when it
+is moved or duplicated and disappears when it is discarded. Colors are
+recomputed for each call, including when the selected redex is nested.
+
+The emitted fragment expects these styles in its containing HTML document:
+
+```html
+<style type="text/css">
+.wor { background-color: red; color: white; }
+.wog { background-color: #00cc00; color: white; }
+.wob { background-color: blue; color: white; }
+</style>
+```
+
+Each colored argument uses a matching `font` and `span` wrapper with a
+nonbreaking space on either side. Expression text is HTML-escaped, including
+`&`, `<`, `>`, `"`, and `'`, while the fixed markup and its `&nbsp;`
+padding remain HTML. Repeated calls intentionally print the shared boundary
+expression twice. Because the next call colors a new redex, the two copies can
+have different markup even though they represent the same expression:
+
+```cpp
+auto next = color_step(expression);
+//   S<font color="red"><span class="wor">&nbsp;K&nbsp;</span></font><font color="#00cc00"><span class="wog">&nbsp;I&nbsp;</span></font><font color="blue"><span class="wob">&nbsp;x&nbsp;</span></font>
+// -><font color="red"><span class="wor">&nbsp;K&nbsp;</span></font><font color="blue"><span class="wob">&nbsp;x&nbsp;</span></font>(<font color="#00cc00"><span class="wog">&nbsp;I&nbsp;</span></font><font color="blue"><span class="wob">&nbsp;x&nbsp;</span></font>)
+
+next = color_step(std::move(next));
+//   K<font color="red"><span class="wor">&nbsp;x&nbsp;</span></font><font color="#00cc00"><span class="wog">&nbsp;(Ix)&nbsp;</span></font>
+// -><font color="red"><span class="wor">&nbsp;x&nbsp;</span></font>
+```
+
 Trailing operands are preserved. Unknown and undersaturated heads are skipped
 while the search continues through their explicit subexpressions. `S`, `K`,
 `I`, `Y`, deferred recursive `Y` nodes, and saturated named bases can all
@@ -497,11 +540,15 @@ keypress performs exactly one `single_step`, and Cancel ends the session. The
 Single Step and Key Step modes are mutually exclusive. The independent Basis
 Step button controls whether either stepping mode exposes a saturated named
 basis definition as a separate step. With Basis Step off, `Mx` goes directly
-to `xx`; with it on, the first step is `SIIx`. The browser prints the
-submitted starting expression immediately, then appends the output beneath it.
-Cancelling an evaluation appends `[cancelled]` beneath its starting expression.
-The Help button summarizes all stepping options in a keyboard-accessible
-dialog.
+to `xx`; with it on, the first step is `SIIx`. While either stepping mode is
+active, the Colorize button uses `color_step` to highlight the first, second,
+and third arguments of each reduction in red, green, and blue and carries
+those highlights into the reduced result. The browser prints the submitted
+starting expression immediately, then appends the output beneath it. Basis
+Step and Colorize may remain on when neither stepping mode is active; ordinary
+evaluation ignores both settings. Cancelling an evaluation appends
+`[cancelled]` beneath its starting expression. The Help button summarizes all
+stepping options in a keyboard-accessible dialog.
 
 For another CMake project, link the interface target after adding this project:
 

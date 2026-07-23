@@ -24,6 +24,7 @@
     const singleStep = document.querySelector("#single-step");
     const basisStep = document.querySelector("#basis-step");
     const keyStep = document.querySelector("#key-step");
+    const colorize = document.querySelector("#colorize");
     const cancel = document.querySelector("#cancel");
     const help = document.querySelector("#help");
     const helpDialog = document.querySelector("#help-dialog");
@@ -44,6 +45,7 @@
     let singleStepEnabled = false;
     let basisStepEnabled = false;
     let keyStepEnabled = false;
+    let colorizeEnabled = false;
 
     const errorMessage = error =>
         error instanceof Error ? error.message : String(error);
@@ -53,6 +55,7 @@
         singleStep.disabled = !ready || evaluating;
         basisStep.disabled = !ready || evaluating;
         keyStep.disabled = !ready || evaluating;
+        colorize.disabled = !ready || evaluating;
         cancel.disabled = !evaluating;
         source.readOnly = evaluating;
     };
@@ -70,6 +73,10 @@
             "aria-pressed", String(keyStepEnabled));
         keyStep.textContent = `Key Step: ${
             keyStepEnabled ? "On" : "Off"}`;
+        colorize.setAttribute(
+            "aria-pressed", String(colorizeEnabled));
+        colorize.textContent = `Colorize: ${
+            colorizeEnabled ? "On" : "Off"}`;
     };
 
     const outputText = text => text.endsWith("\n")
@@ -110,14 +117,25 @@
         return entry;
     };
 
-    const completeEvaluationOutput = (request, text, kind = "output") => {
+    const completeEvaluationOutput = (
+        request,
+        text,
+        kind = "output",
+        html = false,
+    ) => {
         const content = outputText(text);
         if (content === "") {
             return;
         }
 
         const result = document.createElement("span");
-        result.textContent = content;
+        if (html) {
+            // color_step escapes expression text and emits only its fixed
+            // color markup.
+            result.innerHTML = content;
+        } else {
+            result.textContent = content;
+        }
         result.dataset.kind = kind;
         request.outputEntry.append("\n", result);
         scrollToNewestOutput();
@@ -194,7 +212,10 @@
                         request, message.result.error, "error");
                 } else if (message.result.reduced) {
                     completeEvaluationOutput(
-                        request, message.result.output);
+                        request,
+                        message.result.output,
+                        "output",
+                        request.colorize);
                     request.stepReady = true;
                     status.textContent = "Press a key for the next step";
                 } else {
@@ -212,7 +233,11 @@
                 status.textContent = "Ready";
                 if (message.result.success) {
                     completeEvaluationOutput(
-                        completedRequest, message.result.output);
+                        completedRequest,
+                        message.result.output,
+                        "output",
+                        completedRequest.singleStep &&
+                            completedRequest.colorize);
                 } else {
                     completeEvaluationOutput(
                         completedRequest, message.result.error, "error");
@@ -272,6 +297,7 @@
             singleStep: singleStepEnabled,
             basisStep: basisStepEnabled,
             keyStep: keyStepEnabled,
+            colorize: colorizeEnabled,
             stepReady: false,
             stepPending: false,
             outputEntry: beginEvaluationOutput(startingExpression),
@@ -292,6 +318,7 @@
                 singleStep: submittedRequest.singleStep,
                 basisStep: submittedRequest.basisStep,
                 keyStep: submittedRequest.keyStep,
+                colorize: submittedRequest.colorize,
             });
         });
     });
@@ -302,6 +329,7 @@
             keyStepEnabled = false;
         }
         updateModeButtons();
+        updateControls();
     });
 
     basisStep.addEventListener("click", () => {
@@ -314,6 +342,12 @@
         if (keyStepEnabled) {
             singleStepEnabled = false;
         }
+        updateModeButtons();
+        updateControls();
+    });
+
+    colorize.addEventListener("click", () => {
+        colorizeEnabled = !colorizeEnabled;
         updateModeButtons();
     });
 

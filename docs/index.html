@@ -31,6 +31,21 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             color: CanvasText;
         }
 
+        .wor {
+            background-color: red;
+            color: white;
+        }
+
+        .wog {
+            background-color: #00cc00;
+            color: white;
+        }
+
+        .wob {
+            background-color: blue;
+            color: white;
+        }
+
         html,
         body {
             width: 100%;
@@ -110,7 +125,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
         }
 
         #single-step[aria-pressed="true"],
-        #basis-step[aria-pressed="true"] {
+        #basis-step[aria-pressed="true"],
+        #colorize[aria-pressed="true"] {
             border-color: #315be8;
             background: #315be8;
             color: white;
@@ -282,6 +298,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
                     aria-pressed="false" disabled>Key Step: Off</button>
                 <button id="basis-step" type="button"
                     aria-pressed="false" disabled>Basis Step: Off</button>
+                <button id="colorize" type="button"
+                    aria-pressed="false" disabled>Colorize: Off</button>
                 <button id="cancel" type="button" disabled>Cancel</button>
                 <button id="help" type="button" aria-haspopup="dialog"
                     aria-controls="help-dialog"
@@ -322,7 +340,17 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
                 example, <code>Mx</code> becomes <code>xx</code>). Basis Step:
                 On exposes its underlying definition as a separate reduction
                 first (so
-                <code>Mx</code> becomes <code>SIIx</code>).
+                <code>Mx</code> becomes <code>SIIx</code>). It may remain on
+                when neither stepping mode is active; ordinary evaluation
+                ignores it.
+            </dd>
+            <dt>Colorize</dt>
+            <dd>
+                When Single Step or Key Step is active, it highlights the
+                first, second, and third arguments of each reduction in red,
+                green, and blue, and carries those highlights into the
+                reduced result. It may remain on when neither stepping mode
+                is active; ordinary evaluation ignores it.
             </dd>
         </dl>
         <form method="dialog" class="dialog-controls">

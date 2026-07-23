@@ -74,6 +74,34 @@ std::optional<combdsl::quoted_expression> stepped_expression;
     }
 }
 
+[[nodiscard]] evaluation_result color_step_run_input(
+    std::string const& source, bool basis_step) {
+    try {
+        auto expression =
+            combdsl::parse(combdsl::input_escape(source));
+        std::ostringstream output;
+
+        for (;;) {
+            std::ostringstream step_output;
+            auto next = combdsl::color_step(
+                expression, step_output, basis_step);
+            if (combdsl::detail::quoted_access::root(next) ==
+                combdsl::detail::quoted_access::root(expression)) {
+                break;
+            }
+
+            output << step_output.str();
+            expression = std::move(next);
+        }
+
+        return {true, output.str(), {}};
+    } catch (std::exception const& error) {
+        return {false, {}, error.what()};
+    } catch (...) {
+        return {false, {}, "unknown evaluation error"};
+    }
+}
+
 [[nodiscard]] evaluation_result begin_single_step_input(
     std::string const& source) {
     stepped_expression.reset();
@@ -89,13 +117,19 @@ std::optional<combdsl::quoted_expression> stepped_expression;
     }
 }
 
-[[nodiscard]] single_step_result take_single_step(bool basis_step) {
+[[nodiscard]] single_step_result take_single_step(
+    bool basis_step, bool colorize) {
     if (!stepped_expression.has_value()) {
         return {false, false, {}, "no expression is ready to step"};
     }
 
     try {
-        auto next = combdsl::single_step(*stepped_expression, basis_step);
+        std::ostringstream output;
+        auto next = colorize
+            ? combdsl::color_step(
+                  *stepped_expression, output, basis_step)
+            : combdsl::single_step(
+                  *stepped_expression, basis_step);
         if (combdsl::detail::quoted_access::root(next) ==
             combdsl::detail::quoted_access::root(*stepped_expression)) {
             stepped_expression.reset();
@@ -103,9 +137,10 @@ std::optional<combdsl::quoted_expression> stepped_expression;
         }
 
         stepped_expression = std::move(next);
-        std::ostringstream output;
-        stepped_expression->print_to(output);
-        output << '\n';
+        if (!colorize) {
+            stepped_expression->print_to(output);
+            output << '\n';
+        }
         return {true, true, output.str(), {}};
     } catch (std::exception const& error) {
         stepped_expression.reset();
@@ -132,6 +167,7 @@ EMSCRIPTEN_BINDINGS(combdsl_browser) {
 
     emscripten::function("parseEval", &parse_eval_input);
     emscripten::function("singleStepRun", &single_step_run_input);
+    emscripten::function("colorStepRun", &color_step_run_input);
     emscripten::function("beginSingleStep", &begin_single_step_input);
     emscripten::function("takeSingleStep", &take_single_step);
 }

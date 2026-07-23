@@ -35,6 +35,7 @@ using combdsl::K;
 using combdsl::S;
 using combdsl::Y;
 using combdsl::basis;
+using combdsl::color_step;
 using combdsl::defer;
 using combdsl::eval;
 using combdsl::force;
@@ -339,6 +340,35 @@ void test_invalid_utf8_symbol(
             }
         },
         "invalid");
+}
+
+[[nodiscard]] std::string colored_argument(
+    std::string_view color,
+    std::string_view class_name,
+    std::string_view argument) {
+    std::string result;
+    result.reserve(
+        color.size() + class_name.size() + argument.size() + 57);
+    result += "<font color=\"";
+    result += color;
+    result += "\"><span class=\"";
+    result += class_name;
+    result += "\">&nbsp;";
+    result += argument;
+    result += "&nbsp;</span></font>";
+    return result;
+}
+
+[[nodiscard]] std::string red_argument(std::string_view argument) {
+    return colored_argument("red", "wor", argument);
+}
+
+[[nodiscard]] std::string green_argument(std::string_view argument) {
+    return colored_argument("#00cc00", "wog", argument);
+}
+
+[[nodiscard]] std::string blue_argument(std::string_view argument) {
+    return colored_argument("blue", "wob", argument);
 }
 
 void test_parse_failure(
@@ -1530,6 +1560,236 @@ int main() {
     test("single step run compares structure, not output",
          [&] { single_step_run(quote(basis("K", 1, K))(x)); },
          "Kx\n");
+    test("color step prints before and after each call",
+         [&] {
+             auto expression = color_step(quoted_ski_x);
+             static_cast<void>(color_step(std::move(expression)));
+         },
+         std::string{"  S"} +
+             red_argument("K") +
+             green_argument("I") +
+             blue_argument("x") +
+             "\n->" +
+             red_argument("K") +
+             blue_argument("x") +
+             "(" +
+             green_argument("I") +
+             blue_argument("x") +
+             ")\n  K" +
+             red_argument("x") +
+             green_argument("(Ix)") +
+             "\n->" +
+             red_argument("x") +
+             "\n");
+    test("color step prints an unchanged normal form",
+         [&] { static_cast<void>(color_step(quote(x))); },
+         "  x\n"
+         "->x\n");
+    test("color step colors I argument",
+         [&] { static_cast<void>(color_step(quote(I)(x))); },
+         std::string{"  I"} +
+             red_argument("x") +
+             "\n->" +
+             red_argument("x") +
+             "\n");
+    test("color step colors K arguments and preserves trailing operand",
+         [&] {
+             static_cast<void>(
+                 color_step(quote(K)(x)(y)(w)));
+         },
+         std::string{"  K"} +
+             red_argument("x") +
+             green_argument("y") +
+             "w\n->" +
+             red_argument("x") +
+             "w\n");
+    test("color step carries S argument colors through reduction",
+         [&] {
+             static_cast<void>(
+                 color_step(quote(S)(x)(y)(z)));
+         },
+         std::string{"  S"} +
+             red_argument("x") +
+             green_argument("y") +
+             blue_argument("z") +
+             "\n->" +
+             red_argument("x") +
+             blue_argument("z") +
+             "(" +
+             green_argument("y") +
+             blue_argument("z") +
+             ")\n");
+    test("color step carries Y argument color into deferred Y",
+         [&] { static_cast<void>(color_step(quote(Y)(x))); },
+         std::string{"  Y"} +
+             red_argument("x") +
+             "\n->" +
+             red_argument("x") +
+             "&lt;deferred Y(" +
+             red_argument("x") +
+             ")&gt;\n");
+    test("color step carries deferred Y generator color",
+         [&] {
+             static_cast<void>(
+                 color_step(single_step(quote(Y)(x))));
+         },
+         std::string{"  x&lt;deferred Y("} +
+             red_argument("x") +
+             ")&gt;\n->x(" +
+             red_argument("x") +
+             "&lt;deferred Y(" +
+             red_argument("x") +
+             ")&gt;)\n");
+    test("color step colors only the selected nested redex",
+         [&] {
+             static_cast<void>(
+                 color_step(quote(q)(quote(I)(x))));
+         },
+         std::string{"  q(I"} +
+             red_argument("x") +
+             ")\n->q" +
+             red_argument("x") +
+             "\n");
+    test("color step carries unary basis argument through duplication",
+         [&] { static_cast<void>(color_step(quote(M)(x))); },
+         std::string{"  M"} +
+             red_argument("x") +
+             "\n->" +
+             red_argument("x") +
+             red_argument("x") +
+             "\n");
+    test("color step carries binary basis arguments through reordering",
+         [&] { static_cast<void>(color_step(quote(T)(x)(y))); },
+         std::string{"  T"} +
+             red_argument("x") +
+             green_argument("y") +
+             "\n->" +
+             green_argument("y") +
+             red_argument("x") +
+             "\n");
+    test("color step carries ternary basis arguments through reordering",
+         [&] {
+             static_cast<void>(
+                 color_step(quote(C)(x)(y)(z)));
+         },
+         std::string{"  C"} +
+             red_argument("x") +
+             green_argument("y") +
+             blue_argument("z") +
+             "\n->" +
+             red_argument("x") +
+             blue_argument("z") +
+             green_argument("y") +
+             "\n");
+    test("color step leaves fourth basis argument uncolored",
+         [&] {
+             static_cast<void>(
+                 color_step(quote(D)(u)(v)(w)(x)));
+         },
+         std::string{"  D"} +
+             red_argument("u") +
+             green_argument("v") +
+             blue_argument("w") +
+             "x\n->" +
+             red_argument("u") +
+             green_argument("v") +
+             "(" +
+             blue_argument("w") +
+             "x)\n");
+    test("color step colored spacing precedes multicharacter basis",
+         [&] {
+             static_cast<void>(
+                 color_step(quote(I)(x)(Cstar)));
+         },
+         std::string{"  I"} +
+             red_argument("x") +
+             "Cstar\n->" +
+             red_argument("x") +
+             "Cstar\n");
+    test("color step compares structure rather than output",
+         [&] {
+             static_cast<void>(
+                 color_step(quote(basis("K", 1, K))(x)));
+         },
+         std::string{"  K"} +
+             red_argument("x") +
+             "\n->K" +
+             red_argument("x") +
+             "\n");
+    test("color step HTML-escapes expression text",
+         [&] {
+             static_cast<void>(
+                 color_step(quote(I)(std::string{"<&>\"'"})));
+         },
+         std::string{"  I"} +
+             red_argument("&lt;&amp;&gt;&quot;&#39;") +
+             "\n->" +
+             red_argument("&lt;&amp;&gt;&quot;&#39;") +
+             "\n");
+    test("color step preserves stream formatting",
+         [&] {
+             std::ostringstream output;
+             output << std::hex;
+             static_cast<void>(
+                 color_step(quote(I)(255), output));
+             std::cout << output.str();
+         },
+         std::string{"  I"} +
+             red_argument("&lt;ff&gt;") +
+             "\n->" +
+             red_argument("&lt;ff&gt;") +
+             "\n");
+    test("color step leaves a failed output stream untouched",
+         [&] {
+             std::ostringstream output;
+             output.setstate(std::ios_base::failbit);
+             auto result = color_step(quote(I)(x), output);
+             std::cout << "returned: ";
+             result();
+         },
+         "returned: x");
+    test("color step accepts an output stream without a buffer",
+         [&] {
+             std::ostream output(nullptr);
+             auto result = color_step(quote(I)(x), output);
+             std::cout << "returned: ";
+             result();
+         },
+         "returned: x");
+    test("color step does not color zero-arity basis expansion",
+         [&] {
+             static_cast<void>(
+                 color_step(quote(zero_arity_basis)));
+         },
+         "  Qzero\n"
+         "->K\n");
+    test("color step supports a custom output stream",
+         [&] {
+             std::ostringstream output;
+             auto expression = color_step(quoted_ski_x, output);
+             std::cout << output.str() << "returned: ";
+             expression();
+         },
+         std::string{"  S"} +
+             red_argument("K") +
+             green_argument("I") +
+             blue_argument("x") +
+             "\n->" +
+             red_argument("K") +
+             blue_argument("x") +
+             "(" +
+             green_argument("I") +
+             blue_argument("x") +
+             ")\nreturned: Kx(Ix)");
+    test("color step forwards basis step",
+         [&] {
+             static_cast<void>(color_step(quote(M)(x), true));
+         },
+         std::string{"  M"} +
+             red_argument("x") +
+             "\n->SII" +
+             red_argument("x") +
+             "\n");
     test("single step run resumes after SIGINT",
          [&] {
              std::istringstream input("\n");

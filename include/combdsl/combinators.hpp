@@ -25,9 +25,11 @@
 #include <cstdint>
 #include <functional>
 #include <iostream>
+#include <iterator>
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <streambuf>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -214,6 +216,124 @@ inline void print_token(
 inline void print_layout(std::ostream& output, std::string_view text) {
     output.write(text.data(), static_cast<std::streamsize>(text.size()));
     record_printed_token(output, printed_token::none);
+}
+
+class html_escaping_streambuf final : public std::streambuf {
+public:
+    explicit html_escaping_streambuf(std::streambuf* destination)
+        : destination_(destination) {}
+
+    void begin_raw_output() noexcept {
+        ++raw_output_depth_;
+    }
+
+    void end_raw_output() noexcept {
+        --raw_output_depth_;
+    }
+
+protected:
+    int_type overflow(int_type value) override {
+        if (traits_type::eq_int_type(value, traits_type::eof())) {
+            return traits_type::not_eof(value);
+        }
+
+        if (raw_output_depth_ != 0) {
+            return destination_->sputc(
+                traits_type::to_char_type(value));
+        }
+
+        return write_escaped(traits_type::to_char_type(value))
+                   ? value
+                   : traits_type::eof();
+    }
+
+    std::streamsize xsputn(
+        char const* text,
+        std::streamsize size) override {
+        if (raw_output_depth_ != 0) {
+            return destination_->sputn(text, size);
+        }
+
+        std::streamsize written = 0;
+        while (written < size && write_escaped(text[written])) {
+            ++written;
+        }
+        return written;
+    }
+
+    int sync() override {
+        return destination_->pubsync();
+    }
+
+private:
+    [[nodiscard]] bool write_raw(std::string_view text) {
+        return destination_->sputn(
+                   text.data(),
+                   static_cast<std::streamsize>(text.size())) ==
+               static_cast<std::streamsize>(text.size());
+    }
+
+    [[nodiscard]] bool write_escaped(char value) {
+        switch (value) {
+        case '&':
+            return write_raw("&amp;");
+        case '<':
+            return write_raw("&lt;");
+        case '>':
+            return write_raw("&gt;");
+        case '"':
+            return write_raw("&quot;");
+        case '\'':
+            return write_raw("&#39;");
+        default:
+            return destination_->sputc(value) != traits_type::eof();
+        }
+    }
+
+    std::streambuf* destination_;
+    std::size_t raw_output_depth_ = 0;
+};
+
+[[nodiscard]] inline int html_escaping_streambuf_index() {
+    static int const index = std::ios_base::xalloc();
+    return index;
+}
+
+class raw_html_output_scope {
+public:
+    explicit raw_html_output_scope(
+        html_escaping_streambuf& buffer) noexcept
+        : buffer_(buffer) {
+        buffer_.begin_raw_output();
+    }
+
+    raw_html_output_scope(raw_html_output_scope const&) = delete;
+    raw_html_output_scope& operator=(
+        raw_html_output_scope const&) = delete;
+
+    ~raw_html_output_scope() {
+        buffer_.end_raw_output();
+    }
+
+private:
+    html_escaping_streambuf& buffer_;
+};
+
+inline void print_html_markup(
+    std::ostream& output,
+    std::string_view markup) {
+    auto* escaping = static_cast<html_escaping_streambuf*>(
+        output.pword(html_escaping_streambuf_index()));
+    if (escaping != nullptr) {
+        raw_html_output_scope raw_output(*escaping);
+        output.write(
+            markup.data(),
+            static_cast<std::streamsize>(markup.size()));
+        return;
+    }
+
+    output.write(
+        markup.data(), static_cast<std::streamsize>(markup.size()));
 }
 
 template <raw_string_operand Value>
@@ -1586,6 +1706,7 @@ enum class quoted_node_kind {
     application,
     recursive_y,
     basis_argument,
+    html_argument,
     basis
 };
 
@@ -1799,6 +1920,67 @@ private:
     quoted_expression argument_;
 };
 
+enum class html_argument_color {
+    red,
+    green,
+    blue
+};
+
+class quoted_html_argument_node final : public quoted_node {
+public:
+    quoted_html_argument_node(
+        quoted_expression argument,
+        html_argument_color color)
+        : argument_(std::move(argument)), color_(color) {}
+
+    [[nodiscard]] quoted_node_kind kind() const noexcept override {
+        return quoted_node_kind::html_argument;
+    }
+
+    void print_to(std::ostream& output) const override {
+        print_with_markup(output, false);
+    }
+
+    void print_as_operand_to(std::ostream& output) const override {
+        print_with_markup(output, true);
+    }
+
+    [[nodiscard]] quoted_expression const& argument() const noexcept {
+        return argument_;
+    }
+
+private:
+    void print_with_markup(
+        std::ostream& output,
+        bool as_operand) const {
+        print_html_markup(output, opening_markup());
+        record_printed_token(output, printed_token::none);
+        if (as_operand) {
+            argument_.print_as_operand_to(output);
+        } else {
+            argument_.print_to(output);
+        }
+        print_html_markup(
+            output, "&nbsp;</span></font>");
+        record_printed_token(output, printed_token::none);
+    }
+
+    [[nodiscard]] std::string_view opening_markup() const noexcept {
+        switch (color_) {
+        case html_argument_color::red:
+            return "<font color=\"red\"><span class=\"wor\">&nbsp;";
+        case html_argument_color::green:
+            return "<font color=\"#00cc00\"><span class=\"wog\">&nbsp;";
+        case html_argument_color::blue:
+            return "<font color=\"blue\"><span class=\"wob\">&nbsp;";
+        }
+        return {};
+    }
+
+    quoted_expression argument_;
+    html_argument_color color_;
+};
+
 class quoted_basis_node_base : public quoted_node {
 public:
     [[nodiscard]] quoted_node_kind kind() const noexcept final {
@@ -1857,6 +2039,14 @@ make_quoted_recursive_y(quoted_expression generator) {
 make_quoted_basis_argument(quoted_expression argument) {
     return quoted_access::make(
         std::make_shared<quoted_basis_argument_node>(std::move(argument)));
+}
+
+[[nodiscard]] inline quoted_expression make_quoted_html_argument(
+    quoted_expression argument,
+    html_argument_color color) {
+    return quoted_access::make(
+        std::make_shared<quoted_html_argument_node>(
+            std::move(argument), color));
 }
 
 template <class Value>
@@ -2128,9 +2318,15 @@ struct reduction_options {
     bool reduce_bare_recursive_y = true;
 };
 
+struct reduction_trace {
+    std::optional<quoted_expression> before;
+    std::optional<quoted_expression> after;
+};
+
 [[nodiscard]] inline std::optional<quoted_expression>
 reduce_next_redex(quoted_expression const& expression,
-                  reduction_options options);
+                  reduction_options options,
+                  reduction_trace* trace = nullptr);
 
 [[nodiscard]] inline quoted_expression
 restore_basis_arguments(quoted_expression const& expression) {
@@ -2158,7 +2354,77 @@ restore_basis_arguments(quoted_expression const& expression) {
 }
 
 [[nodiscard]] inline quoted_expression
-reduce_at_head(quoted_expression expression, reduction_options options) {
+strip_html_argument_colors(quoted_expression const& expression) {
+    auto const& root = quoted_access::root(expression);
+    switch (root->kind()) {
+    case quoted_node_kind::html_argument:
+        return strip_html_argument_colors(
+            static_cast<quoted_html_argument_node const&>(*root)
+                .argument());
+    case quoted_node_kind::application: {
+        auto const& application =
+            static_cast<quoted_application_node const&>(*root);
+        return make_quoted_application(
+            strip_html_argument_colors(application.function()),
+            strip_html_argument_colors(application.argument()));
+    }
+    case quoted_node_kind::recursive_y: {
+        auto const& recursive =
+            static_cast<quoted_recursive_y_node const&>(*root);
+        return make_quoted_recursive_y(
+            strip_html_argument_colors(recursive.generator()));
+    }
+    case quoted_node_kind::basis_argument:
+        return make_quoted_basis_argument(
+            strip_html_argument_colors(
+                static_cast<quoted_basis_argument_node const&>(*root)
+                    .argument()));
+    default:
+        return expression;
+    }
+}
+
+inline void print_quoted_html(
+    std::ostream& output,
+    quoted_expression const& expression) {
+    if (!output.good()) {
+        return;
+    }
+    if (output.pword(html_escaping_streambuf_index()) != nullptr) {
+        expression.print_to(output);
+        return;
+    }
+
+    auto const context_index = html_escaping_streambuf_index();
+    auto* destination = output.rdbuf();
+    auto* previous_context = output.pword(context_index);
+    html_escaping_streambuf escaping(destination);
+    output.rdbuf(&escaping);
+    output.pword(context_index) = &escaping;
+
+    auto restore_output = [&] {
+        auto const state = output.rdstate();
+        output.pword(context_index) = previous_context;
+        output.rdbuf(destination);
+        if (state != std::ios_base::goodbit) {
+            output.setstate(state);
+        }
+    };
+
+    try {
+        expression.print_to(output);
+    } catch (...) {
+        restore_output();
+        throw;
+    }
+    restore_output();
+}
+
+[[nodiscard]] inline quoted_expression
+reduce_at_head(
+    quoted_expression expression,
+    reduction_options options,
+    reduction_trace* trace) {
     std::vector<quoted_expression> reversed_arguments;
     auto head = expression;
 
@@ -2181,33 +2447,69 @@ reduce_at_head(quoted_expression expression, reduction_options options) {
         return result;
     };
 
+    auto prepare_trace = [&](std::size_t arity) {
+        if (trace == nullptr) {
+            return;
+        }
+
+        constexpr html_argument_color colors[] = {
+            html_argument_color::red,
+            html_argument_color::green,
+            html_argument_color::blue,
+        };
+        auto const colored_arguments =
+            std::min(arity, std::size(colors));
+        for (std::size_t index = 0;
+             index < colored_arguments;
+             ++index) {
+            reversed_arguments[index] = make_quoted_html_argument(
+                std::move(reversed_arguments[index]), colors[index]);
+        }
+        trace->before = append_arguments(head, 0);
+    };
+
+    auto finish_trace = [trace](quoted_expression result) {
+        if (trace != nullptr) {
+            trace->after = result;
+        }
+        return result;
+    };
+
     auto const kind = quoted_access::root(head)->kind();
     switch (kind) {
     case quoted_node_kind::identity:
         if (reversed_arguments.size() >= 1) {
-            return append_arguments(reversed_arguments[0], 1);
+            prepare_trace(1);
+            return finish_trace(
+                append_arguments(reversed_arguments[0], 1));
         }
         break;
     case quoted_node_kind::constant:
         if (reversed_arguments.size() >= 2) {
-            return append_arguments(reversed_arguments[0], 2);
+            prepare_trace(2);
+            return finish_trace(
+                append_arguments(reversed_arguments[0], 2));
         }
         break;
     case quoted_node_kind::substitution:
         if (reversed_arguments.size() >= 3) {
+            prepare_trace(3);
             auto const& function = reversed_arguments[0];
             auto const& argument = reversed_arguments[1];
             auto const& value = reversed_arguments[2];
             auto result = function(value)(argument(value));
-            return append_arguments(std::move(result), 3);
+            return finish_trace(
+                append_arguments(std::move(result), 3));
         }
         break;
     case quoted_node_kind::fixed_point:
         if (reversed_arguments.size() >= 1) {
+            prepare_trace(1);
             auto const& generator = reversed_arguments[0];
             auto recursive = make_quoted_recursive_y(generator);
             auto result = generator(std::move(recursive));
-            return append_arguments(std::move(result), 1);
+            return finish_trace(
+                append_arguments(std::move(result), 1));
         }
         break;
     case quoted_node_kind::recursive_y: {
@@ -2215,18 +2517,31 @@ reduce_at_head(quoted_expression expression, reduction_options options) {
             reversed_arguments.empty()) {
             break;
         }
+
         auto const& recursive =
             static_cast<quoted_recursive_y_node const&>(
                 *quoted_access::root(head));
-        auto result = recursive.generator()(head);
-        return append_arguments(std::move(result), 0);
+        if (trace != nullptr) {
+            head = make_quoted_recursive_y(
+                make_quoted_html_argument(
+                    recursive.generator(), html_argument_color::red));
+            trace->before = append_arguments(head, 0);
+        }
+        auto const& traced_recursive =
+            static_cast<quoted_recursive_y_node const&>(
+                *quoted_access::root(head));
+        auto result = traced_recursive.generator()(head);
+        return finish_trace(
+            append_arguments(std::move(result), 0));
     }
     case quoted_node_kind::basis: {
         auto const& basis = static_cast<quoted_basis_node_base const&>(
             *quoted_access::root(head));
         if (reversed_arguments.size() >= basis.arity()) {
+            prepare_trace(basis.arity());
             if (options.basis_step || basis.arity() == 0) {
-                return append_arguments(basis.body(), 0);
+                return finish_trace(
+                    append_arguments(basis.body(), 0));
             }
 
             auto result = basis.body();
@@ -2244,8 +2559,9 @@ reduce_at_head(quoted_expression expression, reduction_options options) {
                 result = std::move(*reduced);
             }
 
-            return append_arguments(restore_basis_arguments(result),
-                                    basis.arity());
+            return finish_trace(
+                append_arguments(
+                    restore_basis_arguments(result), basis.arity()));
         }
         break;
     }
@@ -2258,8 +2574,9 @@ reduce_at_head(quoted_expression expression, reduction_options options) {
 
 [[nodiscard]] inline std::optional<quoted_expression>
 reduce_next_redex(quoted_expression const& expression,
-                  reduction_options options) {
-    auto reduced = reduce_at_head(expression, options);
+                  reduction_options options,
+                  reduction_trace* trace) {
+    auto reduced = reduce_at_head(expression, options, trace);
     if (quoted_access::root(reduced) != quoted_access::root(expression)) {
         return reduced;
     }
@@ -2272,14 +2589,26 @@ reduce_next_redex(quoted_expression const& expression,
     auto const& application =
         static_cast<quoted_application_node const&>(*root);
     if (auto reduced_function =
-            reduce_next_redex(application.function(), options)) {
-        return make_quoted_application(
+            reduce_next_redex(application.function(), options, trace)) {
+        auto result = make_quoted_application(
             std::move(*reduced_function), application.argument());
+        if (trace != nullptr) {
+            trace->before = make_quoted_application(
+                std::move(*trace->before), application.argument());
+            trace->after = result;
+        }
+        return result;
     }
     if (auto reduced_argument =
-            reduce_next_redex(application.argument(), options)) {
-        return make_quoted_application(
+            reduce_next_redex(application.argument(), options, trace)) {
+        auto result = make_quoted_application(
             application.function(), std::move(*reduced_argument));
+        if (trace != nullptr) {
+            trace->before = make_quoted_application(
+                application.function(), std::move(*trace->before));
+            trace->after = result;
+        }
+        return result;
     }
 
     return std::nullopt;
@@ -2296,6 +2625,44 @@ single_step(quoted_expression expression, bool basis_step = false) {
     }
 
     return expression;
+}
+
+[[nodiscard]] inline quoted_expression color_step(
+    quoted_expression expression,
+    std::ostream& output = std::cout,
+    bool basis_step = false) {
+    detail::reduction_trace trace;
+    auto reduced = detail::reduce_next_redex(
+        expression,
+        detail::reduction_options{.basis_step = basis_step},
+        &trace);
+    auto const& before =
+        trace.before ? *trace.before : expression;
+    auto const& after =
+        trace.after ? *trace.after
+                    : (reduced ? *reduced : expression);
+
+    detail::print_layout(output, "  ");
+    detail::print_quoted_html(output, before);
+    detail::print_layout(output, "\n");
+    output.flush();
+
+    detail::print_layout(output, "->");
+    detail::print_quoted_html(output, after);
+    detail::print_layout(output, "\n");
+    output.flush();
+
+    if (reduced) {
+        return detail::strip_html_argument_colors(after);
+    }
+    return expression;
+}
+
+[[nodiscard]] inline quoted_expression color_step(
+    quoted_expression expression,
+    bool basis_step) {
+    return color_step(
+        std::move(expression), std::cout, basis_step);
 }
 
 namespace detail {
