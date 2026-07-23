@@ -472,14 +472,16 @@ EM_CACHE="$PWD/build-emscripten-cache" emcmake cmake -S . -B build-browser \
     -DCOMBDSL_BUILD_TESTS=OFF \
     -DCMAKE_BUILD_TYPE=Release
 EM_CACHE="$PWD/build-emscripten-cache" \
-    cmake --build build-browser --target combdsl_browser
+    cmake --build build-browser --target combdsl_browser_docs
 ```
 
-Serve the generated static files with any HTTP server and open
+The `combdsl_browser_docs` target builds the WebAssembly application and
+refreshes the tracked browser files in `docs`. Serve those static files with
+any HTTP server and open
 `http://localhost:8000/`:
 
 ```sh
-python3 -m http.server 8000 --directory build-browser/web
+python3 -m http.server 8000 --directory docs
 ```
 
 This does not use `emrun`. Loading through `file://` is not supported because

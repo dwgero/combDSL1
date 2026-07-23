@@ -106,6 +106,40 @@ if(COMBDSL_BUILD_BROWSER)
             COPYONLY
         )
     endforeach()
+
+    set(
+        COMBDSL_BROWSER_DOCS_DIRECTORY
+        "${CMAKE_CURRENT_SOURCE_DIR}/docs"
+    )
+    add_custom_target(
+        combdsl_browser_docs
+        COMMAND
+            "${CMAKE_COMMAND}" -E make_directory
+            "${COMBDSL_BROWSER_DOCS_DIRECTORY}"
+        COMMAND
+            "${CMAKE_COMMAND}" -E copy_if_different
+            "${COMBDSL_BROWSER_OUTPUT_DIRECTORY}/index.html"
+            "${COMBDSL_BROWSER_DOCS_DIRECTORY}/index.html"
+        COMMAND
+            "${CMAKE_COMMAND}" -E copy_if_different
+            "${COMBDSL_BROWSER_OUTPUT_DIRECTORY}/app.js"
+            "${COMBDSL_BROWSER_DOCS_DIRECTORY}/app.js"
+        COMMAND
+            "${CMAKE_COMMAND}" -E copy_if_different
+            "${COMBDSL_BROWSER_OUTPUT_DIRECTORY}/worker.js"
+            "${COMBDSL_BROWSER_DOCS_DIRECTORY}/worker.js"
+        COMMAND
+            "${CMAKE_COMMAND}" -E copy_if_different
+            "${COMBDSL_BROWSER_OUTPUT_DIRECTORY}/combdsl.js"
+            "${COMBDSL_BROWSER_DOCS_DIRECTORY}/combdsl.js"
+        COMMAND
+            "${CMAKE_COMMAND}" -E copy_if_different
+            "${COMBDSL_BROWSER_OUTPUT_DIRECTORY}/combdsl.wasm"
+            "${COMBDSL_BROWSER_DOCS_DIRECTORY}/combdsl.wasm"
+        DEPENDS combdsl_browser
+        COMMENT "Refreshing the tracked browser application in docs"
+        VERBATIM
+    )
 endif()
 
 if(COMBDSL_BUILD_TESTS)

@@ -410,7 +410,7 @@
         showStartupError(
             "WebAssembly cannot run from file://.\n\n" +
             "Serve the generated directory over HTTP, for example:\n\n" +
-            "python3 -m http.server 8000 --directory build-browser/web\n\n" +
+            "python3 -m http.server 8000 --directory docs\n\n" +
             "Then open http://localhost:8000/",
         );
     } else {
