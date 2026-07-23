@@ -1,0 +1,407 @@
+<!doctype html>
+<!--
+C++ combinator DSL
+Copyright (C) 2026  David W. Gero
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see <http://www.gnu.org/licenses/>.
+-->
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="icon" href="data:,">
+    <title>Combinator Read-Eval-Print</title>
+    <style>
+        :root {
+            color-scheme: light dark;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Consolas,
+                "Liberation Mono", monospace;
+            background: Canvas;
+            color: CanvasText;
+        }
+
+        html,
+        body {
+            width: 100%;
+            height: 100%;
+        }
+
+        body {
+            margin: 0;
+            overflow: hidden;
+        }
+
+        main {
+            box-sizing: border-box;
+            width: 100%;
+            height: 100%;
+            min-height: 0;
+            padding: 1.5rem;
+            display: grid;
+            grid-template-rows: auto minmax(0, 1fr) auto;
+            gap: 1.25rem;
+            overflow: hidden;
+        }
+
+        h1 {
+            margin: 0;
+            font-family: system-ui, sans-serif;
+            font-size: clamp(1.5rem, 4vw, 2.25rem);
+            text-align: center;
+        }
+
+        label {
+            display: block;
+            margin: 0 0 0.5rem;
+            font-family: system-ui, sans-serif;
+            font-size: 0.95rem;
+            font-weight: 650;
+        }
+
+        textarea,
+        pre {
+            box-sizing: border-box;
+            width: 100%;
+            border: 1px solid color-mix(in srgb, CanvasText 25%, Canvas);
+            border-radius: 0.5rem;
+            background: color-mix(in srgb, CanvasText 4%, Canvas);
+            color: CanvasText;
+            font: inherit;
+            overflow-wrap: anywhere;
+            white-space: pre-wrap;
+        }
+
+        textarea {
+            min-height: 7rem;
+            padding: 0.8rem;
+            resize: vertical;
+        }
+
+        .controls {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 0.75rem;
+            margin: 0.75rem 0 0;
+        }
+
+        button {
+            border: 1px solid color-mix(in srgb, CanvasText 30%, Canvas);
+            border-radius: 0.45rem;
+            padding: 0.55rem 0.9rem;
+            font: 600 0.9rem system-ui, sans-serif;
+            cursor: pointer;
+        }
+
+        button:disabled {
+            cursor: default;
+            opacity: 0.5;
+        }
+
+        #single-step[aria-pressed="true"],
+        #basis-step[aria-pressed="true"] {
+            border-color: #315be8;
+            background: #315be8;
+            color: white;
+        }
+
+        #key-step[aria-pressed="true"] {
+            border-color: #315be8;
+            background: #315be8;
+            color: white;
+        }
+
+        #help[aria-expanded="true"],
+        #combinator-info[aria-expanded="true"],
+        #about[aria-expanded="true"] {
+            border-color: #315be8;
+            background: #315be8;
+            color: white;
+        }
+
+        #status {
+            margin-left: auto;
+            font: 0.85rem system-ui, sans-serif;
+            color: color-mix(in srgb, CanvasText 68%, Canvas);
+        }
+
+        dialog {
+            box-sizing: border-box;
+            width: min(32rem, calc(100% - 2rem));
+            max-height: calc(100% - 2rem);
+            border: 1px solid color-mix(in srgb, CanvasText 25%, Canvas);
+            border-radius: 0.65rem;
+            padding: 1.25rem;
+            background: Canvas;
+            color: CanvasText;
+            overflow: auto;
+        }
+
+        dialog::backdrop {
+            background: rgb(0 0 0 / 45%);
+        }
+
+        dialog h2 {
+            margin: 0 0 1rem;
+            font: 650 1.15rem system-ui, sans-serif;
+        }
+
+        dialog dl {
+            margin: 0;
+        }
+
+        dialog dt {
+            margin-top: 1rem;
+            font-weight: 700;
+        }
+
+        dialog dt:first-child {
+            margin-top: 0;
+        }
+
+        dialog dd {
+            margin: 0.25rem 0 0;
+            line-height: 1.5;
+        }
+
+        .dialog-intro {
+            margin: 0 0 1rem;
+            font: 0.9rem/1.5 system-ui, sans-serif;
+        }
+
+        #combinator-info-dialog,
+        #about-dialog {
+            width: min(40rem, calc(100% - 2rem));
+        }
+
+        #combinator-info-dialog {
+            max-height: calc(100vh - 2rem);
+            max-height: calc(100dvh - 2rem);
+            overflow-y: auto;
+            overscroll-behavior-y: contain;
+        }
+
+        #help-dialog dl,
+        .license-text {
+            font: 0.9rem/1.5 system-ui, sans-serif;
+        }
+
+        .license-text {
+            margin: 0;
+        }
+
+        .license-text p {
+            margin: 0 0 1rem;
+        }
+
+        .license-text p:last-child {
+            margin-bottom: 0;
+        }
+
+        .combinator-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .combinator-table th,
+        .combinator-table td {
+            border-bottom: 1px solid
+                color-mix(in srgb, CanvasText 15%, Canvas);
+            padding: 0.5rem 0.65rem;
+            text-align: left;
+            vertical-align: top;
+        }
+
+        .combinator-table thead th {
+            padding-top: 0;
+            font: 700 0.85rem system-ui, sans-serif;
+        }
+
+        .combinator-table tbody th {
+            font: 650 0.9rem system-ui, sans-serif;
+        }
+
+        .combinator-table code {
+            white-space: nowrap;
+        }
+
+        .dialog-controls {
+            display: flex;
+            justify-content: flex-end;
+            margin-top: 1.25rem;
+        }
+
+        .result {
+            min-height: 0;
+            display: flex;
+            flex-direction: column;
+        }
+
+        pre {
+            min-height: 0;
+            flex: 1;
+            margin: 0;
+            padding: 0.8rem;
+            overflow: auto;
+            overscroll-behavior: contain;
+        }
+
+        pre [data-kind="error"] {
+            color: #c33;
+        }
+    </style>
+    <script src="./app.js" defer></script>
+</head>
+<body>
+    <main>
+        <h1>Combinator Read-Eval-Print</h1>
+
+        <section class="result" aria-label="Evaluation results">
+            <pre id="output" aria-live="polite" tabindex="0"></pre>
+        </section>
+
+        <form id="evaluation-form">
+            <label for="source">Combinator Expression</label>
+            <textarea id="source" name="source" spellcheck="false"
+                autocapitalize="off" wrap="soft">SKIx</textarea>
+            <div class="controls">
+                <button id="single-step" type="button"
+                    aria-pressed="false" disabled>Single Step: Off</button>
+                <button id="key-step" type="button"
+                    aria-pressed="false" disabled>Key Step: Off</button>
+                <button id="basis-step" type="button"
+                    aria-pressed="false" disabled>Basis Step: Off</button>
+                <button id="cancel" type="button" disabled>Cancel</button>
+                <button id="help" type="button" aria-haspopup="dialog"
+                    aria-controls="help-dialog"
+                    aria-expanded="false">Help</button>
+                <button id="combinator-info" type="button"
+                    aria-haspopup="dialog"
+                    aria-controls="combinator-info-dialog"
+                    aria-expanded="false">Combinator Info</button>
+                <button id="about" type="button" aria-haspopup="dialog"
+                    aria-controls="about-dialog"
+                    aria-expanded="false">About</button>
+                <span id="status" role="status">Loading WebAssembly…</span>
+            </div>
+        </form>
+    </main>
+
+    <dialog id="help-dialog" aria-labelledby="help-title">
+        <h2 id="help-title">Stepping options</h2>
+        <dl>
+            <dt>Single Step</dt>
+            <dd>
+                Runs automatically and displays every reduction until normal
+                form is reached or Cancel is selected.
+            </dd>
+            <dt>Key Step</dt>
+            <dd>
+                Pauses after initial expression scanning. Press any ordinary
+                key for exactly one reduction. When normal form is reached,
+                the next keypress ends the reduction. Cancel also ends the
+                reduction.
+            </dd>
+            <dt>Basis Step</dt>
+            <dd>
+                Changes how Single Step and Key Step handle named bases
+                defined by compound combinators. All the bird combinators (see
+                Combinator Info) except S, K, I, and Y are named bases. Basis
+                Step: Off contracts a saturated named basis directly (for
+                example, <code>Mx</code> becomes <code>xx</code>). Basis Step:
+                On exposes its underlying definition as a separate reduction
+                first (so
+                <code>Mx</code> becomes <code>SIIx</code>).
+            </dd>
+        </dl>
+        <form method="dialog" class="dialog-controls">
+            <button type="submit" autofocus>Close</button>
+        </form>
+    </dialog>
+
+    <dialog id="combinator-info-dialog"
+        aria-labelledby="combinator-info-title">
+        <h2 id="combinator-info-title" tabindex="-1"
+            data-dialog-initial-focus>Bird Combinators</h2>
+        <p class="dialog-intro">
+            Most of the birds come from Raymond Smullyan's book
+            <a href="https://en.wikipedia.org/wiki/To_Mock_a_Mockingbird"
+                target="_blank" rel="noopener noreferrer"><cite>To Mock a
+                Mockingbird</cite></a>.
+            Application is left-associative, meaning xyz at the head of an
+            expression or right after a ( acts like ((xy)z).
+            Note that the xyz in Cxyz is not at the head; C is.
+            To add a bird:<br>
+            <code>set birdname = combinator expression</code>
+        </p>
+        <table class="combinator-table"
+            aria-label="Bird combinator reduction rules">
+            <thead>
+                <tr>
+                    <th scope="col">Bird</th>
+                    <th scope="col">Reduction</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr><th scope="row">Albatross</th><td><code>Axy = x(yx)</code></td></tr>
+                <tr><th scope="row">Bluebird</th><td><code>Bxyz = x(yz)</code></td></tr>
+                <tr><th scope="row">Cardinal</th><td><code>Cxyz = xzy</code></td></tr>
+                <tr><th scope="row">Dove</th><td><code>Dxyzw = xy(zw)</code></td></tr>
+                <tr><th scope="row">Identity</th><td><code>Ix = x</code></td></tr>
+                <tr><th scope="row">Kestrel</th><td><code>Kxy = x</code></td></tr>
+                <tr><th scope="row">Lark</th><td><code>Lxy = x(yy)</code></td></tr>
+                <tr><th scope="row">Mockingbird</th><td><code>Mx = xx</code></td></tr>
+                <tr><th scope="row">Nightingale</th><td><code>Nxy = xyx</code></td></tr>
+                <tr><th scope="row">Owl</th><td><code>Oxy = y(xy)</code></td></tr>
+                <tr><th scope="row">Peacock</th><td><code>Pxyz = y(xz)</code></td></tr>
+                <tr><th scope="row">Robin</th><td><code>Rxyz = yzx</code></td></tr>
+                <tr><th scope="row">Sage</th><td><code>Yx = x(Yx)</code></td></tr>
+                <tr><th scope="row">Starling</th><td><code>Sxyz = xz(yz)</code></td></tr>
+                <tr><th scope="row">Thrush</th><td><code>Txy = yx</code></td></tr>
+                <tr><th scope="row">Vireo</th><td><code>Vxyz = zxy</code></td></tr>
+                <tr><th scope="row">Warbler</th><td><code>Wxy = xyy</code></td></tr>
+                <tr><th scope="row">Zazu</th><td><code>Zxy = x(xy)</code></td></tr>
+            </tbody>
+        </table>
+        <form method="dialog" class="dialog-controls">
+            <button type="submit">Close</button>
+        </form>
+    </dialog>
+
+    <dialog id="about-dialog" aria-labelledby="about-title">
+        <h2 id="about-title" tabindex="-1"
+            data-dialog-initial-focus>About</h2>
+        <div class="license-text">
+            <p>C++ combinator DSL<br>Copyright (C) 2026  David W. Gero</p>
+            <p>This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.</p>
+            <p>This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.</p>
+            <p>A copy of the GNU General Public License, Version 3, is available
+at &lt;<a href="http://gnu.org/licenses/gpl-3.0.html#license-text"
+                    target="_blank" rel="noopener noreferrer">http://gnu.org/licenses/gpl-3.0.html#license-text</a>&gt;.</p>
+            <p>The source for this program is available at
+                &lt;<a href="https://github.com/dwgero/combDSL1" target="_blank"
+                    rel="noopener noreferrer">https://github.com/dwgero/combDSL1</a>&gt;.</p>
+        </div>
+        <form method="dialog" class="dialog-controls">
+            <button type="submit">Close</button>
+        </form>
+    </dialog>
+</body>
+</html>
