@@ -228,7 +228,7 @@ output stream before `basis_step`.
 
 For the redex selected by that step, the first required argument is shown red,
 the second tunic green (`#00cc00`), the third blue, the fourth dark orange
-(`#ff8c00`), and the fifth munsell purple (`#cc00ff`). This applies to `S`, `K`,
+(`#ff8c00`), and the fifth Munsell purple (`#cc00ff`). This applies to `S`, `K`,
 `I`, `Y`, deferred recursive `Y` nodes, and named bases with positive arity.
 Only the first five required arguments are colored; trailing arguments and
 additional basis arguments remain uncolored. The wrappers follow their
@@ -551,7 +551,7 @@ definition as a separate step. With Basis Step off, `Mx` goes directly to
 `xx`; with it on, the first step is `SIIx`. While either stepping mode is
 active, the Colorize button uses `color_step` to highlight the first, second,
 third, fourth, and fifth arguments of each reduction in red, tunic green, blue,
-dark orange, and munsell purple and carries those highlights into the reduced
+dark orange, and Munsell purple and carries those highlights into the reduced
 result. After the final colorized reduction, the normal form is printed without
 color at the left margin. The browser prints the submitted starting expression
 immediately, then appends the output beneath it. A successfully registered
