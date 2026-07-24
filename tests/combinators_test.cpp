@@ -343,42 +343,39 @@ void test_invalid_utf8_symbol(
 }
 
 [[nodiscard]] std::string colored_argument(
-    std::string_view color,
     std::string_view class_name,
     std::string_view argument) {
     std::string result;
     result.reserve(
-        color.size() + class_name.size() + argument.size() + 57);
-    result += "<font color=\"";
-    result += color;
-    result += "\"><span class=\"";
+        class_name.size() + argument.size() + 22);
+    result += "<span class=\"";
     result += class_name;
-    result += "\">&nbsp;";
+    result += "\">";
     result += argument;
-    result += "&nbsp;</span></font>";
+    result += "</span>";
     return result;
 }
 
 [[nodiscard]] std::string red_argument(std::string_view argument) {
-    return colored_argument("red", "wor", argument);
+    return colored_argument("wor", argument);
 }
 
 [[nodiscard]] std::string green_argument(std::string_view argument) {
-    return colored_argument("#00cc00", "wog", argument);
+    return colored_argument("wog", argument);
 }
 
 [[nodiscard]] std::string blue_argument(std::string_view argument) {
-    return colored_argument("blue", "wob", argument);
+    return colored_argument("wob", argument);
 }
 
 [[nodiscard]] std::string dark_orange_argument(
     std::string_view argument) {
-    return colored_argument("#ff8c00", "woo", argument);
+    return colored_argument("woo", argument);
 }
 
 [[nodiscard]] std::string munsel_purple_argument(
     std::string_view argument) {
-    return colored_argument("#cc00ff", "wop", argument);
+    return colored_argument("wop", argument);
 }
 
 void test_parse_failure(
@@ -1730,7 +1727,7 @@ int main() {
                          (u)(v)(w)(x)(y)(z)));
          },
          std::string{"  Fifth"} +
-             red_argument("u") +
+             red_argument(" u") +
              green_argument("v") +
              blue_argument("w") +
              dark_orange_argument("x") +
@@ -1745,9 +1742,19 @@ int main() {
          },
          std::string{"  I"} +
              red_argument("x") +
-             "Cstar\n->" +
+             " Cstar\n->" +
              red_argument("x") +
-             "Cstar\n");
+             " Cstar\n");
+    test("color step colors multicharacter basis with lexical spacing",
+         [&] {
+             static_cast<void>(
+                 color_step(quote(I)(Cstar)));
+         },
+         std::string{"  I"} +
+             red_argument(" Cstar") +
+             "\n->" +
+             red_argument("Cstar") +
+             "\n");
     test("color step compares structure rather than output",
          [&] {
              static_cast<void>(
@@ -1764,7 +1771,7 @@ int main() {
                  color_step(quote(I)(std::string{"<&>\"'"})));
          },
          std::string{"  I"} +
-             red_argument("&lt;&amp;&gt;&quot;&#39;") +
+             red_argument(" &lt;&amp;&gt;&quot;&#39;") +
              "\n->" +
              red_argument("&lt;&amp;&gt;&quot;&#39;") +
              "\n");

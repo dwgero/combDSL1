@@ -1956,29 +1956,26 @@ private:
         std::ostream& output,
         bool as_operand) const {
         print_html_markup(output, opening_markup());
-        record_printed_token(output, printed_token::none);
         if (as_operand) {
             argument_.print_as_operand_to(output);
         } else {
             argument_.print_to(output);
         }
-        print_html_markup(
-            output, "&nbsp;</span></font>");
-        record_printed_token(output, printed_token::none);
+        print_html_markup(output, "</span>");
     }
 
     [[nodiscard]] std::string_view opening_markup() const noexcept {
         switch (color_) {
         case html_argument_color::red:
-            return "<font color=\"red\"><span class=\"wor\">&nbsp;";
+            return "<span class=\"wor\">";
         case html_argument_color::green:
-            return "<font color=\"#00cc00\"><span class=\"wog\">&nbsp;";
+            return "<span class=\"wog\">";
         case html_argument_color::blue:
-            return "<font color=\"blue\"><span class=\"wob\">&nbsp;";
+            return "<span class=\"wob\">";
         case html_argument_color::dark_orange:
-            return "<font color=\"#ff8c00\"><span class=\"woo\">&nbsp;";
+            return "<span class=\"woo\">";
         case html_argument_color::munsel_purple:
-            return "<font color=\"#cc00ff\"><span class=\"wop\">&nbsp;";
+            return "<span class=\"wop\">";
         }
         return {};
     }

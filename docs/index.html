@@ -211,6 +211,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             font: 0.9rem/1.5 system-ui, sans-serif;
         }
 
+        .set-bird-example {
+            display: block;
+            text-align: center;
+        }
+
         #combinator-info-dialog,
         #about-dialog {
             width: min(40rem, calc(100% - 2rem));
@@ -363,11 +368,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             <dd>
                 When Single Step or Key Step is active, it highlights the
                 first, second, third, fourth, and fifth arguments of each
-                reduction in <font color="red">red</font>,
-                <font color="#00cc00">tunic green</font>,
-                <font color="blue">blue</font>,
-                <font color="#ff8c00">dark orange</font>, and
-                <font color="#cc00ff">Munsell purple</font>, and carries those
+                reduction in <span class="wor">red</span>,
+                <span class="wog">tunic green</span>,
+                <span class="wob">blue</span>,
+                <span class="woo">dark orange</span>, and
+                <span class="wop">Munsell purple</span>, and carries those
                 highlights into the reduced result. After the final reduction,
                 the normal form is displayed without color at the left margin.
                 Colorize may remain on when neither stepping mode is active;
@@ -391,8 +396,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             Application is left-associative, meaning xyz at the head of an
             expression or right after a ( acts like ((xy)z).
             Note that the xyz in Cxyz is not at the head; C is.
-            To add a bird:<br>
-            <code>set birdname = combinator expression</code>
+            To add a bird:
+            <span class="set-bird-example"><code>set birdname = combinator
+                expression</code></span>
         </p>
         <table class="combinator-table"
             aria-label="Bird combinator reduction rules">
@@ -432,8 +438,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
         <h2 id="about-title" tabindex="-1"
             data-dialog-initial-focus>About</h2>
         <div class="license-text">
-            <!-- Keep the patch number synchronized with the Sites version. -->
-            <p>C++ Combinator DSL, version 1.0.46<br>Copyright (C) 2026  David W. Gero</p>
+            <!-- Update this version for each site release. -->
+            <p>C++ Combinator DSL, version 1.1.0<br>Copyright (C) 2026  David W. Gero</p>
             <p>This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
 the Free Software Foundation, either version 3 of the License, or

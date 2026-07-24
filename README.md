@@ -248,21 +248,22 @@ The emitted fragment expects these styles in its containing HTML document:
 </style>
 ```
 
-Each colored argument uses a matching `font` and `span` wrapper with a
-nonbreaking space on either side. Expression text is HTML-escaped, including
-`&`, `<`, `>`, `"`, and `'`, while the fixed markup and its `&nbsp;`
-padding remain HTML. Repeated calls intentionally print the shared boundary
-expression twice. Because the next call colors a new redex, the two copies can
-have different markup even though they represent the same expression:
+Each colored argument uses a matching `span` wrapper without nonbreaking-space
+padding. Ordinary lexical separators are still emitted where needed for
+multicharacter names. Expression text is HTML-escaped, including `&`, `<`, `>`,
+`"`, and `'`, while the fixed markup remains HTML. Repeated calls intentionally
+print the shared boundary expression twice. Because the next call colors a new
+redex, the two copies can have different markup even though they represent the
+same expression:
 
 ```cpp
 auto next = color_step(expression);
-//   S<font color="red"><span class="wor">&nbsp;K&nbsp;</span></font><font color="#00cc00"><span class="wog">&nbsp;I&nbsp;</span></font><font color="blue"><span class="wob">&nbsp;x&nbsp;</span></font>
-// -><font color="red"><span class="wor">&nbsp;K&nbsp;</span></font><font color="blue"><span class="wob">&nbsp;x&nbsp;</span></font>(<font color="#00cc00"><span class="wog">&nbsp;I&nbsp;</span></font><font color="blue"><span class="wob">&nbsp;x&nbsp;</span></font>)
+//   S<span class="wor">K</span><span class="wog">I</span><span class="wob">x</span>
+// -><span class="wor">K</span><span class="wob">x</span>(<span class="wog">I</span><span class="wob">x</span>)
 
 next = color_step(std::move(next));
-//   K<font color="red"><span class="wor">&nbsp;x&nbsp;</span></font><font color="#00cc00"><span class="wog">&nbsp;(Ix)&nbsp;</span></font>
-// -><font color="red"><span class="wor">&nbsp;x&nbsp;</span></font>
+//   K<span class="wor">x</span><span class="wog">(Ix)</span>
+// -><span class="wor">x</span>
 ```
 
 Trailing operands are preserved. Unknown and undersaturated heads are skipped
