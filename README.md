@@ -364,7 +364,8 @@ At the start of a line, `set` followed by whitespace defines and registers a
 zero-arity named basis from the expression after `=`:
 
 ```cpp
-parse("set Double = S(I)(I)");       // Double
+parse("set Double = S(I)(I)");      // Double
+parse_eval("set Twice = S(I)(I)");  // registers Twice; prints nothing
 single_step(parse("Double x"));     // SIIx
 parse_eval("Double x");             // prints: xx
 ```
@@ -373,7 +374,10 @@ Whitespace before `set` and around `=` is optional, while at least one
 whitespace character must separate `set` from the name. The declaration acts
 like `basis(name, 0, expression)`: names use the normal basis restrictions,
 the first registered definition wins, and `S`, `K`, `I`, and `Y` retain their
-primitive meanings. A malformed declaration does not register its name.
+primitive meanings. `parse_eval`, `read_parse_eval`, and `parse_and_step`
+register a declaration without evaluating or stepping its stored expression,
+and produce no output for the declaration itself. A malformed declaration does
+not register its name.
 
 `parse_eval` parses a string and passes the resulting quoted expression to
 `eval`. Its output and input streams can be supplied as the second and third
@@ -547,10 +551,12 @@ and third arguments of each reduction in red, green, and blue and carries
 those highlights into the reduced result. After the final colorized reduction,
 the normal form is printed without color at the left margin. The browser prints
 the submitted starting expression immediately, then appends the output beneath
-it. Basis Step and Colorize may remain on when neither stepping mode is active;
-ordinary evaluation ignores both settings. Cancelling an evaluation appends
-`[cancelled]` beneath its starting expression. The Help button summarizes all
-stepping options in a keyboard-accessible dialog.
+it. A successfully registered `set` command leaves only that submitted
+definition line, with no output beneath it. Basis Step and Colorize may remain
+on when neither stepping mode is active; ordinary evaluation ignores both
+settings. Cancelling an evaluation appends `[cancelled]` beneath its starting
+expression. The Help button summarizes all stepping options in a
+keyboard-accessible dialog.
 
 For another CMake project, link the interface target after adding this project:
 

@@ -70,13 +70,15 @@ self.addEventListener("message", async event => {
             if (message.keyStep) {
                 const result = module.beginSingleStep(
                     String(message.source));
-                if (result.success) {
+                if (result.success && !result.complete) {
                     steppingRequestId = message.id;
                     steppingBasisStep = Boolean(message.basisStep);
                     steppingColorize = Boolean(message.colorize);
                 }
                 self.postMessage({
-                    type: "step-ready",
+                    type: result.success && result.complete
+                        ? "result"
+                        : "step-ready",
                     id: message.id,
                     result,
                 });

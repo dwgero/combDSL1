@@ -141,6 +141,12 @@
         scrollToNewestOutput();
     };
 
+    const clearCompletedSource = request => {
+        if (source.value === request.source) {
+            source.value = "";
+        }
+    };
+
     const showStartupError = message => {
         ready = false;
         activeRequest = undefined;
@@ -219,6 +225,7 @@
                         "output",
                         request.colorize);
                     if (message.result.complete) {
+                        clearCompletedSource(request);
                         activeRequest = undefined;
                         status.textContent = "Normal form reached";
                     } else {
@@ -227,6 +234,7 @@
                             "Press a key for the next step";
                     }
                 } else {
+                    clearCompletedSource(request);
                     activeRequest = undefined;
                     status.textContent = "Normal form reached";
                 }
@@ -240,12 +248,15 @@
                 activeRequest = undefined;
                 status.textContent = "Ready";
                 if (message.result.success) {
-                    completeEvaluationOutput(
-                        completedRequest,
-                        message.result.output,
-                        "output",
-                        completedRequest.singleStep &&
-                            completedRequest.colorize);
+                    if (!message.result.definition) {
+                        completeEvaluationOutput(
+                            completedRequest,
+                            message.result.output,
+                            "output",
+                            completedRequest.singleStep &&
+                                completedRequest.colorize);
+                    }
+                    clearCompletedSource(completedRequest);
                 } else {
                     completeEvaluationOutput(
                         completedRequest, message.result.error, "error");

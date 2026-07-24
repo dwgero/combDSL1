@@ -3052,13 +3052,18 @@ private:
 
 namespace detail {
 
+struct parsed_input {
+    quoted_expression expression;
+    bool is_definition;
+};
+
 class quoted_expression_parser {
 public:
     explicit quoted_expression_parser(std::string_view source)
         : source_(source),
           registered_bases_(registered_parser_bases_snapshot()) {}
 
-    [[nodiscard]] quoted_expression parse() {
+    [[nodiscard]] parsed_input parse_input() {
         skip_whitespace();
         if (at_end()) {
             fail("expected an expression");
@@ -3067,14 +3072,15 @@ public:
             fail("unexpected ')'");
         }
 
-        auto result = begins_set_definition()
+        auto const is_definition = begins_set_definition();
+        auto result = is_definition
             ? parse_set_definition()
             : parse_expression();
         skip_whitespace();
         if (!at_end()) {
             fail("unexpected ')'");
         }
-        return result;
+        return {std::move(result), is_definition};
     }
 
 private:
@@ -3348,10 +3354,14 @@ private:
     registered_parser_basis_table registered_bases_;
 };
 
+[[nodiscard]] inline parsed_input parse_input(std::string_view source) {
+    return quoted_expression_parser(source).parse_input();
+}
+
 } // namespace detail
 
 [[nodiscard]] inline quoted_expression parse(std::string_view source) {
-    return detail::quoted_expression_parser(source).parse();
+    return std::move(detail::parse_input(source).expression);
 }
 
 inline void parse_eval(
@@ -3359,7 +3369,11 @@ inline void parse_eval(
     std::ostream& output = std::cout,
     std::istream& input = std::cin,
     bool basis_step = false) {
-    eval(parse(source), output, input, basis_step);
+    auto parsed = detail::parse_input(source);
+    if (parsed.is_definition) {
+        return;
+    }
+    eval(std::move(parsed.expression), output, input, basis_step);
 }
 
 inline void read_parse_eval(
@@ -3377,7 +3391,12 @@ inline void parse_and_step(
     std::ostream& output = std::cout,
     std::istream& input = std::cin,
     bool basis_step = false) {
-    single_step_run(parse(source), output, input, basis_step);
+    auto parsed = detail::parse_input(source);
+    if (parsed.is_definition) {
+        return;
+    }
+    single_step_run(
+        std::move(parsed.expression), output, input, basis_step);
 }
 
 #define BASIS(name, arity, expression) \

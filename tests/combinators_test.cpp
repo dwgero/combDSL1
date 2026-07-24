@@ -1041,6 +1041,12 @@ int main() {
          "invalid");
 
     test("parse eval", [&] { parse_eval("K(Ix)y"); }, "x\n");
+    test("parse eval set only registers its definition",
+         [&] { parse_eval("set EvalK=K"); }, "");
+    test("parse eval uses a silently registered set basis",
+         [&] { parse_eval("EvalK x y"); }, "x\n");
+    test("parse eval does not mistake setx for a definition",
+         [&] { parse_eval("setx"); }, "setx\n");
     test("parse eval uses a set basis",
          [&] { parse_eval("SetK x y"); }, "x\n");
     test("parse eval treats q as a symbol", [&] { parse_eval("q"); }, "q\n");
@@ -1088,7 +1094,7 @@ int main() {
              read_parse_eval(input, output);
              std::cout << output.str();
          },
-         "K\nx\n");
+         "x\n");
     test("read parse eval uses its input to resume",
          [&] {
              static_cast<void>(
@@ -1105,6 +1111,12 @@ int main() {
     test("parse and step",
          [&] { parse_and_step("SKIx"); },
          "Kx(Ix)\n"
+         "x\n");
+    test("parse and step set only registers its definition",
+         [&] { parse_and_step("set StepI=I"); }, "");
+    test("parse and step uses a silently registered set basis",
+         [&] { parse_and_step("StepI x"); },
+         "Ix\n"
          "x\n");
     test("parse and step custom streams",
          [&] {

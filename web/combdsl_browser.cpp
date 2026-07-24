@@ -29,6 +29,7 @@ namespace {
 
 struct evaluation_result {
     bool success;
+    bool definition;
     std::string output;
     std::string error;
 };
@@ -37,6 +38,7 @@ struct single_step_result {
     bool success;
     bool reduced;
     bool complete;
+    bool definition;
     std::string output;
     std::string error;
 };
@@ -48,13 +50,17 @@ std::optional<combdsl::quoted_expression> stepped_expression;
     std::ostringstream output;
 
     try {
-        combdsl::parse_eval(
-            combdsl::input_escape(source), output, input);
-        return {true, output.str(), {}};
+        auto escaped_source = combdsl::input_escape(source);
+        auto parsed = combdsl::detail::parse_input(escaped_source);
+        if (parsed.is_definition) {
+            return {true, true, {}, {}};
+        }
+        combdsl::eval(std::move(parsed.expression), output, input);
+        return {true, false, output.str(), {}};
     } catch (std::exception const& error) {
-        return {false, {}, error.what()};
+        return {false, false, {}, error.what()};
     } catch (...) {
-        return {false, {}, "unknown evaluation error"};
+        return {false, false, {}, "unknown evaluation error"};
     }
 }
 
@@ -64,22 +70,30 @@ std::optional<combdsl::quoted_expression> stepped_expression;
     std::ostringstream output;
 
     try {
+        auto escaped_source = combdsl::input_escape(source);
+        auto parsed = combdsl::detail::parse_input(escaped_source);
+        if (parsed.is_definition) {
+            return {true, true, {}, {}};
+        }
         combdsl::single_step_run(
-            combdsl::parse(combdsl::input_escape(source)), output, input,
-            basis_step);
-        return {true, output.str(), {}};
+            std::move(parsed.expression), output, input, basis_step);
+        return {true, false, output.str(), {}};
     } catch (std::exception const& error) {
-        return {false, {}, error.what()};
+        return {false, false, {}, error.what()};
     } catch (...) {
-        return {false, {}, "unknown evaluation error"};
+        return {false, false, {}, "unknown evaluation error"};
     }
 }
 
 [[nodiscard]] evaluation_result color_step_run_input(
     std::string const& source, bool basis_step) {
     try {
-        auto expression =
-            combdsl::parse(combdsl::input_escape(source));
+        auto escaped_source = combdsl::input_escape(source);
+        auto parsed = combdsl::detail::parse_input(escaped_source);
+        if (parsed.is_definition) {
+            return {true, true, {}, {}};
+        }
+        auto expression = std::move(parsed.expression);
         std::ostringstream output;
         bool reduced = false;
 
@@ -102,26 +116,31 @@ std::optional<combdsl::quoted_expression> stepped_expression;
             reduced = true;
         }
 
-        return {true, output.str(), {}};
+        return {true, false, output.str(), {}};
     } catch (std::exception const& error) {
-        return {false, {}, error.what()};
+        return {false, false, {}, error.what()};
     } catch (...) {
-        return {false, {}, "unknown evaluation error"};
+        return {false, false, {}, "unknown evaluation error"};
     }
 }
 
-[[nodiscard]] evaluation_result begin_single_step_input(
+[[nodiscard]] single_step_result begin_single_step_input(
     std::string const& source) {
     stepped_expression.reset();
 
     try {
-        stepped_expression.emplace(
-            combdsl::parse(combdsl::input_escape(source)));
-        return {true, {}, {}};
+        auto escaped_source = combdsl::input_escape(source);
+        auto parsed = combdsl::detail::parse_input(escaped_source);
+        if (parsed.is_definition) {
+            return {true, false, true, true, {}, {}};
+        }
+        stepped_expression.emplace(std::move(parsed.expression));
+        return {true, false, false, false, {}, {}};
     } catch (std::exception const& error) {
-        return {false, {}, error.what()};
+        return {false, false, false, false, {}, error.what()};
     } catch (...) {
-        return {false, {}, "unknown parsing error"};
+        return {
+            false, false, false, false, {}, "unknown parsing error"};
     }
 }
 
@@ -129,7 +148,8 @@ std::optional<combdsl::quoted_expression> stepped_expression;
     bool basis_step, bool colorize) {
     if (!stepped_expression.has_value()) {
         return {
-            false, false, false, {}, "no expression is ready to step"};
+            false, false, false, false, {},
+            "no expression is ready to step"};
     }
 
     try {
@@ -142,7 +162,7 @@ std::optional<combdsl::quoted_expression> stepped_expression;
         if (combdsl::detail::quoted_access::root(next) ==
             combdsl::detail::quoted_access::root(*stepped_expression)) {
             stepped_expression.reset();
-            return {true, false, true, {}, {}};
+            return {true, false, true, false, {}, {}};
         }
 
         stepped_expression = std::move(next);
@@ -165,14 +185,16 @@ std::optional<combdsl::quoted_expression> stepped_expression;
         if (complete) {
             stepped_expression.reset();
         }
-        return {true, true, complete, output.str(), {}};
+        return {
+            true, true, complete, false, output.str(), {}};
     } catch (std::exception const& error) {
         stepped_expression.reset();
-        return {false, false, false, {}, error.what()};
+        return {false, false, false, false, {}, error.what()};
     } catch (...) {
         stepped_expression.reset();
         return {
-            false, false, false, {}, "unknown evaluation error"};
+            false, false, false, false, {},
+            "unknown evaluation error"};
     }
 }
 
@@ -181,6 +203,7 @@ std::optional<combdsl::quoted_expression> stepped_expression;
 EMSCRIPTEN_BINDINGS(combdsl_browser) {
     emscripten::value_object<evaluation_result>("EvaluationResult")
         .field("success", &evaluation_result::success)
+        .field("definition", &evaluation_result::definition)
         .field("output", &evaluation_result::output)
         .field("error", &evaluation_result::error);
 
@@ -188,6 +211,7 @@ EMSCRIPTEN_BINDINGS(combdsl_browser) {
         .field("success", &single_step_result::success)
         .field("reduced", &single_step_result::reduced)
         .field("complete", &single_step_result::complete)
+        .field("definition", &single_step_result::definition)
         .field("output", &single_step_result::output)
         .field("error", &single_step_result::error);
 
