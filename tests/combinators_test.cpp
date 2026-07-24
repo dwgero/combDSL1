@@ -371,6 +371,11 @@ void test_invalid_utf8_symbol(
     return colored_argument("blue", "wob", argument);
 }
 
+[[nodiscard]] std::string dark_orange_argument(
+    std::string_view argument) {
+    return colored_argument("#ff8c00", "woo", argument);
+}
+
 void test_parse_failure(
     std::string_view title,
     std::string_view source,
@@ -1693,7 +1698,7 @@ int main() {
              blue_argument("z") +
              green_argument("y") +
              "\n");
-    test("color step leaves fourth basis argument uncolored",
+    test("color step carries fourth basis argument color",
          [&] {
              static_cast<void>(
                  color_step(quote(D)(u)(v)(w)(x)));
@@ -1702,12 +1707,14 @@ int main() {
              red_argument("u") +
              green_argument("v") +
              blue_argument("w") +
-             "x\n->" +
+             dark_orange_argument("x") +
+             "\n->" +
              red_argument("u") +
              green_argument("v") +
              "(" +
              blue_argument("w") +
-             "x)\n");
+             dark_orange_argument("x") +
+             ")\n");
     test("color step colored spacing precedes multicharacter basis",
          [&] {
              static_cast<void>(

@@ -1923,7 +1923,8 @@ private:
 enum class html_argument_color {
     red,
     green,
-    blue
+    blue,
+    dark_orange
 };
 
 class quoted_html_argument_node final : public quoted_node {
@@ -1973,6 +1974,8 @@ private:
             return "<font color=\"#00cc00\"><span class=\"wog\">&nbsp;";
         case html_argument_color::blue:
             return "<font color=\"blue\"><span class=\"wob\">&nbsp;";
+        case html_argument_color::dark_orange:
+            return "<font color=\"#ff8c00\"><span class=\"woo\">&nbsp;";
         }
         return {};
     }
@@ -2456,6 +2459,7 @@ reduce_at_head(
             html_argument_color::red,
             html_argument_color::green,
             html_argument_color::blue,
+            html_argument_color::dark_orange,
         };
         auto const colored_arguments =
             std::min(arity, std::size(colors));
