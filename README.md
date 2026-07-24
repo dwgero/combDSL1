@@ -248,13 +248,12 @@ The emitted fragment expects these styles in its containing HTML document:
 </style>
 ```
 
-Each colored argument uses a matching `span` wrapper without nonbreaking-space
-padding. Ordinary lexical separators are still emitted where needed for
-multicharacter names. Expression text is HTML-escaped, including `&`, `<`, `>`,
-`"`, and `'`, while the fixed markup remains HTML. Repeated calls intentionally
-print the shared boundary expression twice. Because the next call colors a new
-redex, the two copies can have different markup even though they represent the
-same expression:
+Each colored argument uses a matching `span` wrapper. Ordinary lexical
+separators are still emitted where needed for multicharacter names. Expression
+text is HTML-escaped, including `&`, `<`, `>`, `"`, and `'`, while the fixed
+markup remains HTML. Repeated calls intentionally print the shared boundary
+expression twice. Because the next call colors a new redex, the two copies can
+have different markup even though they represent the same expression:
 
 ```cpp
 auto next = color_step(expression);
