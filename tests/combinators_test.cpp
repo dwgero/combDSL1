@@ -376,6 +376,11 @@ void test_invalid_utf8_symbol(
     return colored_argument("#ff8c00", "woo", argument);
 }
 
+[[nodiscard]] std::string munsel_purple_argument(
+    std::string_view argument) {
+    return colored_argument("#cc00ff", "wop", argument);
+}
+
 void test_parse_failure(
     std::string_view title,
     std::string_view source,
@@ -437,6 +442,8 @@ int main() {
     char const* null_raw_string = nullptr;
     const auto raw_string_basis = basis("RawText", 1, "word");
     const auto zero_arity_basis = basis("Qzero", 0, K);
+    const auto fifth_argument_projection =
+        basis("Fifth", 5, K(K(K(K(I)))));
     auto seven_character_basis = basis("1234567", 1, I);
     std::string copied_basis_name = "Alias";
     auto copied_name_basis = basis(copied_basis_name, 1, I);
@@ -1715,6 +1722,22 @@ int main() {
              blue_argument("w") +
              dark_orange_argument("x") +
              ")\n");
+    test("color step carries fifth basis argument color",
+         [&] {
+             static_cast<void>(
+                 color_step(
+                     quote(fifth_argument_projection)
+                         (u)(v)(w)(x)(y)(z)));
+         },
+         std::string{"  Fifth"} +
+             red_argument("u") +
+             green_argument("v") +
+             blue_argument("w") +
+             dark_orange_argument("x") +
+             munsel_purple_argument("y") +
+             "z\n->" +
+             munsel_purple_argument("y") +
+             "z\n");
     test("color step colored spacing precedes multicharacter basis",
          [&] {
              static_cast<void>(
