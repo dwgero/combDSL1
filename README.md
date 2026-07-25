@@ -388,6 +388,23 @@ register a declaration without evaluating or stepping its stored expression,
 and produce no output for the declaration itself. A malformed declaration does
 not register its name.
 
+`set_list()` returns the effective user-defined bases in registration order as
+newline-separated `set` declarations. It always includes the arity, including
+`0`, and uses quotes and backslashes exactly as a user would enter them.
+Passing each line through `input_escape` and then to `parse` recreates the
+definitions:
+
+```cpp
+auto definitions = set_list();
+std::istringstream input(definitions);
+for (std::string line; std::getline(input, line);) {
+    static_cast<void>(parse(input_escape(line)));
+}
+```
+
+Definitions made by C++ `basis(...)` calls are not included. Neither are
+rejected redefinitions or attempts to replace `S`, `K`, `I`, or `Y`.
+
 `parse_eval` parses a string and passes the resulting quoted expression to
 `eval`. Its output and input streams can be supplied as the second and third
 arguments; they default to `std::cout` and `std::cin`. A trailing

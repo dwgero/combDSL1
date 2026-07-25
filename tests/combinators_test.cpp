@@ -47,6 +47,7 @@ using combdsl::parse_eval;
 using combdsl::parse_error;
 using combdsl::quote;
 using combdsl::read_parse_eval;
+using combdsl::set_list;
 using combdsl::single_step;
 using combdsl::single_step_loop;
 using combdsl::single_step_run;
@@ -227,6 +228,7 @@ constexpr auto constexpr_utf8_symbol = symbol("\xCE\xBB");
 static_assert(std::is_same_v<
               decltype(input_escape(std::declval<std::string_view>())),
               std::string>);
+static_assert(std::is_same_v<decltype(set_list()), std::string>);
 static_assert(combdsl::detail::is_raw_string_operand_v<std::string&>);
 static_assert(combdsl::detail::is_raw_string_operand_v<const char (&)[5]>);
 static_assert(
@@ -814,6 +816,67 @@ int main() {
     test("parse right nested operand", parse("x(yz)"), "x(yz)");
     test("parse grouped operand", parse("S ( K I ) x"), "S(KI)x");
     test("parse redundant groups", parse("((SK)I)x"), "SKIx");
+    test("set list initially excludes C++ bases",
+         [] { std::cout << set_list(); }, "");
+    test("set list registers a default zero arity",
+         parse(input_escape("set LZero = I")), "LZero");
+    test("set list shows a default zero arity",
+         [] { std::cout << set_list(); }, "set LZero = 0 I");
+    test("set list registers a dependent basis",
+         parse(input_escape("set LUse = 1 LZero")), "LUse");
+    test("set list registers a binary basis",
+         parse(input_escape("set LPair = 2 K")), "LPair");
+    test("set list registers a double-backslash name",
+         parse(input_escape("set Q\\R = 1 I")), "Q\\\\R");
+    test("set list registers a double-backslash body reference",
+         parse(input_escape("set LSlash = 1 Q\\R")), "LSlash");
+    test("set list registers a multicharacter basis body",
+         parse(input_escape("set LMulti = 1 Cstar x")), "LMulti");
+    test("set list registers a raw word body",
+         parse(input_escape("set LRaw = 1 K \"a b()\\c\"")), "LRaw");
+
+    const std::string expected_set_list =
+        "set LZero = 0 I\n"
+        "set LUse = 1 LZero\n"
+        "set LPair = 2 K\n"
+        "set Q\\R = 1 I\n"
+        "set LSlash = 1 Q\\R\n"
+        "set LMulti = 1 Cstar x\n"
+        "set LRaw = 1 K \"a b()\\c\"";
+    test("set list preserves definitions in replay order",
+         [] { std::cout << set_list(); }, expected_set_list);
+    test("set list double-backslash basis replays",
+         single_step(parse(input_escape("Q\\R x"))), "x");
+    test("set list raw word basis replays",
+         single_step(parse(input_escape("LRaw x"))), "a b()\\c");
+
+    test("set list accepts a later duplicate definition",
+         parse(input_escape("set LPair = 1 I")), "LPair");
+    test("set list ignores a later duplicate definition",
+         [] { std::cout << set_list(); }, expected_set_list);
+    test("set list accepts a primitive definition",
+         parse(input_escape("set K = I")), "K");
+    test("set list excludes primitive definitions",
+         [] { std::cout << set_list(); }, expected_set_list);
+    test("set list accepts a predefined basis definition",
+         parse(input_escape("set M = I")), "M");
+    test("set list excludes predefined basis definitions",
+         [] { std::cout << set_list(); }, expected_set_list);
+    test_parse_failure("set list rejects a malformed definition",
+                       "set LBad = K@", 12);
+    test("set list excludes malformed definitions",
+         [] { std::cout << set_list(); }, expected_set_list);
+    test("set list output can be reparsed",
+         [&expected_set_list] {
+             std::istringstream definitions(expected_set_list);
+             std::string definition;
+             while (std::getline(definitions, definition)) {
+                 static_cast<void>(parse(input_escape(definition)));
+             }
+             std::cout << set_list();
+         },
+         expected_set_list);
+
     test("set defines a zero-arity basis",
          parse("set SetK=K"), "SetK");
     test("set basis expands with trailing arguments",

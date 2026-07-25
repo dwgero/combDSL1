@@ -2947,6 +2947,12 @@ parser_basis_registry() {
     return entries;
 }
 
+[[nodiscard]] inline std::vector<std::string>&
+parser_set_definition_registry() {
+    static std::vector<std::string> definitions;
+    return definitions;
+}
+
 [[nodiscard]] inline bool is_primitive_name(
     std::string_view name) noexcept {
     return name == "S" || name == "K" || name == "I" || name == "Y";
@@ -2966,6 +2972,36 @@ void register_parser_basis(std::string_view name, Basis const& basis) {
     auto& entries = parser_basis_registry();
     if (!entries.contains(name)) {
         entries.emplace(std::string(name), std::move(registration));
+    }
+}
+
+template <class Basis>
+void register_parser_set_basis(
+    std::string_view name,
+    Basis const& basis,
+    std::string user_source) {
+    if (is_primitive_name(name)) {
+        return;
+    }
+
+    auto registration =
+        std::make_shared<registered_parser_basis_model<Basis>>(
+            std::string(name), basis);
+
+    std::lock_guard lock(parser_basis_registry_mutex());
+    auto& entries = parser_basis_registry();
+    auto [entry, inserted] =
+        entries.emplace(std::string(name), std::move(registration));
+    if (!inserted) {
+        return;
+    }
+
+    try {
+        parser_set_definition_registry().push_back(
+            std::move(user_source));
+    } catch (...) {
+        entries.erase(entry);
+        throw;
     }
 }
 
@@ -2992,6 +3028,20 @@ template <class Expression>
         arity,
         detail::store_operand(std::forward<Expression>(expression)));
     detail::register_parser_basis(owned_name.view(), result);
+    return result;
+}
+
+[[nodiscard]] inline std::string set_list() {
+    std::lock_guard lock(detail::parser_basis_registry_mutex());
+    auto const& definitions = detail::parser_set_definition_registry();
+
+    std::string result;
+    for (auto const& definition : definitions) {
+        if (!result.empty()) {
+            result.push_back('\n');
+        }
+        result += definition;
+    }
     return result;
 }
 
@@ -3124,16 +3174,81 @@ private:
         ++position_;
 
         auto const arity = parse_optional_set_arity();
+        auto const body_position = position_;
         auto body = parse_expression();
         skip_whitespace();
         if (!at_end()) {
             fail("unexpected ')'");
         }
 
+        auto user_source = canonical_set_definition(
+            name.view(), arity, source_.substr(body_position));
         auto result = make_quoted_basis_snapshot(
             name, arity, std::move(body));
-        register_parser_basis(name.view(), result);
+        register_parser_set_basis(
+            name.view(), result, std::move(user_source));
         return result;
+    }
+
+    [[nodiscard]] static std::string unescape_input(
+        std::string_view source) {
+        std::string result;
+        result.reserve(source.size());
+
+        for (std::size_t index = 0; index < source.size();) {
+            if (source[index] == '\\' &&
+                index + 1 < source.size() &&
+                (source[index + 1] == '\\' ||
+                 source[index + 1] == '"')) {
+                result.push_back(source[index + 1]);
+                index += 2;
+            } else {
+                result.push_back(source[index]);
+                ++index;
+            }
+        }
+        return result;
+    }
+
+    [[nodiscard]] static std::string canonical_set_definition(
+        std::string_view name,
+        std::size_t arity,
+        std::string_view body) {
+        std::string result = "set ";
+        result += name;
+        result += " = ";
+        result += std::to_string(arity);
+
+        bool inside_word = false;
+        bool pending_space = true;
+        for (std::size_t index = 0; index < body.size();) {
+            if (body[index] == '\\' &&
+                index + 1 < body.size() &&
+                body[index + 1] == '"') {
+                if (!inside_word && pending_space) {
+                    result.push_back(' ');
+                    pending_space = false;
+                }
+                result += "\\\"";
+                inside_word = !inside_word;
+                index += 2;
+                continue;
+            }
+
+            if (!inside_word && is_whitespace(body[index])) {
+                pending_space = true;
+                ++index;
+                continue;
+            }
+
+            if (pending_space) {
+                result.push_back(' ');
+                pending_space = false;
+            }
+            result.push_back(body[index]);
+            ++index;
+        }
+        return unescape_input(result);
     }
 
     [[nodiscard]] basis_label validated_set_basis_name(
