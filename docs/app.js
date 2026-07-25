@@ -160,13 +160,19 @@
         const link = document.createElement("a");
         link.href = url;
         link.download = "set_list.cmb";
-        link.hidden = true;
+        link.textContent = "Download set_list.cmb";
+        link.tabIndex = -1;
+        link.setAttribute("aria-hidden", "true");
+        link.style.position = "fixed";
+        link.style.left = "-10000px";
+        link.style.top = "0";
         document.body.append(link);
         try {
             link.click();
         } finally {
             link.remove();
-            setTimeout(() => URL.revokeObjectURL(url), 1000);
+            // WebKit may still be reading the Blob URL after click() returns.
+            setTimeout(() => URL.revokeObjectURL(url), 60000);
         }
     };
 
