@@ -29,6 +29,8 @@
     const save = document.querySelector("#save");
     const load = document.querySelector("#load");
     const loadFile = document.querySelector("#load-file");
+    const nothingToSaveDialog = document.querySelector(
+        "#nothing-to-save-dialog");
     const help = document.querySelector("#help");
     const helpDialog = document.querySelector("#help-dialog");
     const combinatorInfo = document.querySelector("#combinator-info");
@@ -234,8 +236,16 @@
                 saveRequestId = undefined;
                 if (message.success) {
                     try {
-                        downloadSetList(String(message.setList));
-                        status.textContent = "Saved set_list.cmb";
+                        const setList = String(message.setList);
+                        if (setList === "") {
+                            status.textContent = "Ready";
+                            nothingToSaveDialog.showModal();
+                            nothingToSaveDialog.querySelector(
+                                "[data-dialog-initial-focus]")?.focus();
+                        } else {
+                            downloadSetList(setList);
+                            status.textContent = "Saved set_list.cmb";
+                        }
                     } catch (error) {
                         status.textContent = "Ready";
                         appendOutput(errorMessage(error), "error");
@@ -591,6 +601,10 @@
     configureDialog(help, helpDialog);
     configureDialog(combinatorInfo, combinatorInfoDialog);
     configureDialog(about, aboutDialog);
+
+    nothingToSaveDialog.addEventListener("close", () => {
+        save.focus();
+    });
 
     source.addEventListener("keydown", event => {
         if (event.key === "Enter" && !event.isComposing) {
