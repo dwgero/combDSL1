@@ -46,9 +46,11 @@
     let generation = 0;
     let nextRequestId = 0;
     let activeRequest;
-    let saveRequestId;
     let loadRequest;
     let ready = false;
+    let saveInProgress = false;
+    let savedSetList = "";
+    let saveDownloadUrl;
     let singleStepEnabled = false;
     let basisStepEnabled = false;
     let keyStepEnabled = false;
@@ -59,14 +61,21 @@
 
     const updateControls = () => {
         const evaluating = activeRequest !== undefined;
-        const busy = evaluating || saveRequestId !== undefined ||
+        const busy = evaluating || saveInProgress ||
             loadRequest !== undefined;
         singleStep.disabled = !ready || busy;
         basisStep.disabled = !ready || busy;
         keyStep.disabled = !ready || busy;
         colorize.disabled = !ready || busy;
         cancel.disabled = !evaluating;
-        save.disabled = !ready || busy;
+        const saveDisabled = !ready || busy;
+        save.setAttribute("aria-disabled", String(saveDisabled));
+        save.tabIndex = saveDisabled ? -1 : 0;
+        if (saveDisabled || saveDownloadUrl === undefined) {
+            save.removeAttribute("href");
+        } else {
+            save.href = saveDownloadUrl;
+        }
         load.disabled = !ready || busy;
         loadFile.disabled = !ready || busy;
         source.readOnly = busy;
@@ -159,35 +168,55 @@
         }
     };
 
-    const downloadSetList = setList => {
-        const blob = new Blob(
-            [setList],
+    const updateSavedSetList = setList => {
+        savedSetList = String(setList);
+        if (saveDownloadUrl !== undefined) {
+            const previousUrl = saveDownloadUrl;
+            // WebKit may still be reading a recently downloaded Blob URL.
+            setTimeout(() => URL.revokeObjectURL(previousUrl), 60000);
+        }
+        saveDownloadUrl = URL.createObjectURL(new Blob(
+            [savedSetList],
             {type: "text/plain;charset=utf-8"},
-        );
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement("a");
-        link.href = url;
-        link.download = "set_list.cmb";
-        link.textContent = "Download set_list.cmb";
-        link.tabIndex = -1;
-        link.setAttribute("aria-hidden", "true");
-        link.style.position = "fixed";
-        link.style.left = "-10000px";
-        link.style.top = "0";
-        document.body.append(link);
+        ));
+        updateControls();
+    };
+
+    const saveSetListWithPicker = async () => {
+        const setList = savedSetList;
+        saveInProgress = true;
+        status.textContent = "Saving set_list.cmb…";
+        updateControls();
+
         try {
-            link.click();
+            const fileHandle = await window.showSaveFilePicker({
+                suggestedName: "set_list.cmb",
+                types: [{
+                    description: "Combinator definitions",
+                    accept: {"text/plain": [".cmb"]},
+                }],
+            });
+            const writable = await fileHandle.createWritable();
+            try {
+                await writable.write(setList);
+            } finally {
+                await writable.close();
+            }
+            status.textContent = "Saved set_list.cmb";
+        } catch (error) {
+            status.textContent = "Ready";
+            if (error?.name !== "AbortError") {
+                appendOutput(errorMessage(error), "error");
+            }
         } finally {
-            link.remove();
-            // WebKit may still be reading the Blob URL after click() returns.
-            setTimeout(() => URL.revokeObjectURL(url), 60000);
+            saveInProgress = false;
+            updateControls();
         }
     };
 
     const showStartupError = message => {
         ready = false;
         activeRequest = undefined;
-        saveRequestId = undefined;
         loadRequest = undefined;
         status.textContent = "WebAssembly unavailable";
         appendOutput(message, "error");
@@ -199,7 +228,6 @@
         let terminationExpected = false;
         ready = false;
         activeRequest = undefined;
-        saveRequestId = undefined;
         loadRequest = undefined;
         status.textContent = "Loading WebAssembly…";
         updateControls();
@@ -225,35 +253,9 @@
 
             const message = event.data;
             if (message.type === "ready") {
+                updateSavedSetList(message.setList);
                 ready = true;
                 status.textContent = "Ready";
-                updateControls();
-                return;
-            }
-
-            if (message.type === "save-result" &&
-                message.id === saveRequestId) {
-                saveRequestId = undefined;
-                if (message.success) {
-                    try {
-                        const setList = String(message.setList);
-                        if (setList === "") {
-                            status.textContent = "Ready";
-                            nothingToSaveDialog.showModal();
-                            nothingToSaveDialog.querySelector(
-                                "[data-dialog-initial-focus]")?.focus();
-                        } else {
-                            downloadSetList(setList);
-                            status.textContent = "Saved set_list.cmb";
-                        }
-                    } catch (error) {
-                        status.textContent = "Ready";
-                        appendOutput(errorMessage(error), "error");
-                    }
-                } else {
-                    status.textContent = "Ready";
-                    appendOutput(message.error, "error");
-                }
                 updateControls();
                 return;
             }
@@ -263,6 +265,7 @@
                 const completedRequest = loadRequest;
                 loadRequest = undefined;
                 if (message.result.success) {
+                    updateSavedSetList(message.setList);
                     status.textContent = `Loaded ${completedRequest.name}`;
                 } else {
                     status.textContent = "Ready";
@@ -337,7 +340,9 @@
                 activeRequest = undefined;
                 status.textContent = "Ready";
                 if (message.result.success) {
-                    if (!message.result.definition) {
+                    if (message.result.definition) {
+                        updateSavedSetList(message.setList);
+                    } else {
                         completeEvaluationOutput(
                             completedRequest,
                             message.result.output,
@@ -357,7 +362,6 @@
             if (message.type === "fatal") {
                 const failedRequest = activeRequest;
                 activeRequest = undefined;
-                saveRequestId = undefined;
                 loadRequest = undefined;
                 ready = false;
                 status.textContent = "WebAssembly stopped";
@@ -382,7 +386,6 @@
             event.preventDefault();
             const failedRequest = activeRequest;
             activeRequest = undefined;
-            saveRequestId = undefined;
             loadRequest = undefined;
             ready = false;
             status.textContent = "WebAssembly stopped";
@@ -399,7 +402,6 @@
     form.addEventListener("submit", event => {
         event.preventDefault();
         if (!ready || activeRequest !== undefined ||
-            saveRequestId !== undefined ||
             loadRequest !== undefined) {
             return;
         }
@@ -465,22 +467,33 @@
         updateModeButtons();
     });
 
-    save.addEventListener("click", () => {
+    save.addEventListener("click", event => {
         if (!ready || activeRequest !== undefined ||
-            saveRequestId !== undefined ||
-            loadRequest !== undefined) {
+            saveInProgress || loadRequest !== undefined) {
+            event.preventDefault();
             return;
         }
 
-        saveRequestId = ++nextRequestId;
-        status.textContent = "Preparing set_list.cmb…";
-        updateControls();
-        worker.postMessage({type: "save", id: saveRequestId});
+        if (savedSetList === "") {
+            event.preventDefault();
+            status.textContent = "Ready";
+            nothingToSaveDialog.showModal();
+            nothingToSaveDialog.querySelector(
+                "[data-dialog-initial-focus]")?.focus();
+            return;
+        }
+
+        if (typeof window.showSaveFilePicker === "function") {
+            event.preventDefault();
+            void saveSetListWithPicker();
+            return;
+        }
+
+        status.textContent = "Saved set_list.cmb";
     });
 
     load.addEventListener("click", () => {
         if (!ready || activeRequest !== undefined ||
-            saveRequestId !== undefined ||
             loadRequest !== undefined) {
             return;
         }
@@ -493,7 +506,6 @@
         const file = loadFile.files?.[0];
         if (file === undefined || !ready ||
             activeRequest !== undefined ||
-            saveRequestId !== undefined ||
             loadRequest !== undefined) {
             return;
         }
@@ -605,6 +617,12 @@
     nothingToSaveDialog.addEventListener("close", () => {
         save.focus();
     });
+
+    window.addEventListener("pagehide", () => {
+        if (saveDownloadUrl !== undefined) {
+            URL.revokeObjectURL(saveDownloadUrl);
+        }
+    }, {once: true});
 
     source.addEventListener("keydown", event => {
         if (event.key === "Enter" && !event.isComposing) {

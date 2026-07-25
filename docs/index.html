@@ -121,7 +121,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             margin: 0.75rem 0 0;
         }
 
-        button {
+        button,
+        .button-link {
             border: 1px solid color-mix(in srgb, CanvasText 30%, Canvas);
             border-radius: 0.45rem;
             padding: 0.55rem 0.9rem;
@@ -129,9 +130,21 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             cursor: pointer;
         }
 
-        button:disabled {
+        .button-link {
+            display: inline-block;
+            background: ButtonFace;
+            color: ButtonText;
+            text-decoration: none;
+        }
+
+        button:disabled,
+        .button-link[aria-disabled="true"] {
             cursor: default;
             opacity: 0.5;
+        }
+
+        .button-link[aria-disabled="true"] {
+            pointer-events: none;
         }
 
         #single-step[aria-pressed="true"],
@@ -298,7 +311,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             color: #c33;
         }
     </style>
-    <script src="./app.js?v=1.2.6" defer></script>
+    <script src="./app.js?v=1.2.7" defer></script>
 </head>
 <body>
     <main>
@@ -322,9 +335,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
                 <button id="colorize" type="button"
                     aria-pressed="false" disabled>Colorize: Off</button>
                 <button id="cancel" type="button" disabled>Cancel</button>
-                <button id="save" type="button"
+                <a id="save" class="button-link" role="button"
                     aria-label="Save user-defined combinators"
-                    disabled>Save</button>
+                    aria-disabled="true"
+                    download="set_list.cmb">Save</a>
                 <button id="load" type="button"
                     aria-label="Load user-defined combinators"
                     disabled>Load</button>
@@ -471,7 +485,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             data-dialog-initial-focus>About</h2>
         <div class="license-text">
             <!-- For 1.2.x, keep the patch equal to the Sites version minus 66. -->
-            <p>C++ Combinator DSL, version 1.2.6<br>Copyright (C) 2026  David W. Gero</p>
+            <p>C++ Combinator DSL, version 1.2.7<br>Copyright (C) 2026  David W. Gero</p>
             <p>This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU Affero General Public License as published by
 the Free Software Foundation, either version 3 of the License, or

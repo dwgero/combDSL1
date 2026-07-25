@@ -43,7 +43,10 @@ try {
         locateFile: assetUrl,
     });
     modulePromise.then(
-        () => self.postMessage({type: "ready"}),
+        module => self.postMessage({
+            type: "ready",
+            setList: module.setList(),
+        }),
         error => self.postMessage({
             type: "fatal",
             error: errorMessage(error),
@@ -62,39 +65,17 @@ self.addEventListener("message", async event => {
         return;
     }
 
-    if (message.type === "save" &&
-        steppingRequestId === undefined) {
-        busy = true;
-        try {
-            const module = await modulePromise;
-            self.postMessage({
-                type: "save-result",
-                id: message.id,
-                success: true,
-                setList: module.setList(),
-            });
-        } catch (error) {
-            self.postMessage({
-                type: "save-result",
-                id: message.id,
-                success: false,
-                error: errorMessage(error),
-            });
-        } finally {
-            busy = false;
-        }
-        return;
-    }
-
     if (message.type === "load" &&
         steppingRequestId === undefined) {
         busy = true;
         try {
             const module = await modulePromise;
+            const result = module.loadSetList(String(message.source));
             self.postMessage({
                 type: "load-result",
                 id: message.id,
-                result: module.loadSetList(String(message.source)),
+                result,
+                setList: module.setList(),
             });
         } catch (error) {
             self.postMessage({
@@ -126,13 +107,17 @@ self.addEventListener("message", async event => {
                     steppingBasisStep = Boolean(message.basisStep);
                     steppingColorize = Boolean(message.colorize);
                 }
-                self.postMessage({
+                const response = {
                     type: result.success && result.complete
                         ? "result"
                         : "step-ready",
                     id: message.id,
                     result,
-                });
+                };
+                if (result.success && result.definition) {
+                    response.setList = module.setList();
+                }
+                self.postMessage(response);
             } else {
                 const result = message.singleStep
                     ? (message.colorize
@@ -143,7 +128,15 @@ self.addEventListener("message", async event => {
                             String(message.source),
                             Boolean(message.basisStep)))
                     : module.parseEval(String(message.source));
-                self.postMessage({type: "result", id: message.id, result});
+                const response = {
+                    type: "result",
+                    id: message.id,
+                    result,
+                };
+                if (result.success && result.definition) {
+                    response.setList = module.setList();
+                }
+                self.postMessage(response);
             }
         } catch (error) {
             self.postMessage({
