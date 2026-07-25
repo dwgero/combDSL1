@@ -1,6 +1,6 @@
 # combDSL
 
-`combDSL` is a tiny, header-only C++20 DSL for writing with the `S`, `K`, `I`,
+`combDSL` is a header-only C++20 DSL for writing with the `S`, `K`, `I`,
 and `Y` combinators in a functional style. It uses templates and ordinary
 function-call syntax, and works with heterogeneous or move-only values without
 `std::function`.
