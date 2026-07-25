@@ -579,10 +579,13 @@ result. After the final colorized reduction, the normal form is printed without
 color at the left margin. The browser prints the submitted starting expression
 immediately, then appends the output beneath it. A successfully registered
 `set` command leaves only that submitted definition line, with no output
-beneath it. Basis Step and Colorize may remain on when neither stepping mode is
-active; ordinary evaluation ignores both settings. Cancelling an evaluation
-appends `[cancelled]` beneath its starting expression. The Help button
-summarizes all stepping options in a keyboard-accessible dialog.
+beneath it. The Save button downloads all successfully registered user
+definitions as `set_list.cmb`, with explicit arities and user-facing quoting
+that can be entered again. Basis Step and Colorize may remain on when neither
+stepping mode is active; ordinary evaluation ignores both settings. Cancelling
+an evaluation appends `[cancelled]` beneath its starting expression. The Help
+button summarizes the stepping, definition, and saving options in a
+keyboard-accessible dialog.
 
 For another CMake project, link the interface target after adding this project:
 

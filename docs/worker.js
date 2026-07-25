@@ -62,6 +62,30 @@ self.addEventListener("message", async event => {
         return;
     }
 
+    if (message.type === "save" &&
+        steppingRequestId === undefined) {
+        busy = true;
+        try {
+            const module = await modulePromise;
+            self.postMessage({
+                type: "save-result",
+                id: message.id,
+                success: true,
+                setList: module.setList(),
+            });
+        } catch (error) {
+            self.postMessage({
+                type: "save-result",
+                id: message.id,
+                success: false,
+                error: errorMessage(error),
+            });
+        } finally {
+            busy = false;
+        }
+        return;
+    }
+
     if (message.type === "evaluate" &&
         steppingRequestId === undefined) {
         busy = true;

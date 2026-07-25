@@ -220,4 +220,5 @@ EMSCRIPTEN_BINDINGS(combdsl_browser) {
     emscripten::function("colorStepRun", &color_step_run_input);
     emscripten::function("beginSingleStep", &begin_single_step_input);
     emscripten::function("takeSingleStep", &take_single_step);
+    emscripten::function("setList", &combdsl::set_list);
 }

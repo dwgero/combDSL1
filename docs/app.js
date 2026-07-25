@@ -26,6 +26,7 @@
     const keyStep = document.querySelector("#key-step");
     const colorize = document.querySelector("#colorize");
     const cancel = document.querySelector("#cancel");
+    const save = document.querySelector("#save");
     const help = document.querySelector("#help");
     const helpDialog = document.querySelector("#help-dialog");
     const combinatorInfo = document.querySelector("#combinator-info");
@@ -41,6 +42,7 @@
     let generation = 0;
     let nextRequestId = 0;
     let activeRequest;
+    let saveRequestId;
     let ready = false;
     let singleStepEnabled = false;
     let basisStepEnabled = false;
@@ -52,12 +54,14 @@
 
     const updateControls = () => {
         const evaluating = activeRequest !== undefined;
-        singleStep.disabled = !ready || evaluating;
-        basisStep.disabled = !ready || evaluating;
-        keyStep.disabled = !ready || evaluating;
-        colorize.disabled = !ready || evaluating;
+        const busy = evaluating || saveRequestId !== undefined;
+        singleStep.disabled = !ready || busy;
+        basisStep.disabled = !ready || busy;
+        keyStep.disabled = !ready || busy;
+        colorize.disabled = !ready || busy;
         cancel.disabled = !evaluating;
-        source.readOnly = evaluating;
+        save.disabled = !ready || busy;
+        source.readOnly = busy;
     };
 
     const updateModeButtons = () => {
@@ -147,9 +151,29 @@
         }
     };
 
+    const downloadSetList = setList => {
+        const blob = new Blob(
+            [setList],
+            {type: "text/plain;charset=utf-8"},
+        );
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = "set_list.cmb";
+        link.hidden = true;
+        document.body.append(link);
+        try {
+            link.click();
+        } finally {
+            link.remove();
+            setTimeout(() => URL.revokeObjectURL(url), 1000);
+        }
+    };
+
     const showStartupError = message => {
         ready = false;
         activeRequest = undefined;
+        saveRequestId = undefined;
         status.textContent = "WebAssembly unavailable";
         appendOutput(message, "error");
         updateControls();
@@ -160,6 +184,7 @@
         let terminationExpected = false;
         ready = false;
         activeRequest = undefined;
+        saveRequestId = undefined;
         status.textContent = "Loading WebAssembly…";
         updateControls();
 
@@ -186,6 +211,25 @@
             if (message.type === "ready") {
                 ready = true;
                 status.textContent = "Ready";
+                updateControls();
+                return;
+            }
+
+            if (message.type === "save-result" &&
+                message.id === saveRequestId) {
+                saveRequestId = undefined;
+                if (message.success) {
+                    try {
+                        downloadSetList(String(message.setList));
+                        status.textContent = "Saved set_list.cmb";
+                    } catch (error) {
+                        status.textContent = "Ready";
+                        appendOutput(errorMessage(error), "error");
+                    }
+                } else {
+                    status.textContent = "Ready";
+                    appendOutput(message.error, "error");
+                }
                 updateControls();
                 return;
             }
@@ -268,6 +312,7 @@
             if (message.type === "fatal") {
                 const failedRequest = activeRequest;
                 activeRequest = undefined;
+                saveRequestId = undefined;
                 ready = false;
                 status.textContent = "WebAssembly stopped";
                 if (failedRequest === undefined) {
@@ -291,6 +336,7 @@
             event.preventDefault();
             const failedRequest = activeRequest;
             activeRequest = undefined;
+            saveRequestId = undefined;
             ready = false;
             status.textContent = "WebAssembly stopped";
             const message = event.message || "Web Worker failed";
@@ -305,7 +351,8 @@
 
     form.addEventListener("submit", event => {
         event.preventDefault();
-        if (!ready || activeRequest !== undefined) {
+        if (!ready || activeRequest !== undefined ||
+            saveRequestId !== undefined) {
             return;
         }
 
@@ -368,6 +415,18 @@
     colorize.addEventListener("click", () => {
         colorizeEnabled = !colorizeEnabled;
         updateModeButtons();
+    });
+
+    save.addEventListener("click", () => {
+        if (!ready || activeRequest !== undefined ||
+            saveRequestId !== undefined) {
+            return;
+        }
+
+        saveRequestId = ++nextRequestId;
+        status.textContent = "Preparing set_list.cmb…";
+        updateControls();
+        worker.postMessage({type: "save", id: saveRequestId});
     });
 
     cancel.addEventListener("click", () => {

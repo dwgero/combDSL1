@@ -322,6 +322,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
                 <button id="colorize" type="button"
                     aria-pressed="false" disabled>Colorize: Off</button>
                 <button id="cancel" type="button" disabled>Cancel</button>
+                <button id="save" type="button"
+                    aria-label="Save user-defined combinators"
+                    disabled>Save</button>
                 <button id="help" type="button" aria-haspopup="dialog"
                     aria-controls="help-dialog"
                     aria-expanded="false">Help</button>
@@ -390,6 +393,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             the minimal number of arguments required for the expression
             to reduce.
         </div>
+        <h2 class="help-subheading">Saving Combinators</h2>
+        <div class="help-section">
+            Save downloads the combinators added with <code>set</code> as
+            <code>set_list.cmb</code>. Every saved definition includes its
+            arity and can be entered again to recreate the combinator.
+        </div>
         <form method="dialog" class="dialog-controls">
             <button type="submit" autofocus>Close</button>
         </form>
@@ -447,7 +456,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             data-dialog-initial-focus>About</h2>
         <div class="license-text">
             <!-- For 1.2.x, keep the patch equal to the Sites version minus 66. -->
-            <p>C++ Combinator DSL, version 1.2.0<br>Copyright (C) 2026  David W. Gero</p>
+            <p>C++ Combinator DSL, version 1.2.1<br>Copyright (C) 2026  David W. Gero</p>
             <p>This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU Affero General Public License as published by
 the Free Software Foundation, either version 3 of the License, or
