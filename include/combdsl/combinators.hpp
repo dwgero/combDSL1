@@ -44,6 +44,7 @@ namespace combdsl {
 
 struct constant;
 class quoted_expression;
+class quoted_atomic;
 
 template <class Expression>
 class deferred_basis_expression;
@@ -625,6 +626,10 @@ public:
         print_to(std::cout);
     }
 
+    [[nodiscard]] std::string_view value() const noexcept {
+        return value_;
+    }
+
     template <class Argument>
     [[nodiscard]] auto operator()(Argument&& argument) const {
         using argument_type = stored_operand_t<Argument>;
@@ -1204,6 +1209,10 @@ public:
         print_to(std::cout);
     }
 
+    [[nodiscard]] constexpr std::string_view name() const noexcept {
+        return std::string_view(name_, length_);
+    }
+
     template <class Argument>
     [[nodiscard]] constexpr auto operator()(Argument&& argument) const {
         using argument_type = detail::stored_operand_t<Argument>;
@@ -1711,12 +1720,26 @@ enum class quoted_node_kind {
     basis
 };
 
+enum class quoted_atomic_kind {
+    none,
+    symbol,
+    symbolic_string
+};
+
 class quoted_node {
 public:
     virtual ~quoted_node() = default;
 
     [[nodiscard]] virtual quoted_node_kind kind() const noexcept = 0;
     [[nodiscard]] virtual bool is_application() const noexcept { return false; }
+    [[nodiscard]] virtual quoted_atomic_kind
+    atomic_kind() const noexcept {
+        return quoted_atomic_kind::none;
+    }
+    [[nodiscard]] virtual std::string_view
+    atomic_name() const noexcept {
+        return {};
+    }
     virtual void print_to(std::ostream& output) const = 0;
     virtual void print_as_operand_to(std::ostream& output) const {
         print_to(output);
@@ -1809,6 +1832,30 @@ public:
 
     [[nodiscard]] bool is_application() const noexcept override {
         return std::derived_from<Value, application_expression>;
+    }
+
+    [[nodiscard]] quoted_atomic_kind
+    atomic_kind() const noexcept override {
+        if constexpr (std::same_as<Value, symbol_expression>) {
+            return quoted_atomic_kind::symbol;
+        } else if constexpr (
+            std::same_as<Value, symbolic_string_expression>) {
+            return quoted_atomic_kind::symbolic_string;
+        } else {
+            return quoted_atomic_kind::none;
+        }
+    }
+
+    [[nodiscard]] std::string_view
+    atomic_name() const noexcept override {
+        if constexpr (std::same_as<Value, symbol_expression>) {
+            return value_->name();
+        } else if constexpr (
+            std::same_as<Value, symbolic_string_expression>) {
+            return value_->value();
+        } else {
+            return {};
+        }
     }
 
     void print_to(std::ostream& output) const override {
@@ -2020,6 +2067,55 @@ private:
     std::size_t arity_;
     std::shared_ptr<Expression const> expression_;
 };
+
+[[nodiscard]] inline bool
+is_quoted_atomic(quoted_expression const& expression) noexcept {
+    auto const& root = quoted_access::root(expression);
+    return root->atomic_kind() != quoted_atomic_kind::none;
+}
+
+[[nodiscard]] inline bool
+same_quoted_atom(quoted_expression const& left,
+                 quoted_expression const& right) {
+    auto const& left_root = quoted_access::root(left);
+    auto const& right_root = quoted_access::root(right);
+    auto const left_kind = left_root->atomic_kind();
+    return left_kind != quoted_atomic_kind::none &&
+           left_kind == right_root->atomic_kind() &&
+           left_root->atomic_name() == right_root->atomic_name();
+}
+
+[[nodiscard]] inline bool
+contains_quoted_atom(quoted_expression const& atom,
+                     quoted_expression const& expression) {
+    if (same_quoted_atom(atom, expression)) {
+        return true;
+    }
+
+    auto const& root = quoted_access::root(expression);
+    switch (root->kind()) {
+    case quoted_node_kind::application: {
+        auto const& application =
+            static_cast<quoted_application_node const&>(*root);
+        return contains_quoted_atom(atom, application.function()) ||
+               contains_quoted_atom(atom, application.argument());
+    }
+    case quoted_node_kind::recursive_y:
+        return contains_quoted_atom(
+            atom,
+            static_cast<quoted_recursive_y_node const&>(*root).generator());
+    case quoted_node_kind::basis_argument:
+        return contains_quoted_atom(
+            atom,
+            static_cast<quoted_basis_argument_node const&>(*root).argument());
+    case quoted_node_kind::html_argument:
+        return contains_quoted_atom(
+            atom,
+            static_cast<quoted_html_argument_node const&>(*root).argument());
+    default:
+        return false;
+    }
+}
 
 [[nodiscard]] inline quoted_expression
 make_quoted_primitive(quoted_node_kind kind) {
@@ -2274,6 +2370,36 @@ template <class Value>
 
 } // namespace detail
 
+class quoted_atomic {
+public:
+    quoted_atomic(quoted_atomic const&) = default;
+    quoted_atomic(quoted_atomic&&) noexcept = default;
+    quoted_atomic& operator=(quoted_atomic const&) = default;
+    quoted_atomic& operator=(quoted_atomic&&) noexcept = default;
+
+    explicit quoted_atomic(quoted_expression expression)
+        : expression_(std::move(expression)) {
+        if (!detail::is_quoted_atomic(expression_)) {
+            throw std::invalid_argument(
+                "combdsl::quoted_atomic requires a quoted symbol or "
+                "symbolic string");
+        }
+    }
+
+    template <class Value>
+        requires (!std::same_as<
+                  std::remove_cvref_t<Value>, quoted_atomic>)
+    explicit quoted_atomic(Value&& value)
+        : quoted_atomic(quote(std::forward<Value>(value))) {}
+
+    [[nodiscard]] quoted_expression const& expression() const noexcept {
+        return expression_;
+    }
+
+private:
+    quoted_expression expression_;
+};
+
 inline void quoted_expression::print_to(std::ostream& output) const {
     detail::print_scope scope(output);
     root_->print_to(output);
@@ -2314,6 +2440,9 @@ quoted_expression quote(Value&& value) {
         return detail::make_owned_quoted(std::forward<Value>(value));
     }
 }
+
+[[nodiscard]] inline quoted_expression
+takeout(quoted_atomic qa, quoted_expression qe);
 
 namespace detail {
 
@@ -3605,5 +3734,63 @@ SYMBOL(w);
 SYMBOL(x);
 SYMBOL(y);
 SYMBOL(z);
+
+[[nodiscard]] inline quoted_expression
+takeout(quoted_atomic qa, quoted_expression qe) {
+    if (detail::same_quoted_atom(qa.expression(), qe)) {
+        return detail::make_quoted_primitive(
+            detail::quoted_node_kind::identity);
+    }
+
+    if (!detail::contains_quoted_atom(qa.expression(), qe)) {
+        return detail::make_quoted_application(
+            detail::make_quoted_primitive(
+                detail::quoted_node_kind::constant),
+            std::move(qe));
+    }
+
+    auto const& root = detail::quoted_access::root(qe);
+    if (root->kind() == detail::quoted_node_kind::application) {
+        auto const& application =
+            static_cast<detail::quoted_application_node const&>(*root);
+        auto const& qfun = application.function();
+        auto const& qarg = application.argument();
+        auto const qfun_is_qa =
+            detail::same_quoted_atom(qa.expression(), qfun);
+        auto const qarg_is_qa =
+            detail::same_quoted_atom(qa.expression(), qarg);
+        auto const qarg_contains_qa =
+            detail::contains_quoted_atom(qa.expression(), qarg);
+        auto const qfun_contains_qa =
+            detail::contains_quoted_atom(qa.expression(), qfun);
+        if (qfun_is_qa && qarg_is_qa) {
+            return quote(M);
+        }
+        if (qfun_is_qa && !qarg_contains_qa) {
+            return quote(T)(qarg);
+        }
+        if (qarg_is_qa && !qfun_contains_qa) {
+            return qfun;
+        }
+        if (qfun_is_qa && qarg_contains_qa) {
+            return quote(O)(takeout(qa, qarg));
+        }
+        if (qarg_is_qa && qfun_contains_qa) {
+            return quote(W)(takeout(qa, qfun));
+        }
+        if (qfun_contains_qa && !qarg_contains_qa) {
+            return quote(C)(takeout(qa, qfun))(qarg);
+        }
+        if (qarg_contains_qa && !qfun_contains_qa) {
+            return quote(B)(qfun)(takeout(qa, qarg));
+        }
+        if (qfun_contains_qa && qarg_contains_qa) {
+            return quote(S)(takeout(qa, qfun))(takeout(qa, qarg));
+        }
+    }
+
+    throw std::logic_error(
+        "combdsl::takeout has no matching case");
+}
 
 } // namespace combdsl

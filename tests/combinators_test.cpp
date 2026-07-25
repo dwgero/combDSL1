@@ -46,12 +46,14 @@ using combdsl::parse_and_step;
 using combdsl::parse_eval;
 using combdsl::parse_error;
 using combdsl::quote;
+using combdsl::quoted_atomic;
 using combdsl::read_parse_eval;
 using combdsl::set_list;
 using combdsl::single_step;
 using combdsl::single_step_loop;
 using combdsl::single_step_run;
 using combdsl::symbol;
+using combdsl::takeout;
 using combdsl::a;
 using combdsl::b;
 using combdsl::c;
@@ -220,6 +222,9 @@ interrupting_identity_expression(combdsl::quoted_expression argument) {
 static_assert(std::is_same_v<decltype(I(std::declval<int&>())), int&>);
 static_assert(std::is_same_v<decltype(parse("x")),
                              combdsl::quoted_expression>);
+static_assert(std::is_same_v<
+              decltype(takeout(quoted_atomic{x}, quote(x))),
+              combdsl::quoted_expression>);
 static_assert(is_single_utf8_char(
     std::string_view("\xF0\x9F\x98\x80", 4)));
 static_assert(!is_single_utf8_char(
@@ -1281,6 +1286,202 @@ int main() {
          "x\n");
     const auto quoted_ski_x = quote(S)(K)(I)(x);
     test("quote SKIx", quoted_ski_x, "SKIx");
+    test("takeout equal symbol",
+         takeout(quoted_atomic{x}, quote(x)), "I");
+    test("takeout separately parsed equal symbol",
+         takeout(quoted_atomic{quote(x)}, parse("x")), "I");
+    test("takeout equal symbolic string",
+         takeout(quoted_atomic{"x"}, quote("x")), "I");
+    test("takeout separately parsed equal symbolic string",
+         takeout(quoted_atomic{quote("x")}, parse("\\\"x\\\"")), "I");
+    test("takeout symbol does not equal symbolic string",
+         takeout(quoted_atomic{x}, quote("x")), "Kx");
+    test("takeout symbolic string does not equal symbol",
+         takeout(quoted_atomic{"x"}, quote(x)), "Kx");
+    test("takeout equal UTF-8 symbol",
+         takeout(quoted_atomic{circle}, quote(symbol("\xE2\x97\x8F"))),
+         "I");
+    test("takeout unequal symbol is constant",
+         takeout(quoted_atomic{x}, quote(y)), "Ky");
+    test("takeout absent primitive is constant",
+         takeout(quoted_atomic{x}, quote(K)), "KK");
+    test("takeout absent from application is constant",
+         takeout(quoted_atomic{x}, quote(y)(z)), "K(yz)");
+    test("takeout absent from nested application is constant",
+         takeout(quoted_atomic{x}, quote(y)(quote(z)(w))),
+         "K(y(zw))");
+    test("takeout category distinction inside application",
+         takeout(quoted_atomic{x}, quote(y)("x")), "K(yx)");
+    test("takeout repeated symbol is Mockingbird",
+         takeout(quoted_atomic{x}, quote(x)(x)), "M");
+    test("takeout repeated symbolic string is Mockingbird",
+         takeout(quoted_atomic{"x"}, quote("x")("x")), "M");
+    test("takeout matching function with constant argument is Thrush",
+         takeout(quoted_atomic{x}, quote(x)(y)), "Ty");
+    test("takeout matching function with compound constant argument",
+         takeout(quoted_atomic{x}, quote(x)(quote(y)(z))),
+         "T(yz)");
+    test("takeout matching function respects atom categories",
+         takeout(quoted_atomic{x}, quote(x)("x")), "Tx");
+    test("takeout matching argument returns function",
+         takeout(quoted_atomic{x}, quote(y)(x)), "y");
+    test("takeout matching argument returns compound function",
+         takeout(quoted_atomic{x}, quote(y)(z)(x)), "yz");
+    test("takeout matching argument respects atom categories",
+         takeout(quoted_atomic{"x"}, quote(x)("x")), "x");
+    test("takeout matching argument recursively uses Warbler",
+         takeout(quoted_atomic{x}, quote(y)(x)(x)), "Wy");
+    test("takeout Warbler recursion reaches Mockingbird",
+         takeout(quoted_atomic{x}, quote(x)(x)(x)), "WM");
+    test("takeout Warbler recursion reaches Thrush",
+         takeout(quoted_atomic{x}, quote(x)(y)(x)),
+         "W(Ty)");
+    test("takeout Warbler recursion reaches Owl",
+         takeout(
+             quoted_atomic{x},
+             quote(x)(quote(y)(x))(x)),
+         "W(Oy)");
+    test("takeout nested Warbler recursion",
+         takeout(
+             quoted_atomic{x},
+             quote(y)(x)(x)(x)),
+         "W(Wy)");
+    test("takeout matching function recursively uses Owl",
+         takeout(quoted_atomic{x}, quote(x)(quote(y)(x))), "Oy");
+    test("takeout Owl recursion reaches Mockingbird",
+         takeout(quoted_atomic{x}, quote(x)(quote(x)(x))), "OM");
+    test("takeout Owl recursion reaches Thrush",
+         takeout(quoted_atomic{x}, quote(x)(quote(x)(y))),
+         "O(Ty)");
+    test("takeout nested Owl recursion",
+         takeout(
+             quoted_atomic{x},
+             quote(x)(quote(x)(quote(y)(x)))),
+         "O(Oy)");
+    test("takeout function-dependent application uses Cardinal",
+         takeout(quoted_atomic{x}, quote(y)(x)(z)), "Cyz");
+    test("takeout Cardinal recursion reaches Mockingbird",
+         takeout(quoted_atomic{x}, quote(x)(x)(y)), "CMy");
+    test("takeout Cardinal recursion reaches Thrush",
+         takeout(quoted_atomic{x}, quote(x)(y)(z)),
+         "C(Ty)z");
+    test("takeout Cardinal recursion reaches Owl",
+         takeout(
+             quoted_atomic{x},
+             quote(x)(quote(y)(x))(z)),
+         "C(Oy)z");
+    test("takeout Cardinal recursion reaches Warbler",
+         takeout(quoted_atomic{x}, quote(y)(x)(x)(z)),
+         "C(Wy)z");
+    test("takeout nested Cardinal recursion",
+         takeout(quoted_atomic{x}, quote(y)(x)(z)(w)),
+         "C(Cyz)w");
+    test("takeout argument-dependent application uses Bluebird",
+         takeout(
+             quoted_atomic{x},
+             quote(y)(quote(z)(x))),
+         "Byz");
+    test("takeout Bluebird recursion reaches Mockingbird",
+         takeout(
+             quoted_atomic{x},
+             quote(y)(quote(x)(x))),
+         "ByM");
+    test("takeout Bluebird recursion reaches Thrush",
+         takeout(
+             quoted_atomic{x},
+             quote(y)(quote(x)(z))),
+         "By(Tz)");
+    test("takeout Bluebird recursion reaches Owl",
+         takeout(
+             quoted_atomic{x},
+             quote(y)(quote(x)(quote(z)(x)))),
+         "By(Oz)");
+    test("takeout Bluebird recursion reaches Warbler",
+         takeout(
+             quoted_atomic{x},
+             quote(y)(quote(z)(x)(x))),
+         "By(Wz)");
+    test("takeout Bluebird recursion reaches Cardinal",
+         takeout(
+             quoted_atomic{x},
+             quote(y)(quote(z)(x)(w))),
+         "By(Czw)");
+    test("takeout nested Bluebird recursion",
+         takeout(
+             quoted_atomic{x},
+             quote(y)(quote(z)(quote(w)(x)))),
+         "By(Bzw)");
+    test("takeout both-dependent application uses Starling",
+         takeout(
+             quoted_atomic{x},
+             quote(y)(x)(quote(z)(x))),
+         "Syz");
+    test("takeout Starling recursion reaches Mockingbirds",
+         takeout(
+             quoted_atomic{x},
+             quote(x)(x)(quote(x)(x))),
+         "SMM");
+    test("takeout Starling recursion reaches Thrush",
+         takeout(
+             quoted_atomic{x},
+             quote(x)(y)(quote(z)(x))),
+         "S(Ty)z");
+    test("takeout Starling recursion reaches Owl and Warbler",
+         takeout(
+             quoted_atomic{x},
+             quote(x)(quote(y)(x))(quote(z)(x)(x))),
+         "S(Oy)(Wz)");
+    test("takeout Starling respects symbolic strings",
+         takeout(
+             quoted_atomic{"x"},
+             quote(y)("x")(quote(z)("x"))),
+         "Syz");
+    test("takeout nested Starling recursion",
+         takeout(
+             quoted_atomic{x},
+             quote(y)(x)(quote(z)(x))(
+                 quote(w)(x)(quote(v)(x)))),
+         "S(Syz)(Swv)");
+    test("quoted atomic rejects a primitive",
+         [] {
+             try {
+                 static_cast<void>(quoted_atomic{K});
+             } catch (std::invalid_argument const& error) {
+                 std::cout << error.what();
+             }
+         },
+         "combdsl::quoted_atomic requires a quoted symbol or symbolic "
+         "string");
+    test("quoted atomic rejects a named basis",
+         [] {
+             try {
+                 static_cast<void>(quoted_atomic{M});
+             } catch (std::invalid_argument const& error) {
+                 std::cout << error.what();
+             }
+         },
+         "combdsl::quoted_atomic requires a quoted symbol or symbolic "
+         "string");
+    test("quoted atomic rejects another opaque value",
+         [] {
+             try {
+                 static_cast<void>(quoted_atomic{42});
+             } catch (std::invalid_argument const& error) {
+                 std::cout << error.what();
+             }
+         },
+         "combdsl::quoted_atomic requires a quoted symbol or symbolic "
+         "string");
+    test("quoted atomic rejects an application",
+         [] {
+             try {
+                 static_cast<void>(quoted_atomic{quote(x)(y)});
+             } catch (std::invalid_argument const& error) {
+                 std::cout << error.what();
+             }
+         },
+         "combdsl::quoted_atomic requires a quoted symbol or symbolic "
+         "string");
     test("single step I", single_step(quote(I)(x)), "x");
     test("single step I with trailing argument", single_step(quote(I)(x)(y)),
          "xy");
