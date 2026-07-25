@@ -153,6 +153,7 @@ const auto y = symbol('y');
 const auto M = basis("M", 1, S(I)(I));
 const auto T = basis("T", 2, S(K(S(I)))(K));
 const auto Qzero = basis("Qzero", 0, K);
+const auto Cstar = basis("Cstar", 4, S(K(C)));
 
 M();            // M
 M(x)();         // xx
@@ -364,20 +365,25 @@ parse_eval("K (I x) y"); // prints: x
 ```
 
 At the start of a line, `set` followed by whitespace defines and registers a
-zero-arity named basis from the expression after `=`:
+named basis. An optional decimal arity can appear after `=` and before the
+stored expression; when omitted, it defaults to `0`:
 
 ```cpp
-parse("set Double = S(I)(I)");      // Double
-parse_eval("set Twice = S(I)(I)");  // registers Twice; prints nothing
-single_step(parse("Double x"));     // SIIx
-parse_eval("Double x");             // prints: xx
+parse("set Double = 1 S(I)(I)");      // Double
+parse_eval("set Twice = 1 S(I)(I)");  // registers Twice; prints nothing
+single_step(parse("Double x"));       // xx
+single_step(parse("Double x"), true); // SIIx
+parse("set Alias = I");               // Alias; arity defaults to 0
 ```
 
 Whitespace before `set` and around `=` is optional, while at least one
-whitespace character must separate `set` from the name. The declaration acts
-like `basis(name, 0, expression)`: names use the normal basis restrictions,
-the first registered definition wins, and `S`, `K`, `I`, and `Y` retain their
-primitive meanings. `parse_eval`, `read_parse_eval`, and `parse_and_step`
+whitespace character must separate `set` from the name and an explicit arity
+from its expression. The declaration acts like
+`basis(name, arity, expression)`: names use the normal basis restrictions, the
+first registered definition wins, and `S`, `K`, `I`, and `Y` retain their
+primitive meanings. Because a leading decimal token followed by whitespace is
+treated as the arity, parenthesize a numeric basis name when it begins the
+stored expression. `parse_eval`, `read_parse_eval`, and `parse_and_step`
 register a declaration without evaluating or stepping its stored expression,
 and produce no output for the declaration itself. A malformed declaration does
 not register its name.

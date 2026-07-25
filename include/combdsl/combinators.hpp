@@ -26,6 +26,7 @@
 #include <functional>
 #include <iostream>
 #include <iterator>
+#include <limits>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -1925,7 +1926,7 @@ enum class html_argument_color {
     green,
     blue,
     dark_orange,
-    munsel_purple
+    munsell_purple
 };
 
 class quoted_html_argument_node final : public quoted_node {
@@ -1974,7 +1975,7 @@ private:
             return "<span class=\"wob\">";
         case html_argument_color::dark_orange:
             return "<span class=\"woo\">";
-        case html_argument_color::munsel_purple:
+        case html_argument_color::munsell_purple:
             return "<span class=\"wop\">";
         }
         return {};
@@ -2460,7 +2461,7 @@ reduce_at_head(
             html_argument_color::green,
             html_argument_color::blue,
             html_argument_color::dark_orange,
-            html_argument_color::munsel_purple,
+            html_argument_color::munsell_purple,
         };
         auto const colored_arguments =
             std::min(arity, std::size(colors));
@@ -3122,6 +3123,7 @@ private:
         }
         ++position_;
 
+        auto const arity = parse_optional_set_arity();
         auto body = parse_expression();
         skip_whitespace();
         if (!at_end()) {
@@ -3129,7 +3131,7 @@ private:
         }
 
         auto result = make_quoted_basis_snapshot(
-            name, 0, std::move(body));
+            name, arity, std::move(body));
         register_parser_basis(name.view(), result);
         return result;
     }
@@ -3144,6 +3146,42 @@ private:
         } catch (std::invalid_argument const& error) {
             throw parse_error(name_position, error.what());
         }
+    }
+
+    [[nodiscard]] std::size_t parse_optional_set_arity() {
+        skip_whitespace();
+
+        auto const arity_position = position_;
+        auto arity_end = position_;
+        while (arity_end < source_.size() &&
+               source_[arity_end] >= '0' &&
+               source_[arity_end] <= '9') {
+            ++arity_end;
+        }
+
+        if (arity_end == arity_position ||
+            (arity_end < source_.size() &&
+             !is_whitespace(source_[arity_end]))) {
+            return 0;
+        }
+
+        std::size_t arity = 0;
+        for (auto digit_position = arity_position;
+             digit_position < arity_end;
+             ++digit_position) {
+            auto const digit = static_cast<std::size_t>(
+                source_[digit_position] - '0');
+            if (arity >
+                (std::numeric_limits<std::size_t>::max() - digit) / 10) {
+                throw parse_error(
+                    arity_position, "basis arity is out of range");
+            }
+            arity = arity * 10 + digit;
+        }
+
+        position_ = arity_end;
+        skip_whitespace();
+        return arity;
     }
 
     [[nodiscard]] quoted_expression parse_expression() {
@@ -3421,15 +3459,6 @@ BASIS(D, 4, S(K(S(K(S))))(S(K(K))));
 BASIS(L, 2, S(B)(K(M)));
 BASIS(Z, 2, S(B)(I));
 BASIS(A, 2, S(B)(T));
-BASIS(Cstar, 4, S(K(C)));
-BASIS(Vstar, 4, S(K(Cstar))(C));
-BASIS(V4, 4, S(K(Vstar))(T));
-BASIS(G, 1, S(S(S(S(S(I)(K(S)))(K(T)))(K(K)))(K(K(K))))(K(S(K))));
-BASIS(
-    Hprime,
-    3,
-    S(K(W))(S(K(S(K(C))))(S(K(S(K(S(G)))))(S(S(K(B))(B))(K(T))))));
-BASIS(H, 1, Y(Hprime));
 
 #define SYMBOL(lower_letter) \
     inline constexpr auto lower_letter = \

@@ -211,16 +211,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             font: 0.9rem/1.5 system-ui, sans-serif;
         }
 
-        .set-bird-example {
-            display: block;
-            text-align: center;
-        }
-
         #combinator-info-dialog,
         #about-dialog {
             width: min(40rem, calc(100% - 2rem));
         }
 
+        #help-dialog,
         #combinator-info-dialog {
             max-height: calc(100vh - 2rem);
             max-height: calc(100dvh - 2rem);
@@ -229,8 +225,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
         }
 
         #help-dialog dl,
+        .help-section,
         .license-text {
             font: 0.9rem/1.5 system-ui, sans-serif;
+        }
+
+        .help-subheading {
+            margin-top: 1.25rem;
         }
 
         .license-text {
@@ -337,7 +338,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
     </main>
 
     <dialog id="help-dialog" aria-labelledby="help-title">
-        <h2 id="help-title">Stepping options</h2>
+        <h2 id="help-title">Stepping Options</h2>
         <dl>
             <dt>Single Step</dt>
             <dd>
@@ -379,6 +380,16 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
                 ordinary evaluation ignores it.
             </dd>
         </dl>
+        <h2 class="help-subheading">Adding Combinators</h2>
+        <div class="help-section">
+            <code>set name = combinator_expression</code><br>
+            In the first form, the expression reduces immediately.
+            <br><br>
+            <code>set name = arity combinator_expression</code><br>
+            In the second form, <code>arity</code> is a number specifying
+            the minimal number of arguments required for the expression
+            to reduce.
+        </div>
         <form method="dialog" class="dialog-controls">
             <button type="submit" autofocus>Close</button>
         </form>
@@ -387,7 +398,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
     <dialog id="combinator-info-dialog"
         aria-labelledby="combinator-info-title">
         <h2 id="combinator-info-title" tabindex="-1"
-            data-dialog-initial-focus>Bird Combinators</h2>
+            data-dialog-initial-focus>Pre-Defined Bird Combinators</h2>
         <p class="dialog-intro">
             Most of the birds come from Raymond Smullyan's book
             <a href="https://en.wikipedia.org/wiki/To_Mock_a_Mockingbird"
@@ -395,10 +406,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
                 Mockingbird</cite></a>.
             Application is left-associative, meaning xyz at the head of an
             expression or right after a ( acts like ((xy)z).
-            Note that the xyz in Cxyz is not at the head; C is.
-            To add a bird:
-            <span class="set-bird-example"><code>set birdname = combinator
-                expression</code></span>
+            Note that the xyz in Cxyz is not at the head; C is, thus (((Cx)y)z).
         </p>
         <table class="combinator-table"
             aria-label="Bird combinator reduction rules">
@@ -409,24 +417,24 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
                 </tr>
             </thead>
             <tbody>
-                <tr><th scope="row">Albatross</th><td><code>Axy = x(yx)</code></td></tr>
-                <tr><th scope="row">Bluebird</th><td><code>Bxyz = x(yz)</code></td></tr>
-                <tr><th scope="row">Cardinal</th><td><code>Cxyz = xzy</code></td></tr>
-                <tr><th scope="row">Dove</th><td><code>Dxyzw = xy(zw)</code></td></tr>
-                <tr><th scope="row">Identity</th><td><code>Ix = x</code></td></tr>
-                <tr><th scope="row">Kestrel</th><td><code>Kxy = x</code></td></tr>
-                <tr><th scope="row">Lark</th><td><code>Lxy = x(yy)</code></td></tr>
-                <tr><th scope="row">Mockingbird</th><td><code>Mx = xx</code></td></tr>
-                <tr><th scope="row">Nightingale</th><td><code>Nxy = xyx</code></td></tr>
-                <tr><th scope="row">Owl</th><td><code>Oxy = y(xy)</code></td></tr>
-                <tr><th scope="row">Peacock</th><td><code>Pxyz = y(xz)</code></td></tr>
-                <tr><th scope="row">Robin</th><td><code>Rxyz = yzx</code></td></tr>
-                <tr><th scope="row">Sage</th><td><code>Yx = x(Yx)</code></td></tr>
-                <tr><th scope="row">Starling</th><td><code>Sxyz = xz(yz)</code></td></tr>
-                <tr><th scope="row">Thrush</th><td><code>Txy = yx</code></td></tr>
-                <tr><th scope="row">Vireo</th><td><code>Vxyz = zxy</code></td></tr>
-                <tr><th scope="row">Warbler</th><td><code>Wxy = xyy</code></td></tr>
-                <tr><th scope="row">Zazu</th><td><code>Zxy = x(xy)</code></td></tr>
+                <tr><th scope="row">Albatross (A)</th><td><code>Axy = x(yx)</code></td></tr>
+                <tr><th scope="row">Bluebird (B)</th><td><code>Bxyz = x(yz)</code></td></tr>
+                <tr><th scope="row">Cardinal (C)</th><td><code>Cxyz = xzy</code></td></tr>
+                <tr><th scope="row">Dove (D)</th><td><code>Dxyzw = xy(zw)</code></td></tr>
+                <tr><th scope="row">Identity (I)</th><td><code>Ix = x</code></td></tr>
+                <tr><th scope="row">Kestrel (K)</th><td><code>Kxy = x</code></td></tr>
+                <tr><th scope="row">Lark (L)</th><td><code>Lxy = x(yy)</code></td></tr>
+                <tr><th scope="row">Mockingbird (M)</th><td><code>Mx = xx</code></td></tr>
+                <tr><th scope="row">Nightingale (N)</th><td><code>Nxy = xyx</code></td></tr>
+                <tr><th scope="row">Owl (O)</th><td><code>Oxy = y(xy)</code></td></tr>
+                <tr><th scope="row">Peacock (P)</th><td><code>Pxyz = y(xz)</code></td></tr>
+                <tr><th scope="row">Robin (R)</th><td><code>Rxyz = yzx</code></td></tr>
+                <tr><th scope="row">Sage (Y)</th><td><code>Yx = x(Yx)</code></td></tr>
+                <tr><th scope="row">Starling (S)</th><td><code>Sxyz = xz(yz)</code></td></tr>
+                <tr><th scope="row">Thrush (T)</th><td><code>Txy = yx</code></td></tr>
+                <tr><th scope="row">Vireo (V)</th><td><code>Vxyz = zxy</code></td></tr>
+                <tr><th scope="row">Warbler (W)</th><td><code>Wxy = xyy</code></td></tr>
+                <tr><th scope="row">Zazu (Z)</th><td><code>Zxy = x(xy)</code></td></tr>
             </tbody>
         </table>
         <form method="dialog" class="dialog-controls">
@@ -438,8 +446,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
         <h2 id="about-title" tabindex="-1"
             data-dialog-initial-focus>About</h2>
         <div class="license-text">
-            <!-- Update this version for each site release. -->
-            <p>C++ Combinator DSL, version 1.1.0<br>Copyright (C) 2026  David W. Gero</p>
+            <!-- Keep the patch level equal to the Sites version minus 56. -->
+            <p>C++ Combinator DSL, version 1.1.9<br>Copyright (C) 2026  David W. Gero</p>
             <p>This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU Affero General Public License as published by
 the Free Software Foundation, either version 3 of the License, or

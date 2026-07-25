@@ -91,17 +91,23 @@ using combdsl::D;
 using combdsl::L;
 using combdsl::Z;
 using combdsl::A;
-using combdsl::Cstar;
-using combdsl::Vstar;
-using combdsl::V4;
-using combdsl::G;
-using combdsl::Hprime;
-using combdsl::H;
 
 void ensure_external_basis_registered();
 
 namespace {
 
+const auto Cstar = basis("Cstar", 4, S(K(C)));
+const auto Vstar = basis("Vstar", 4, S(K(Cstar))(C));
+const auto V4 = basis("V4", 4, S(K(Vstar))(T));
+const auto G = basis(
+    "G",
+    1,
+    S(S(S(S(S(I)(K(S)))(K(T)))(K(K)))(K(K(K))))(K(S(K))));
+const auto Hprime = basis(
+    "Hprime",
+    3,
+    S(K(W))(S(K(S(K(C))))(S(K(S(K(S(G)))))(S(S(K(B))(B))(K(T))))));
+const auto H = basis("H", 1, Y(Hprime));
 const auto G2 = basis("G2", 1, Vstar(V4(S)(T)(K))(K(K))(S(K)));
 const auto bazTest =
     basis("bazTest", 3, B(W)(B(B(C))(
@@ -373,7 +379,7 @@ void test_invalid_utf8_symbol(
     return colored_argument("woo", argument);
 }
 
-[[nodiscard]] std::string munsel_purple_argument(
+[[nodiscard]] std::string munsell_purple_argument(
     std::string_view argument) {
     return colored_argument("wop", argument);
 }
@@ -820,6 +826,30 @@ int main() {
          parse("set SetM = S(I)(I)"), "SetM");
     test("compound set basis expands as one zero-arity step",
          single_step(parse("SetM x")), "SIIx");
+    test("set accepts an explicit zero arity",
+         parse("set SetK0 = 0 K"), "SetK0");
+    test("explicit zero-arity set basis expands without arguments",
+         single_step(parse("SetK0")), "K");
+    test("set accepts a unary arity",
+         parse("set SetI1 = 1 I"), "SetI1");
+    test("unary set basis remains named while undersaturated",
+         single_step(parse("SetI1")), "SetI1");
+    test("unary set basis contracts when saturated",
+         single_step(parse("SetI1 x")), "x");
+    test("basis step exposes a unary set basis definition",
+         single_step(parse("SetI1 x"), true), "Ix");
+    test("set accepts a binary arity",
+         parse("set SetK2 = 2 K"), "SetK2");
+    test("binary set basis remains named while undersaturated",
+         single_step(parse("SetK2 x")), "SetK2 x");
+    test("binary set basis contracts when saturated",
+         single_step(parse("SetK2 x y")), "x");
+    test("binary set basis preserves trailing arguments",
+         single_step(parse("SetK2 x y z")), "xz");
+    test("set accepts parser whitespace around an explicit arity",
+         parse(" \tset\nWsAr2 \r=\v2\f K"), "WsAr2");
+    test("whitespace-defined binary set basis contracts",
+         single_step(parse("WsAr2 x y")), "x");
     test("set without required whitespace remains symbols",
          parse("setx"), "setx");
     test("bare set remains symbols", parse("set"), "set");
@@ -1006,6 +1036,40 @@ int main() {
     test_parse_failure("set requires a basis name", "set = I", 4);
     test_parse_failure("set requires an equals sign", "set NoEq I", 9);
     test_parse_failure("set requires an expression", "set Empty = \t", 13);
+    constexpr std::string_view arity_without_expression =
+        "set ArOnly = 2";
+    test_parse_failure(
+        "set arity requires an expression",
+        arity_without_expression,
+        arity_without_expression.size());
+    constexpr std::string_view glued_arity = "set Glued = 2I";
+    test_parse_failure(
+        "set arity requires whitespace before its expression",
+        glued_arity,
+        glued_arity.find('2'));
+    constexpr std::string_view negative_arity = "set NegAr = -1 I";
+    test_parse_failure(
+        "set rejects a negative arity",
+        negative_arity,
+        negative_arity.find('-'));
+    constexpr std::string_view fractional_arity = "set FracAr = 1.5 I";
+    test_parse_failure(
+        "set rejects a fractional arity",
+        fractional_arity,
+        fractional_arity.find('1'));
+    constexpr std::string_view bracketed_arity = "set Brack = [2] K";
+    test_parse_failure(
+        "set rejects a bracketed arity",
+        bracketed_arity,
+        bracketed_arity.find('['));
+    constexpr std::string_view overflowing_arity =
+        "set QovAr = 999999999999999999999999999999999999999 I";
+    test_parse_failure(
+        "set rejects an overflowing arity",
+        overflowing_arity,
+        overflowing_arity.find('9'));
+    test_parse_failure(
+        "overflowing arity does not register its name", "QovAr", 0);
     test_parse_failure("set rejects an overlong basis name",
                        "set Eight888=I", 11);
     test_parse_failure("set rejects an invalid basis name",
@@ -1054,6 +1118,10 @@ int main() {
          [&] { parse_eval("set EvalK=K"); }, "");
     test("parse eval uses a silently registered set basis",
          [&] { parse_eval("EvalK x y"); }, "x\n");
+    test("parse eval positive-arity set only registers its definition",
+         [&] { parse_eval("set EvalI1 = 1 I"); }, "");
+    test("parse eval uses a silently registered positive-arity basis",
+         [&] { parse_eval("EvalI1 x"); }, "x\n");
     test("parse eval does not mistake setx for a definition",
          [&] { parse_eval("setx"); }, "setx\n");
     test("parse eval uses a set basis",
@@ -1731,9 +1799,9 @@ int main() {
              green_argument("v") +
              blue_argument("w") +
              dark_orange_argument("x") +
-             munsel_purple_argument("y") +
+             munsell_purple_argument("y") +
              "z\n->" +
-             munsel_purple_argument("y") +
+             munsell_purple_argument("y") +
              "z\n");
     test("color step colored spacing precedes multicharacter basis",
          [&] {
