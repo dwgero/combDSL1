@@ -86,6 +86,33 @@ self.addEventListener("message", async event => {
         return;
     }
 
+    if (message.type === "load" &&
+        steppingRequestId === undefined) {
+        busy = true;
+        try {
+            const module = await modulePromise;
+            self.postMessage({
+                type: "load-result",
+                id: message.id,
+                result: module.loadSetList(String(message.source)),
+            });
+        } catch (error) {
+            self.postMessage({
+                type: "load-result",
+                id: message.id,
+                result: {
+                    success: false,
+                    loaded: 0,
+                    line: 0,
+                    error: errorMessage(error),
+                },
+            });
+        } finally {
+            busy = false;
+        }
+        return;
+    }
+
     if (message.type === "evaluate" &&
         steppingRequestId === undefined) {
         busy = true;

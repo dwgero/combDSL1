@@ -20,10 +20,14 @@
 
 #include <emscripten/bind.h>
 
+#include <algorithm>
+#include <cstddef>
 #include <exception>
 #include <optional>
 #include <sstream>
 #include <string>
+#include <string_view>
+#include <vector>
 
 namespace {
 
@@ -43,7 +47,113 @@ struct single_step_result {
     std::string error;
 };
 
+struct load_result {
+    bool success;
+    std::size_t loaded;
+    std::size_t line;
+    std::string error;
+};
+
 std::optional<combdsl::quoted_expression> stepped_expression;
+
+[[nodiscard]] bool blank_record(std::string_view record) noexcept {
+    return std::ranges::all_of(record, [](char value) {
+        return value == ' ' || value == '\t' || value == '\r' ||
+               value == '\n' || value == '\f' || value == '\v';
+    });
+}
+
+[[nodiscard]] load_result load_set_list_input(
+    std::string const& source) {
+    combdsl::detail::registered_parser_basis_table previous_bases;
+    std::vector<std::string> previous_definitions;
+
+    try {
+        std::lock_guard lock(
+            combdsl::detail::parser_basis_registry_mutex());
+        previous_bases = combdsl::detail::parser_basis_registry();
+        previous_definitions =
+            combdsl::detail::parser_set_definition_registry();
+    } catch (std::exception const& error) {
+        return {false, 0, 0, error.what()};
+    } catch (...) {
+        return {false, 0, 0, "unknown loading error"};
+    }
+
+    auto restore_registry = [&] {
+        std::lock_guard lock(
+            combdsl::detail::parser_basis_registry_mutex());
+        combdsl::detail::parser_basis_registry().swap(previous_bases);
+        combdsl::detail::parser_set_definition_registry().swap(
+            previous_definitions);
+    };
+
+    std::size_t loaded = 0;
+    std::size_t record_start = 0;
+    std::size_t record_line = 1;
+    std::size_t current_line = 1;
+    std::size_t error_line = 0;
+    bool inside_word = false;
+
+    auto load_record = [&](std::size_t record_end) {
+        auto const record = std::string_view(source).substr(
+            record_start, record_end - record_start);
+        if (blank_record(record)) {
+            return;
+        }
+
+        error_line = record_line;
+        static_cast<void>(
+            combdsl::parse(combdsl::input_escape(record)));
+        ++loaded;
+    };
+
+    try {
+        for (std::size_t position = 0;
+             position < source.size();
+             ++position) {
+            auto const value = source[position];
+            if (value == '"') {
+                inside_word = !inside_word;
+                continue;
+            }
+            if (value != '\r' && value != '\n') {
+                continue;
+            }
+
+            auto const crlf =
+                value == '\r' &&
+                position + 1 < source.size() &&
+                source[position + 1] == '\n';
+            if (!inside_word) {
+                load_record(position);
+                if (crlf) {
+                    ++position;
+                }
+                ++current_line;
+                record_start = position + 1;
+                record_line = current_line;
+                continue;
+            }
+
+            if (crlf) {
+                ++position;
+            }
+            ++current_line;
+        }
+
+        if (record_start < source.size()) {
+            load_record(source.size());
+        }
+        return {true, loaded, 0, {}};
+    } catch (std::exception const& error) {
+        restore_registry();
+        return {false, 0, error_line, error.what()};
+    } catch (...) {
+        restore_registry();
+        return {false, 0, error_line, "unknown parsing error"};
+    }
+}
 
 [[nodiscard]] evaluation_result parse_eval_input(std::string const& source) {
     std::istringstream input;
@@ -215,10 +325,17 @@ EMSCRIPTEN_BINDINGS(combdsl_browser) {
         .field("output", &single_step_result::output)
         .field("error", &single_step_result::error);
 
+    emscripten::value_object<load_result>("LoadResult")
+        .field("success", &load_result::success)
+        .field("loaded", &load_result::loaded)
+        .field("line", &load_result::line)
+        .field("error", &load_result::error);
+
     emscripten::function("parseEval", &parse_eval_input);
     emscripten::function("singleStepRun", &single_step_run_input);
     emscripten::function("colorStepRun", &color_step_run_input);
     emscripten::function("beginSingleStep", &begin_single_step_input);
     emscripten::function("takeSingleStep", &take_single_step);
     emscripten::function("setList", &combdsl::set_list);
+    emscripten::function("loadSetList", &load_set_list_input);
 }

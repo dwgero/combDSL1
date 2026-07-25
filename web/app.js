@@ -27,6 +27,8 @@
     const colorize = document.querySelector("#colorize");
     const cancel = document.querySelector("#cancel");
     const save = document.querySelector("#save");
+    const load = document.querySelector("#load");
+    const loadFile = document.querySelector("#load-file");
     const help = document.querySelector("#help");
     const helpDialog = document.querySelector("#help-dialog");
     const combinatorInfo = document.querySelector("#combinator-info");
@@ -43,6 +45,7 @@
     let nextRequestId = 0;
     let activeRequest;
     let saveRequestId;
+    let loadRequest;
     let ready = false;
     let singleStepEnabled = false;
     let basisStepEnabled = false;
@@ -54,13 +57,16 @@
 
     const updateControls = () => {
         const evaluating = activeRequest !== undefined;
-        const busy = evaluating || saveRequestId !== undefined;
+        const busy = evaluating || saveRequestId !== undefined ||
+            loadRequest !== undefined;
         singleStep.disabled = !ready || busy;
         basisStep.disabled = !ready || busy;
         keyStep.disabled = !ready || busy;
         colorize.disabled = !ready || busy;
         cancel.disabled = !evaluating;
         save.disabled = !ready || busy;
+        load.disabled = !ready || busy;
+        loadFile.disabled = !ready || busy;
         source.readOnly = busy;
     };
 
@@ -180,6 +186,7 @@
         ready = false;
         activeRequest = undefined;
         saveRequestId = undefined;
+        loadRequest = undefined;
         status.textContent = "WebAssembly unavailable";
         appendOutput(message, "error");
         updateControls();
@@ -191,6 +198,7 @@
         ready = false;
         activeRequest = undefined;
         saveRequestId = undefined;
+        loadRequest = undefined;
         status.textContent = "Loading WebAssembly…";
         updateControls();
 
@@ -235,6 +243,27 @@
                 } else {
                     status.textContent = "Ready";
                     appendOutput(message.error, "error");
+                }
+                updateControls();
+                return;
+            }
+
+            if (message.type === "load-result" &&
+                message.id === loadRequest?.id) {
+                const completedRequest = loadRequest;
+                loadRequest = undefined;
+                if (message.result.success) {
+                    status.textContent = `Loaded ${completedRequest.name}`;
+                } else {
+                    status.textContent = "Ready";
+                    const line = message.result.line === 0
+                        ? ""
+                        : `line ${message.result.line}: `;
+                    appendOutput(
+                        `${completedRequest.name}: ${line}${
+                            message.result.error}`,
+                        "error",
+                    );
                 }
                 updateControls();
                 return;
@@ -319,6 +348,7 @@
                 const failedRequest = activeRequest;
                 activeRequest = undefined;
                 saveRequestId = undefined;
+                loadRequest = undefined;
                 ready = false;
                 status.textContent = "WebAssembly stopped";
                 if (failedRequest === undefined) {
@@ -343,6 +373,7 @@
             const failedRequest = activeRequest;
             activeRequest = undefined;
             saveRequestId = undefined;
+            loadRequest = undefined;
             ready = false;
             status.textContent = "WebAssembly stopped";
             const message = event.message || "Web Worker failed";
@@ -358,7 +389,8 @@
     form.addEventListener("submit", event => {
         event.preventDefault();
         if (!ready || activeRequest !== undefined ||
-            saveRequestId !== undefined) {
+            saveRequestId !== undefined ||
+            loadRequest !== undefined) {
             return;
         }
 
@@ -425,7 +457,8 @@
 
     save.addEventListener("click", () => {
         if (!ready || activeRequest !== undefined ||
-            saveRequestId !== undefined) {
+            saveRequestId !== undefined ||
+            loadRequest !== undefined) {
             return;
         }
 
@@ -433,6 +466,76 @@
         status.textContent = "Preparing set_list.cmb…";
         updateControls();
         worker.postMessage({type: "save", id: saveRequestId});
+    });
+
+    load.addEventListener("click", () => {
+        if (!ready || activeRequest !== undefined ||
+            saveRequestId !== undefined ||
+            loadRequest !== undefined) {
+            return;
+        }
+
+        loadFile.value = "";
+        loadFile.click();
+    });
+
+    loadFile.addEventListener("change", () => {
+        const file = loadFile.files?.[0];
+        if (file === undefined || !ready ||
+            activeRequest !== undefined ||
+            saveRequestId !== undefined ||
+            loadRequest !== undefined) {
+            return;
+        }
+
+        const request = {
+            id: ++nextRequestId,
+            name: file.name,
+            reader: new FileReader(),
+        };
+        loadRequest = request;
+        status.textContent = `Reading ${request.name}…`;
+        updateControls();
+
+        request.reader.addEventListener("load", () => {
+            if (loadRequest !== request) {
+                return;
+            }
+            if (typeof request.reader.result !== "string") {
+                loadRequest = undefined;
+                status.textContent = "Ready";
+                appendOutput(
+                    `${request.name}: could not read the file as text`,
+                    "error",
+                );
+                updateControls();
+                return;
+            }
+
+            status.textContent = `Loading ${request.name}…`;
+            worker.postMessage({
+                type: "load",
+                id: request.id,
+                source: request.reader.result,
+            });
+        });
+
+        request.reader.addEventListener("error", () => {
+            if (loadRequest !== request) {
+                return;
+            }
+            loadRequest = undefined;
+            status.textContent = "Ready";
+            appendOutput(
+                `${request.name}: ${errorMessage(
+                    request.reader.error ??
+                    new Error("could not read the file"))}`,
+                "error",
+            );
+            updateControls();
+        });
+
+        request.reader.readAsText(file);
     });
 
     cancel.addEventListener("click", () => {

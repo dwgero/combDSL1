@@ -581,10 +581,13 @@ immediately, then appends the output beneath it. A successfully registered
 `set` command leaves only that submitted definition line, with no output
 beneath it. The Save button downloads all successfully registered user
 definitions as `set_list.cmb`, with explicit arities and user-facing quoting
-that can be entered again. Basis Step and Colorize may remain on when neither
-stepping mode is active; ordinary evaluation ignores both settings. Cancelling
-an evaluation appends `[cancelled]` beneath its starting expression. The Help
-button summarizes the stepping, definition, and saving options in a
+that can be entered again. The Load button opens a file picker filtered for
+`.cmb` files and recreates those definitions in file order by applying
+`parse(input_escape(record))` to each saved record; it does not evaluate the
+stored expressions. Basis Step and Colorize may remain on when neither stepping
+mode is active; ordinary evaluation ignores both settings. Cancelling an
+evaluation appends `[cancelled]` beneath its starting expression. The Help
+button summarizes the stepping, definition, saving, and loading options in a
 keyboard-accessible dialog.
 
 For another CMake project, link the interface target after adding this project:
