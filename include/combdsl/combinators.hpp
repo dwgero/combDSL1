@@ -115,18 +115,6 @@ struct combinator_expression {};
 
 struct application_expression : combinator_expression {};
 
-template <class Value>
-struct is_sk_application : std::false_type {};
-
-template <class Argument>
-struct is_sk_application<
-    substitution_function<deferred_combinator<constant>, Argument>>
-    : std::true_type {};
-
-template <class Value>
-inline constexpr bool is_sk_application_v =
-    is_sk_application<std::remove_cvref_t<Value>>::value;
-
 enum class printed_token : long {
     none,
     other,
@@ -380,7 +368,7 @@ inline void print_symbolic_string(
 class basis_label {
 public:
     constexpr explicit basis_label(std::string_view name)
-        : basis_label(validate(name), std::make_index_sequence<8>{}) {}
+        : basis_label(validate(name), std::make_index_sequence<16>{}) {}
 
     void print_to(std::ostream& output) const {
         auto const name = view();
@@ -398,7 +386,7 @@ public:
 
     [[nodiscard]] constexpr std::string_view view() const noexcept {
         std::size_t length = 0;
-        while (length < 7 && characters_[length] != '\0') {
+        while (length < 15 && characters_[length] != '\0') {
             ++length;
         }
         return std::string_view(characters_, length);
@@ -423,9 +411,9 @@ private:
 
         std::size_t length = 0;
         while (length < name.size() && name[length] != '\0') {
-            if (++length >= 8) {
+            if (++length > 15) {
                 throw std::length_error(
-                    "combdsl::basis names are limited to 7 characters");
+                    "combdsl::basis names are limited to 15 characters");
             }
         }
 
@@ -438,7 +426,7 @@ private:
         : characters_{
               (Indexes < name.size() ? name[Indexes] : '\0')...} {}
 
-    const char characters_[8];
+    const char characters_[16];
 };
 
 template <class Value>
@@ -461,13 +449,9 @@ void print_operand(std::ostream& output, Value const& value) {
         value.print_as_operand_to(output);
     } else if constexpr (std::derived_from<std::remove_cvref_t<Value>,
                                            application_expression>) {
-        if constexpr (is_sk_application_v<Value>) {
-            print_token(output, 'I');
-        } else {
-            print_token(output, '(', printed_token::left_parenthesis);
-            value.print_to(output);
-            print_token(output, ')', printed_token::right_parenthesis);
-        }
+        print_token(output, '(', printed_token::left_parenthesis);
+        value.print_to(output);
+        print_token(output, ')', printed_token::right_parenthesis);
     } else if constexpr (std::derived_from<
                              std::remove_cvref_t<Value>,
                              combinator_expression>) {
@@ -1714,6 +1698,7 @@ enum class quoted_node_kind {
     substitution,
     fixed_point,
     application,
+    pending_sk,
     recursive_y,
     basis_argument,
     html_argument,
@@ -1896,6 +1881,48 @@ private:
     quoted_expression argument_;
 };
 
+class quoted_pending_sk_node final : public quoted_node {
+public:
+    explicit quoted_pending_sk_node(
+        quoted_expression application)
+        : application_(std::move(application)) {}
+
+    [[nodiscard]] quoted_node_kind kind() const noexcept override {
+        return quoted_node_kind::pending_sk;
+    }
+
+    void print_to(std::ostream& output) const override {
+        application_.print_to(output);
+    }
+
+    void print_as_operand_to(std::ostream& output) const override {
+        application_.print_as_operand_to(output);
+    }
+
+    [[nodiscard]] quoted_expression const&
+    application() const noexcept {
+        return application_;
+    }
+
+private:
+    quoted_expression application_;
+};
+
+[[nodiscard]] inline bool
+is_quoted_sk(quoted_expression const& expression) noexcept {
+    auto const& root = quoted_access::root(expression);
+    if (root->kind() != quoted_node_kind::application) {
+        return false;
+    }
+
+    auto const& application =
+        static_cast<quoted_application_node const&>(*root);
+    return quoted_access::root(application.function())->kind() ==
+               quoted_node_kind::substitution &&
+           quoted_access::root(application.argument())->kind() ==
+               quoted_node_kind::constant;
+}
+
 [[nodiscard]] inline bool
 is_quoted_sk_application(quoted_expression const& expression) noexcept {
     auto const& outer_root = quoted_access::root(expression);
@@ -1910,12 +1937,7 @@ is_quoted_sk_application(quoted_expression const& expression) noexcept {
         return false;
     }
 
-    auto const& inner =
-        static_cast<quoted_application_node const&>(*inner_root);
-    return quoted_access::root(inner.function())->kind() ==
-               quoted_node_kind::substitution &&
-           quoted_access::root(inner.argument())->kind() ==
-               quoted_node_kind::constant;
+    return is_quoted_sk(outer.function());
 }
 
 class quoted_recursive_y_node final : public quoted_node {
@@ -2038,6 +2060,7 @@ public:
         return quoted_node_kind::basis;
     }
 
+    [[nodiscard]] virtual std::string_view name() const noexcept = 0;
     [[nodiscard]] virtual std::size_t arity() const noexcept = 0;
     [[nodiscard]] virtual quoted_expression body() const = 0;
 };
@@ -2049,6 +2072,10 @@ public:
                       std::shared_ptr<Expression const> expression)
         : name_(std::move(name)), arity_(arity),
           expression_(std::move(expression)) {}
+
+    [[nodiscard]] std::string_view name() const noexcept override {
+        return name_.view();
+    }
 
     [[nodiscard]] std::size_t arity() const noexcept override { return arity_; }
 
@@ -2100,6 +2127,11 @@ contains_quoted_atom(quoted_expression const& atom,
         return contains_quoted_atom(atom, application.function()) ||
                contains_quoted_atom(atom, application.argument());
     }
+    case quoted_node_kind::pending_sk:
+        return contains_quoted_atom(
+            atom,
+            static_cast<quoted_pending_sk_node const&>(*root)
+                .application());
     case quoted_node_kind::recursive_y:
         return contains_quoted_atom(
             atom,
@@ -2127,6 +2159,13 @@ make_quoted_application(quoted_expression function,
                         quoted_expression argument) {
     return quoted_access::make(std::make_shared<quoted_application_node>(
         std::move(function), std::move(argument)));
+}
+
+[[nodiscard]] inline quoted_expression
+make_quoted_pending_sk(quoted_expression application) {
+    return quoted_access::make(
+        std::make_shared<quoted_pending_sk_node>(
+            std::move(application)));
 }
 
 [[nodiscard]] inline quoted_expression
@@ -2408,9 +2447,7 @@ inline void quoted_expression::print_to(std::ostream& output) const {
 inline void quoted_expression::print_as_operand_to(std::ostream& output) const {
     detail::print_scope scope(output);
 
-    if (detail::is_quoted_sk_application(*this)) {
-        detail::print_token(output, 'I');
-    } else if (root_->is_application()) {
+    if (root_->is_application()) {
         detail::print_token(
             output, '(', detail::printed_token::left_parenthesis);
         root_->print_to(output);
@@ -2475,6 +2512,11 @@ restore_basis_arguments(quoted_expression const& expression) {
             restore_basis_arguments(application.function()),
             restore_basis_arguments(application.argument()));
     }
+    case quoted_node_kind::pending_sk:
+        return make_quoted_pending_sk(
+            restore_basis_arguments(
+                static_cast<quoted_pending_sk_node const&>(*root)
+                    .application()));
     case quoted_node_kind::recursive_y: {
         auto const& recursive =
             static_cast<quoted_recursive_y_node const&>(*root);
@@ -2501,6 +2543,11 @@ strip_html_argument_colors(quoted_expression const& expression) {
             strip_html_argument_colors(application.function()),
             strip_html_argument_colors(application.argument()));
     }
+    case quoted_node_kind::pending_sk:
+        return make_quoted_pending_sk(
+            strip_html_argument_colors(
+                static_cast<quoted_pending_sk_node const&>(*root)
+                    .application()));
     case quoted_node_kind::recursive_y: {
         auto const& recursive =
             static_cast<quoted_recursive_y_node const&>(*root);
@@ -2553,11 +2600,157 @@ inline void print_quoted_html(
     restore_output();
 }
 
+struct pending_sk_reduction {
+    quoted_expression result;
+    quoted_expression before;
+    quoted_expression after;
+};
+
+[[nodiscard]] inline std::optional<pending_sk_reduction>
+reduce_pending_sk_applications(
+    quoted_expression const& expression,
+    std::size_t& replacements) {
+    auto const& root = quoted_access::root(expression);
+    if (root->kind() == quoted_node_kind::pending_sk) {
+        auto const& pending =
+            static_cast<quoted_pending_sk_node const&>(*root);
+        auto const identity =
+            make_quoted_primitive(quoted_node_kind::identity);
+        auto const color =
+            replacements++ == 0
+                ? html_argument_color::red
+                : html_argument_color::green;
+        return pending_sk_reduction{
+            identity,
+            make_quoted_html_argument(
+                pending.application(), color),
+            make_quoted_html_argument(identity, color)};
+    }
+
+    if (root->kind() != quoted_node_kind::application) {
+        return std::nullopt;
+    }
+
+    auto const& application =
+        static_cast<quoted_application_node const&>(*root);
+    auto reduced_function = reduce_pending_sk_applications(
+        application.function(), replacements);
+    auto reduced_argument = reduce_pending_sk_applications(
+        application.argument(), replacements);
+    if (!reduced_function && !reduced_argument) {
+        return std::nullopt;
+    }
+
+    return pending_sk_reduction{
+        make_quoted_application(
+            reduced_function
+                ? reduced_function->result
+                : application.function(),
+            reduced_argument
+                ? reduced_argument->result
+                : application.argument()),
+        make_quoted_application(
+            reduced_function
+                ? reduced_function->before
+                : application.function(),
+            reduced_argument
+                ? reduced_argument->before
+                : application.argument()),
+        make_quoted_application(
+            reduced_function
+                ? reduced_function->after
+                : application.function(),
+            reduced_argument
+                ? reduced_argument->after
+                : application.argument())};
+}
+
+[[nodiscard]] inline std::optional<quoted_expression>
+reduce_sk_application_at_head(
+    quoted_expression const& expression,
+    reduction_trace* trace) {
+    std::vector<quoted_expression> arguments;
+    auto head = expression;
+
+    while (quoted_access::root(head)->kind() ==
+           quoted_node_kind::application) {
+        auto const& application =
+            static_cast<quoted_application_node const&>(
+                *quoted_access::root(head));
+        arguments.push_back(application.argument());
+        head = application.function();
+    }
+
+    std::reverse(arguments.begin(), arguments.end());
+    if (quoted_access::root(head)->kind() !=
+            quoted_node_kind::substitution ||
+        arguments.size() < 2 ||
+        quoted_access::root(arguments[0])->kind() !=
+            quoted_node_kind::constant) {
+        return std::nullopt;
+    }
+
+    auto append_arguments = [&arguments](
+                                quoted_expression result,
+                                std::size_t first) {
+        for (; first < arguments.size(); ++first) {
+            result = result(arguments[first]);
+        }
+        return result;
+    };
+
+    auto const identity =
+        make_quoted_primitive(quoted_node_kind::identity);
+    auto result = identity;
+    std::size_t first_trailing_argument = 2;
+    auto const reduce_second_sk =
+        arguments.size() >= 3 &&
+        is_quoted_sk_application(arguments[2]);
+
+    if (reduce_second_sk) {
+        result = result(identity);
+        first_trailing_argument = 3;
+    }
+
+    if (trace != nullptr) {
+        auto sk_application = make_quoted_application(
+            make_quoted_application(head, arguments[0]),
+            arguments[1]);
+        auto before = make_quoted_html_argument(
+            std::move(sk_application),
+            html_argument_color::red);
+        auto after = make_quoted_html_argument(
+            identity, html_argument_color::red);
+
+        if (reduce_second_sk) {
+            before = before(make_quoted_html_argument(
+                arguments[2], html_argument_color::green));
+            after = after(make_quoted_html_argument(
+                identity, html_argument_color::green));
+        }
+
+        trace->before = append_arguments(
+            std::move(before), first_trailing_argument);
+        auto traced_after = append_arguments(
+            std::move(after), first_trailing_argument);
+        trace->after = traced_after;
+        return traced_after;
+    }
+
+    return append_arguments(
+        std::move(result), first_trailing_argument);
+}
+
 [[nodiscard]] inline quoted_expression
 reduce_at_head(
     quoted_expression expression,
     reduction_options options,
     reduction_trace* trace) {
+    if (auto reduced =
+            reduce_sk_application_at_head(expression, trace)) {
+        return std::move(*reduced);
+    }
+
     std::vector<quoted_expression> reversed_arguments;
     auto head = expression;
 
@@ -2628,11 +2821,26 @@ reduce_at_head(
         break;
     case quoted_node_kind::substitution:
         if (reversed_arguments.size() >= 3) {
+            auto const mark_function_sk =
+                is_quoted_sk(reversed_arguments[0]);
+            auto const mark_argument_sk =
+                is_quoted_sk(reversed_arguments[1]);
             prepare_trace(3);
             auto const& function = reversed_arguments[0];
             auto const& argument = reversed_arguments[1];
             auto const& value = reversed_arguments[2];
-            auto result = function(value)(argument(value));
+            auto function_application = function(value);
+            if (mark_function_sk) {
+                function_application = make_quoted_pending_sk(
+                    std::move(function_application));
+            }
+            auto argument_application = argument(value);
+            if (mark_argument_sk) {
+                argument_application = make_quoted_pending_sk(
+                    std::move(argument_application));
+            }
+            auto result = function_application(
+                std::move(argument_application));
             return finish_trace(
                 append_arguments(std::move(result), 3));
         }
@@ -2711,6 +2919,17 @@ reduce_at_head(
 reduce_next_redex(quoted_expression const& expression,
                   reduction_options options,
                   reduction_trace* trace) {
+    std::size_t pending_replacements = 0;
+    if (auto pending = reduce_pending_sk_applications(
+            expression, pending_replacements)) {
+        if (trace != nullptr) {
+            trace->before = pending->before;
+            trace->after = pending->after;
+            return pending->after;
+        }
+        return pending->result;
+    }
+
     auto reduced = reduce_at_head(expression, options, trace);
     if (quoted_access::root(reduced) != quoted_access::root(expression)) {
         return reduced;
@@ -3077,7 +3296,7 @@ parser_basis_registry() {
 }
 
 [[nodiscard]] inline std::vector<std::string>&
-parser_set_definition_registry() {
+parser_definition_registry() {
     static std::vector<std::string> definitions;
     return definitions;
 }
@@ -3105,7 +3324,7 @@ void register_parser_basis(std::string_view name, Basis const& basis) {
 }
 
 template <class Basis>
-void register_parser_set_basis(
+void register_parser_definition_basis(
     std::string_view name,
     Basis const& basis,
     std::string user_source) {
@@ -3126,7 +3345,7 @@ void register_parser_set_basis(
     }
 
     try {
-        parser_set_definition_registry().push_back(
+        parser_definition_registry().push_back(
             std::move(user_source));
     } catch (...) {
         entries.erase(entry);
@@ -3162,7 +3381,7 @@ template <class Expression>
 
 [[nodiscard]] inline std::string set_list() {
     std::lock_guard lock(detail::parser_basis_registry_mutex());
-    auto const& definitions = detail::parser_set_definition_registry();
+    auto const& definitions = detail::parser_definition_registry();
 
     std::string result;
     for (auto const& definition : definitions) {
@@ -3240,6 +3459,7 @@ namespace detail {
 struct parsed_input {
     quoted_expression expression;
     bool is_definition;
+    bool is_display_only;
 };
 
 class quoted_expression_parser {
@@ -3257,20 +3477,32 @@ public:
             fail("unexpected ')'");
         }
 
-        auto const is_definition = begins_set_definition();
-        auto result = is_definition
+        auto const is_set_definition =
+            begins_command("set");
+        auto const is_define_definition =
+            begins_command("define");
+        auto const is_show_command =
+            begins_command("show");
+        auto const is_definition =
+            is_set_definition || is_define_definition;
+        auto result = is_set_definition
             ? parse_set_definition()
-            : parse_expression();
+            : is_define_definition
+                ? parse_define_definition()
+                : is_show_command
+                    ? parse_show_command()
+                    : parse_expression();
         skip_whitespace();
         if (!at_end()) {
             fail("unexpected ')'");
         }
-        return {std::move(result), is_definition};
+        return {
+            std::move(result), is_definition, is_show_command};
     }
 
 private:
-    [[nodiscard]] bool begins_set_definition() const noexcept {
-        constexpr std::string_view keyword = "set";
+    [[nodiscard]] bool begins_command(
+        std::string_view keyword) const noexcept {
         auto const remaining = source_.substr(position_);
         return remaining.starts_with(keyword) &&
                remaining.size() > keyword.size() &&
@@ -3282,19 +3514,7 @@ private:
         position_ += keyword_size;
         skip_whitespace();
 
-        auto const name_position = position_;
-        while (!at_end() &&
-               !is_basis_token_delimiter(position_) &&
-               current() != '=') {
-            ++position_;
-        }
-        if (position_ == name_position) {
-            fail("expected a basis name");
-        }
-
-        auto const name_text =
-            source_.substr(name_position, position_ - name_position);
-        auto name = validated_set_basis_name(name_text, name_position);
+        auto name = parse_definition_basis_name();
 
         skip_whitespace();
         if (at_end() || current() != '=') {
@@ -3314,9 +3534,208 @@ private:
             name.view(), arity, source_.substr(body_position));
         auto result = make_quoted_basis_snapshot(
             name, arity, std::move(body));
-        register_parser_set_basis(
+        register_parser_definition_basis(
             name.view(), result, std::move(user_source));
         return result;
+    }
+
+    [[nodiscard]] quoted_expression parse_show_command() {
+        constexpr std::size_t keyword_size = 4;
+        position_ += keyword_size;
+        skip_whitespace();
+
+        auto const name_position = position_;
+        auto name_end = source_.size();
+        while (name_end > name_position &&
+               is_whitespace(source_[name_end - 1])) {
+            --name_end;
+        }
+        if (name_end == name_position) {
+            fail("expected a name");
+        }
+
+        auto const name =
+            source_.substr(name_position, name_end - name_position);
+        position_ = source_.size();
+
+        if (is_primitive_name(name)) {
+            auto message = std::string(name);
+            message += " is a fundamental name";
+            return quote(std::move(message));
+        }
+
+        auto const match = registered_bases_.find(name);
+        if (match == registered_bases_.end()) {
+            auto message = unescape_input(name);
+            message += " is not a defined name";
+            throw parse_error(name_position, message);
+        }
+
+        auto result = match->second->expression();
+        auto const& root = quoted_access::root(result);
+        if (root->kind() != quoted_node_kind::basis) {
+            throw std::logic_error(
+                "combdsl::registered parser basis is not a basis");
+        }
+        return static_cast<quoted_basis_node_base const&>(*root)
+            .body();
+    }
+
+    [[nodiscard]] quoted_expression parse_define_definition() {
+        constexpr std::size_t keyword_size = 6;
+        position_ += keyword_size;
+        skip_whitespace();
+
+        auto name = parse_definition_basis_name();
+        auto symbols = parse_definition_symbols();
+        auto const body_position = position_;
+        auto body = parse_expression();
+        skip_whitespace();
+        if (!at_end()) {
+            fail("unexpected ')'");
+        }
+
+        auto user_source = canonical_define_definition(
+            name.view(), symbols, source_.substr(body_position));
+        for (auto symbol_position = symbols.rbegin();
+             symbol_position != symbols.rend();
+             ++symbol_position) {
+            body = takeout(
+                quoted_atomic{symbol(*symbol_position)},
+                std::move(body));
+        }
+        body = optimize_final_takeout(std::move(body));
+
+        auto result = make_quoted_basis_snapshot(
+            name, symbols.size(), std::move(body));
+        register_parser_definition_basis(
+            name.view(), result, std::move(user_source));
+        return result;
+    }
+
+    [[nodiscard]] basis_label parse_definition_basis_name() {
+        auto const name_position = position_;
+        while (!at_end() &&
+               !is_basis_token_delimiter(position_) &&
+               current() != '=') {
+            ++position_;
+        }
+        if (position_ == name_position) {
+            fail("expected a basis name");
+        }
+
+        auto const name_text =
+            source_.substr(name_position, position_ - name_position);
+        return validated_definition_basis_name(
+            name_text, name_position);
+    }
+
+    [[nodiscard]] std::string parse_definition_symbols() {
+        skip_whitespace();
+        std::string symbols;
+
+        while (!at_end()) {
+            if (current() == '=') {
+                if (symbols.empty()) {
+                    fail("expected at least one symbol");
+                }
+                ++position_;
+                return symbols;
+            }
+            if (is_whitespace(current())) {
+                ++position_;
+                continue;
+            }
+            if (current() < 'a' || current() > 'z') {
+                fail("expected a lowercase symbol or '='");
+            }
+            symbols.push_back(current());
+            ++position_;
+        }
+
+        if (symbols.empty()) {
+            fail("expected at least one symbol");
+        }
+        fail("expected '='");
+    }
+
+    [[nodiscard]] static bool is_named_basis(
+        quoted_expression const& expression,
+        std::string_view name) noexcept {
+        auto const& root = quoted_access::root(expression);
+        return root->kind() == quoted_node_kind::basis &&
+               static_cast<quoted_basis_node_base const&>(*root)
+                       .name() == name;
+    }
+
+    [[nodiscard]] static quoted_application_node const*
+    as_application(quoted_expression const& expression) noexcept {
+        auto const& root = quoted_access::root(expression);
+        if (root->kind() != quoted_node_kind::application) {
+            return nullptr;
+        }
+        return std::addressof(
+            static_cast<quoted_application_node const&>(*root));
+    }
+
+    [[nodiscard]] static bool is_bluebird_cardinal_thrush(
+        quoted_expression const& expression) noexcept {
+        auto const* outer = as_application(expression);
+        if (outer == nullptr ||
+            !is_named_basis(outer->argument(), "T")) {
+            return false;
+        }
+
+        auto const* inner = as_application(outer->function());
+        return inner != nullptr &&
+               is_named_basis(inner->function(), "B") &&
+               is_named_basis(inner->argument(), "C");
+    }
+
+    [[nodiscard]] static bool is_double_bluebird(
+        quoted_expression const& expression) noexcept {
+        auto const* application = as_application(expression);
+        return application != nullptr &&
+               is_named_basis(application->function(), "B") &&
+               is_named_basis(application->argument(), "B");
+    }
+
+    [[nodiscard]] quoted_expression registered_basis_expression(
+        std::string_view name) const {
+        auto const match = registered_bases_.find(name);
+        if (match == registered_bases_.end()) {
+            throw std::logic_error(
+                "combdsl::define optimization basis is not registered");
+        }
+        return match->second->expression();
+    }
+
+    [[nodiscard]] quoted_expression optimize_final_takeout(
+        quoted_expression expression) const {
+        auto const* application = as_application(expression);
+        if (application == nullptr) {
+            return expression;
+        }
+
+        auto function =
+            optimize_final_takeout(application->function());
+        auto argument =
+            optimize_final_takeout(application->argument());
+        if (quoted_access::root(function) !=
+                quoted_access::root(application->function()) ||
+            quoted_access::root(argument) !=
+                quoted_access::root(application->argument())) {
+            expression = make_quoted_application(
+                std::move(function), std::move(argument));
+        }
+
+        if (is_bluebird_cardinal_thrush(expression)) {
+            return registered_basis_expression("V");
+        }
+        if (is_double_bluebird(expression)) {
+            return registered_basis_expression("D");
+        }
+        return expression;
     }
 
     [[nodiscard]] static std::string unescape_input(
@@ -3339,15 +3758,9 @@ private:
         return result;
     }
 
-    [[nodiscard]] static std::string canonical_set_definition(
-        std::string_view name,
-        std::size_t arity,
+    [[nodiscard]] static std::string append_canonical_body(
+        std::string result,
         std::string_view body) {
-        std::string result = "set ";
-        result += name;
-        result += " = ";
-        result += std::to_string(arity);
-
         bool inside_word = false;
         bool pending_space = true;
         for (std::size_t index = 0; index < body.size();) {
@@ -3380,13 +3793,36 @@ private:
         return unescape_input(result);
     }
 
-    [[nodiscard]] basis_label validated_set_basis_name(
+    [[nodiscard]] static std::string canonical_set_definition(
+        std::string_view name,
+        std::size_t arity,
+        std::string_view body) {
+        std::string result = "set ";
+        result += name;
+        result += " = ";
+        result += std::to_string(arity);
+        return append_canonical_body(std::move(result), body);
+    }
+
+    [[nodiscard]] static std::string canonical_define_definition(
+        std::string_view name,
+        std::string_view symbols,
+        std::string_view body) {
+        std::string result = "define ";
+        result += name;
+        result.push_back(' ');
+        result += symbols;
+        result += " =";
+        return append_canonical_body(std::move(result), body);
+    }
+
+    [[nodiscard]] basis_label validated_definition_basis_name(
         std::string_view name,
         std::size_t name_position) const {
         try {
             return basis_label(name);
         } catch (std::length_error const& error) {
-            throw parse_error(name_position + 7, error.what());
+            throw parse_error(name_position + 15, error.what());
         } catch (std::invalid_argument const& error) {
             throw parse_error(name_position, error.what());
         }
@@ -3589,7 +4025,7 @@ private:
 
     [[nodiscard]] bool begins_with_unseparated_multicharacter_basis(
         std::string_view token) const {
-        constexpr std::size_t maximum_basis_name_size = 7;
+        constexpr std::size_t maximum_basis_name_size = 15;
         for (std::size_t length = 2;
              length < token.size() &&
              length <= maximum_basis_name_size;
@@ -3660,6 +4096,12 @@ inline void parse_eval(
     if (parsed.is_definition) {
         return;
     }
+    if (parsed.is_display_only) {
+        parsed.expression.print_to(output);
+        detail::print_layout(output, "\n");
+        output.flush();
+        return;
+    }
     eval(std::move(parsed.expression), output, input, basis_step);
 }
 
@@ -3680,6 +4122,12 @@ inline void parse_and_step(
     bool basis_step = false) {
     auto parsed = detail::parse_input(source);
     if (parsed.is_definition) {
+        return;
+    }
+    if (parsed.is_display_only) {
+        parsed.expression.print_to(output);
+        detail::print_layout(output, "\n");
+        output.flush();
         return;
     }
     single_step_run(

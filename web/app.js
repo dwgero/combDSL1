@@ -112,6 +112,19 @@
         requestAnimationFrame(() => requestAnimationFrame(callback));
     };
 
+    const focusSource = () => {
+        window.focus();
+        source.focus({preventScroll: true});
+        source.setSelectionRange(
+            source.value.length, source.value.length);
+    };
+
+    const focusSourceAfterNextPaint = () => {
+        afterNextPaint(focusSource);
+    };
+
+    window.addEventListener("pageshow", focusSourceAfterNextPaint);
+
     const createOutputEntry = () => {
         if (output.childNodes.length !== 0) {
             output.append("\n\n");
@@ -257,6 +270,7 @@
                 ready = true;
                 status.textContent = "Ready";
                 updateControls();
+                focusSourceAfterNextPaint();
                 return;
             }
 

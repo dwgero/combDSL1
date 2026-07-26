@@ -311,7 +311,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             color: #c33;
         }
     </style>
-    <script src="./app.js?v=1.3.0" defer></script>
+    <script src="./app.js?v=1.3.10" defer></script>
 </head>
 <body>
     <main>
@@ -324,7 +324,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
         <form id="evaluation-form">
             <label for="source">Combinator Expression</label>
             <textarea id="source" name="source" spellcheck="false"
-                autocapitalize="off" wrap="soft">SKIx</textarea>
+                autocapitalize="off" wrap="soft" autofocus></textarea>
             <div class="controls">
                 <button id="single-step" type="button"
                     aria-pressed="false" disabled>Single Step: Off</button>
@@ -418,13 +418,29 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             In the second form, <code>arity</code> is a number specifying
             the minimal number of arguments required for the expression
             to reduce.
+            <br><br>
+            <code>define name symbols = combinator_expression</code><br>
+            The <code>define</code> form requires one or more lowercase
+            symbols, infers the arity from their count, and computes a
+            series of combinators that will reproduce the
+            <code>combinator_expression</code>. For example, to add the
+            Eagle bird:
+            <code>define E xyzwv = xy(zwv)</code>
+            <br><br>
+            <code>show name</code><br>
+            The <code>show</code> command displays the combinators stored
+            for <code>name</code>. For example, <code>show E</code> for
+            above would display <code>BDD</code>. For
+            <code>S</code>, <code>K</code>, <code>I</code>, or
+            <code>Y</code>, it reports that the name is fundamental.
         </div>
         <h2 class="help-subheading">Saving and Loading Combinators</h2>
         <div class="help-section">
             The Save button downloads to your computer the combinators added by
-            <code>set</code>, with default filename
+            <code>set</code> or <code>define</code>, with default filename
             <code>set_list.cmb</code>. Every saved definition includes its
-            arity and can be entered again to recreate the combinator.
+            arity or defining symbols and can be entered again to recreate
+            the combinator.
             The Load button reads a <code>.cmb</code> file from your computer
             and recreates its definitions in order.
         </div>
@@ -485,7 +501,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             data-dialog-initial-focus>About</h2>
         <div class="license-text">
             <!-- Keep this version and the app.js cache key in sync. -->
-            <p>C++ Combinator DSL, version 1.3.0<br>Copyright (C) 2026  David W. Gero</p>
+            <p>C++ Combinator DSL, version 1.3.10<br>Copyright (C) 2026  David W. Gero</p>
             <p>This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU Affero General Public License as published by
 the Free Software Foundation, either version 3 of the License, or

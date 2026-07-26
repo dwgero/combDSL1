@@ -394,16 +394,28 @@ void test_invalid_utf8_symbol(
 void test_parse_failure(
     std::string_view title,
     std::string_view source,
-    std::size_t expected_position) {
+    std::size_t expected_position,
+    std::string_view expected_detail = {}) {
     ++tests_run;
 
     try {
         static_cast<void>(parse(source));
     } catch (parse_error const& error) {
-        if (error.position() != expected_position) {
+        auto expected_message =
+            std::string("parse error at position ");
+        expected_message += std::to_string(expected_position);
+        expected_message += ": ";
+        expected_message += expected_detail;
+        if (error.position() != expected_position ||
+            (!expected_detail.empty() &&
+             error.what() != expected_message)) {
             std::cerr << "FAILED:   " << title << '\n'
                       << "expected position: " << expected_position << '\n'
                       << "actual position:   " << error.position() << '\n';
+            if (!expected_detail.empty()) {
+                std::cerr << "expected message:  " << expected_message << '\n'
+                          << "actual message:    " << error.what() << '\n';
+            }
             ++test_failures;
         }
         return;
@@ -455,6 +467,8 @@ int main() {
     const auto fifth_argument_projection =
         basis("Fifth", 5, K(K(K(K(I)))));
     auto seven_character_basis = basis("1234567", 1, I);
+    auto fifteen_character_basis =
+        basis("123456789012345", 1, I);
     std::string copied_basis_name = "Alias";
     auto copied_name_basis = basis(copied_basis_name, 1, I);
     copied_basis_name.assign("other");
@@ -821,6 +835,36 @@ int main() {
     test("parse right nested operand", parse("x(yz)"), "x(yz)");
     test("parse grouped operand", parse("S ( K I ) x"), "S(KI)x");
     test("parse redundant groups", parse("((SK)I)x"), "SKIx");
+    test("show exposes a named basis definition",
+         parse("show M"), "SII");
+    test("show exposes a registered lowercase basis definition",
+         parse("show foo"), "I");
+    test("show identifies S as fundamental",
+         parse("show S"), "S is a fundamental name");
+    test("show identifies K as fundamental",
+         parse("show K"), "K is a fundamental name");
+    test("show identifies I as fundamental",
+         parse("show I"), "I is a fundamental name");
+    test("show identifies Y as fundamental",
+         parse("show Y"), "Y is a fundamental name");
+    test("show accepts parser whitespace",
+         parse(" \tshow\nM\f"), "SII");
+    test_parse_failure(
+        "show rejects a symbol", "show x", 5,
+        "x is not a defined name");
+    test_parse_failure(
+        "show rejects a primitive application", "show SKI", 5,
+        "SKI is not a defined name");
+    test_parse_failure(
+        "show rejects an applied basis", "show Mx", 5,
+        "Mx is not a defined name");
+    test_parse_failure(
+        "show rejects a parenthesized basis", "show (M)", 5,
+        "(M) is not a defined name");
+    test_parse_failure(
+        "show rejects an escaped word",
+        input_escape("show \"word\""), 5,
+        "\"word\" is not a defined name");
     test("set list initially excludes C++ bases",
          [] { std::cout << set_list(); }, "");
     test("set list registers a default zero arity",
@@ -881,6 +925,102 @@ int main() {
              std::cout << set_list();
          },
          expected_set_list);
+
+    test("define registers a replayable basis",
+         parse("define DefSave x y z = x(y z)"), "DefSave");
+    const std::string expected_definition_list =
+        expected_set_list + "\ndefine DefSave xyz = x(y z)";
+    test("set list includes a canonical define command",
+         [] { std::cout << set_list(); }, expected_definition_list);
+    test("canonical define command can be reparsed",
+         [] {
+             static_cast<void>(
+                 parse(input_escape("define DefSave xyz = x(y z)")));
+             std::cout << set_list();
+         },
+         expected_definition_list);
+
+    test("define infers arity from its symbols",
+         parse("define Def3 xyz = xyz"), "Def3");
+    test("define basis remains named while undersaturated",
+         single_step(parse("Def3 a b")), "Def3 ab");
+    test("basis step exposes a define basis body",
+         single_step(parse("Def3 a b c"), true), "Iabc");
+    test("define basis contracts when saturated",
+         single_step(parse("Def3 a b c")), "abc");
+    test("define abstracts symbols from right to left",
+         parse("define DefE xyz = exp"), "DefE");
+    test("basis step exposes right-to-left abstraction",
+         single_step(parse("DefE a b c"), true),
+         "BK(BK(Cep))abc");
+    test("right-to-left abstraction preserves behavior",
+         single_step(parse("DefE a b c")), "eap");
+    test("define creates the Thrush from reverse application",
+         parse("define Flip xy = yx"), "Flip");
+    test("basis step exposes the defined Thrush",
+         single_step(parse("Flip a b"), true), "Tab");
+    test("defined Thrush reverses its arguments",
+         single_step(parse("Flip a b")), "ba");
+    test("show exposes one level of a defined basis",
+         parse("show Flip"), "T");
+    test("define optimizes BCT to V",
+         parse("define DefV x = C(Tx)"), "DefV");
+    test("show exposes the optimized Vireo",
+         parse("show DefV"), "V");
+    test("optimized Vireo preserves behavior",
+         single_step(single_step(parse("DefV a b c"))), "cab");
+    test("define optimizes BB to D",
+         parse("define DefD x = BBx"), "DefD");
+    test("show exposes the optimized Dove",
+         parse("show DefD"), "D");
+    test("optimized Dove preserves behavior",
+         single_step(single_step(parse("DefD a b c d"))), "ab(cd)");
+    test("define recursively optimizes nested BCT",
+         parse("define DefKV x = BCT"), "DefKV");
+    test("show exposes nested Vireo optimization",
+         parse("show DefKV"), "KV");
+    test("define recursively optimizes nested BB",
+         parse("define DefKD x = BB"), "DefKD");
+    test("show exposes nested Dove optimization",
+         parse("show DefKD"), "KD");
+    test("define creates the Starling",
+         parse("define DefS xyz = xz(yz)"), "DefS");
+    test("basis step exposes the defined Starling",
+         single_step(parse("DefS a b c"), true), "Sabc");
+    test("defined Starling applies both branches",
+         single_step(parse("DefS a b c")), "ac(bc)");
+    test("define accepts whitespace-separated symbols",
+         parse(" \tdefine\nDws \tx y\nz =\v xyz\f"), "Dws");
+    test("whitespace-separated define symbols preserve their order",
+         single_step(parse("Dws a b c"), true), "Iabc");
+    test("define keeps symbols distinct from symbolic strings",
+         parse(input_escape("define DRaw x = \"x\"x")), "DRaw");
+    test("defined symbolic string is not abstracted as a symbol",
+         single_step(parse("DRaw y")), "xy");
+    test("set list preserves a define symbolic string",
+         [] {
+             auto definitions = set_list();
+             auto const line_position = definitions.rfind('\n');
+             std::cout << definitions.substr(
+                 line_position == std::string::npos
+                     ? 0
+                     : line_position + 1);
+         },
+         "define DRaw x = \"x\"x");
+    test("set registers a reducible body for show",
+         parse("set ShRed = 0 Kxy"), "ShRed");
+    test("show exposes a reducible stored body without reducing it",
+         parse("show ShRed"), "Kxy");
+    test_parse_failure(
+        "show rejects an applied user basis", "show ShRed z", 5,
+        "ShRed z is not a defined name");
+    test("show does not change the definition list",
+         [] {
+             auto const before = set_list();
+             static_cast<void>(parse("show ShRed"));
+             std::cout << (set_list() == before ? "unchanged" : "changed");
+         },
+         "unchanged");
 
     test("set defines a zero-arity basis",
          parse("set SetK=K"), "SetK");
@@ -1032,6 +1172,8 @@ int main() {
     test("parse separated V4", single_step(parse("V4 x y z")), "V4 xyz");
     test("basis automatically registers seven-character name",
          single_step(parse("1234567 x")), "x");
+    test("basis automatically registers fifteen-character name",
+         single_step(parse("123456789012345 x")), "x");
     test("basis registration copies mutable name",
          single_step(parse("Alias x")), "x");
     test("basis step exposes registered basis definition",
@@ -1101,6 +1243,14 @@ int main() {
     test_parse_failure("parse dangling backslash", "\\", 1);
     test_parse_failure("parse invalid backslash escape", "\\q", 0);
     test_parse_failure("parse bare quote", "\"word\"", 0);
+    test_parse_failure(
+        "show requires a name", "show ", 5);
+    test_parse_failure(
+        "show rejects an invalid name", "show @", 5,
+        "@ is not a defined name");
+    test_parse_failure(
+        "show rejects a trailing close parenthesis", "show M)", 5,
+        "M) is not a defined name");
     test_parse_failure("set requires a basis name", "set = I", 4);
     test_parse_failure("set requires an equals sign", "set NoEq I", 9);
     test_parse_failure("set requires an expression", "set Empty = \t", 13);
@@ -1138,8 +1288,12 @@ int main() {
         overflowing_arity.find('9'));
     test_parse_failure(
         "overflowing arity does not register its name", "QovAr", 0);
-    test_parse_failure("set rejects an overlong basis name",
-                       "set Eight888=I", 11);
+    constexpr std::string_view overlong_set_name =
+        "set 1234567890123456=I";
+    test_parse_failure(
+        "set rejects an overlong basis name",
+        overlong_set_name,
+        overlong_set_name.find("1234567890123456") + 15);
     test_parse_failure("set rejects an invalid basis name",
                        "set (Bad=I", 4);
     test_parse_failure("set name ends at a left parenthesis",
@@ -1153,6 +1307,66 @@ int main() {
                        "set Qtail=I)", 11);
     test_parse_failure("trailing set error does not register its name",
                        "Qtail", 0);
+    test_parse_failure(
+        "define requires a basis name", "define = x", 7);
+    constexpr std::string_view define_without_symbols =
+        "define NoArgs = x";
+    test_parse_failure(
+        "define requires at least one symbol",
+        define_without_symbols,
+        define_without_symbols.find('='));
+    constexpr std::string_view uppercase_define_symbol =
+        "define QUp X = x";
+    test_parse_failure(
+        "define rejects an uppercase symbol",
+        uppercase_define_symbol,
+        uppercase_define_symbol.find('X'));
+    constexpr std::string_view numeric_define_symbol =
+        "define QDg x2 = x";
+    test_parse_failure(
+        "define rejects a numeric symbol",
+        numeric_define_symbol,
+        numeric_define_symbol.find('2'));
+    constexpr std::string_view quoted_define_symbol =
+        "define BadRaw \\\"x\\\" = x";
+    test_parse_failure(
+        "define rejects a symbolic-string parameter",
+        quoted_define_symbol,
+        quoted_define_symbol.find('\\'));
+    constexpr std::string_view define_without_equals =
+        "define NoEqD x";
+    test_parse_failure(
+        "define requires an equals sign",
+        define_without_equals,
+        define_without_equals.size());
+    constexpr std::string_view define_without_expression =
+        "define EmptyD x = \t";
+    test_parse_failure(
+        "define requires an expression",
+        define_without_expression,
+        define_without_expression.size());
+    constexpr std::string_view overlong_define_name =
+        "define 1234567890123456 x = I";
+    test_parse_failure(
+        "define rejects an overlong basis name",
+        overlong_define_name,
+        overlong_define_name.find("1234567890123456") + 15);
+    constexpr std::string_view invalid_define_body =
+        "define QdBody x = K@";
+    test_parse_failure(
+        "define rejects an invalid expression",
+        invalid_define_body,
+        invalid_define_body.find('@'));
+    test_parse_failure(
+        "failed define does not register its name", "QdBody", 0);
+    constexpr std::string_view trailing_define_close =
+        "define QTailD x = I)";
+    test_parse_failure(
+        "define rejects a trailing close parenthesis",
+        trailing_define_close,
+        trailing_define_close.find(')'));
+    test_parse_failure(
+        "trailing define error does not register its name", "QTailD", 0);
     test("basis name beginning with single backslash rejected",
          [] {
              try {
@@ -1192,6 +1406,44 @@ int main() {
          [&] { parse_eval("EvalI1 x"); }, "x\n");
     test("parse eval does not mistake setx for a definition",
          [&] { parse_eval("setx"); }, "setx\n");
+    test("parse eval define only registers its definition",
+         [&] { parse_eval("define EvalD x = x"); }, "");
+    test("parse eval uses a silently registered define basis",
+         [&] { parse_eval("EvalD y"); }, "y\n");
+    test("parse and step define only registers its definition",
+         [] {
+             std::istringstream input;
+             std::ostringstream output;
+             parse_and_step(
+                 "define StepD x = x", output, input);
+             std::cout << output.str();
+         },
+         "");
+    test("parse eval uses the parse-and-step define basis",
+         [&] { parse_eval("StepD z"); }, "z\n");
+    test("parse eval does not mistake definex for a definition",
+         [&] { parse_eval("definex"); }, "definex\n");
+    test("parse eval treats bare define as symbols",
+         [&] { parse_eval("define"); }, "define\n");
+    test("parse eval show displays a definition without reducing it",
+         [&] { parse_eval("show ShRed"); }, "Kxy\n");
+    test("parse eval show identifies a fundamental name",
+         [&] { parse_eval("show I"); },
+         "I is a fundamental name\n");
+    test(
+        "parse eval show rejects an undefined name",
+        [&] {
+            try {
+                parse_eval("show Ix");
+            } catch (parse_error const& error) {
+                std::cout << error.what();
+            }
+        },
+        "parse error at position 5: Ix is not a defined name");
+    test("parse eval does not mistake showx for a command",
+         [&] { parse_eval("showx"); }, "showx\n");
+    test("parse eval treats bare show as symbols",
+         [&] { parse_eval("show"); }, "show\n");
     test("parse eval uses a set basis",
          [&] { parse_eval("SetK x y"); }, "x\n");
     test("parse eval treats q as a symbol", [&] { parse_eval("q"); }, "q\n");
@@ -1255,7 +1507,7 @@ int main() {
 
     test("parse and step",
          [&] { parse_and_step("SKIx"); },
-         "Kx(Ix)\n"
+         "Ix\n"
          "x\n");
     test("parse and step set only registers its definition",
          [&] { parse_and_step("set StepI=I"); }, "");
@@ -1263,6 +1515,8 @@ int main() {
          [&] { parse_and_step("StepI x"); },
          "Ix\n"
          "x\n");
+    test("parse and step show displays without stepping",
+         [&] { parse_and_step("show ShRed"); }, "Kxy\n");
     test("parse and step custom streams",
          [&] {
              std::istringstream input;
@@ -1282,7 +1536,7 @@ int main() {
              std::cout << buffer.str();
          },
          "Interrupted. Press Enter to resume; type q or Q then Enter to quit.\n"
-         "Kx(Ix)\n"
+         "Ix\n"
          "x\n");
     const auto quoted_ski_x = quote(S)(K)(I)(x);
     test("quote SKIx", quoted_ski_x, "SKIx");
@@ -1411,6 +1665,12 @@ int main() {
              quoted_atomic{x},
              quote(y)(quote(z)(quote(w)(x)))),
          "By(Bzw)");
+    test("takeout leaves BCT unoptimized",
+         takeout(quoted_atomic{x}, quote(C)(quote(T)(x))),
+         "BCT");
+    test("takeout leaves BB unoptimized",
+         takeout(quoted_atomic{x}, quote(B)(B)(x)),
+         "BB");
     test("takeout both-dependent application uses Starling",
          takeout(
              quoted_atomic{x},
@@ -1494,10 +1754,45 @@ int main() {
     test("single step S", single_step(quote(S)(x)(y)(z)), "xz(yz)");
     test("single step S with trailing argument",
          single_step(quote(S)(x)(y)(z)(w)), "xz(yz)w");
-    test("single step SKIx", single_step(quoted_ski_x), "Kx(Ix)");
+    const auto s_with_sk_function =
+        single_step(quote(S)(quote(S)(K))(y)(z));
+    test("single step S with x equal to SK",
+         s_with_sk_function, "SKz(yz)");
+    test("next step contracts the SKz function",
+         single_step(s_with_sk_function), "I(yz)");
+    const auto s_with_sk_argument =
+        single_step(quote(S)(x)(quote(S)(K))(z));
+    test("single step S with y equal to SK",
+         s_with_sk_argument, "xz(SKz)");
+    test("next step contracts the SKz argument without parentheses",
+         single_step(s_with_sk_argument), "xzI");
+    const auto s_with_two_sk_arguments =
+        single_step(
+            quote(S)(quote(S)(K))(quote(S)(K))(z));
+    test("single step S with x and y equal to SK",
+         s_with_two_sk_arguments, "SKz(SKz)");
+    test("next step contracts both SKz applications",
+         single_step(s_with_two_sk_arguments), "II");
+    test("paired SK contraction preserves later operands",
+         single_step(
+             quote(S)(K)(z)(quote(S)(K)(w))(u)),
+         "IIu");
+    const auto wm_expanded =
+        single_step(quote(W)(M)(x), true);
+    test("basis step expands WMx",
+         wm_expanded, "SS(SK)Mx");
+    const auto wm_after_s =
+        single_step(wm_expanded, true);
+    test("next WMx step applies the outer S",
+         wm_after_s, "SM(SKM)x");
+    test("next WMx step prioritizes the nested SKM",
+         single_step(wm_after_s, true), "SMIx");
+    test("single step SKIx", single_step(quoted_ski_x), "Ix");
     test("two steps SKIx", single_step(single_step(quoted_ski_x)), "x");
     test("single step native SKI partial", single_step(quote(S(K)(I))(x)),
-         "Kx(Ix)");
+         "Ix");
+    test("single step contracts an exact SK application",
+         single_step(quote(S)(K)(x)), "I");
     test("single step undersaturated Y", single_step(quote(Y)), "Y");
     test("single step Y", single_step(quote(Y)(x)), "x<deferred Y(x)>");
     test("single step Y with trailing argument", single_step(quote(Y)(x)(w)),
@@ -1512,6 +1807,12 @@ int main() {
          single_step(quote(x)(quote(I)(y))), "xy");
     test("single step gives head reduction priority",
          single_step(quote(K)(quote(x)(quote(I)(u)))(v)), "x(Iu)");
+    test("single step does not search arbitrary nested SK applications",
+         single_step(
+             quote(S)(M)(quote(S)(K)(M))(x)),
+         "Mx(SKMx)");
+    test("single step keeps ordinary head priority over nested SK",
+         single_step(quote(I)(quote(S)(K)(M))), "SKM");
     test("single step reduces outer nested redex first",
          single_step(quote(x)(quote(K)(quote(I)(u))(v))), "x(Iu)");
     test("single step enters undersaturated combinator argument",
@@ -1536,8 +1837,18 @@ int main() {
     test("two steps reduce zero-arity basis with trailing arguments",
          single_step(single_step(
              quote(zero_arity_basis)(x)(y)(z))), "xz");
-    test("quoted SK operand prints I", quote(x)(quote(S)(K)(y)), "xI");
-    test("quoted native SK operand prints I", quote(x(S(K)(y))), "xI");
+    test("quoted SK application stays structural as an operand",
+         quote(x)(quote(S)(K)(y)), "x(SKy)");
+    test("quoted native SK application stays structural as an operand",
+         quote(x(S(K)(y))), "x(SKy)");
+    test("quoted SK application stays structural with a trailing operand",
+         quote(S)(K)(x)(y), "SKxy");
+    test("nested quoted SK application stays structural",
+         quote(z)(quote(S)(K)(x)(y)), "z(SKxy)");
+    test("quoted SK application preserves a compound trailing operand",
+         quote(S)(K)(x)(quote(y)(z)), "SKx(yz)");
+    test("quoted SK application preserves all later operands",
+         quote(S)(K)(x)(y)(z), "SKxyz");
     test("quote preserves nested quoted application", quote(x(quote(I)(y))),
          "x(Iy)");
     test("single step preserves nested quoted reduction",
@@ -1757,7 +2068,7 @@ int main() {
          },
          "Press Enter for one reduction step; type q then Enter to quit.\n"
          "SKIx\n"
-         "Kx(Ix)\n"
+         "Ix\n"
          "x\n");
     test("single step loop quit",
          [&] {
@@ -1773,7 +2084,7 @@ int main() {
          },
          "Press Enter for one reduction step; type q then Enter to quit.\n"
          "SKIx\n"
-         "Kx(Ix)\n");
+         "Ix\n");
     test("single step loop reduces inside head normal form",
          [&] {
              std::istringstream input("\n\n");
@@ -1874,7 +2185,7 @@ int main() {
          "Kx\n");
     test("single step run",
          [&] { single_step_run(quoted_ski_x); },
-         "Kx(Ix)\n"
+         "Ix\n"
          "x\n");
     test("single step run omits an unreduced expression",
          [&] { single_step_run(quote(x)); },
@@ -1913,24 +2224,18 @@ int main() {
     test("single step run compares structure, not output",
          [&] { single_step_run(quote(basis("K", 1, K))(x)); },
          "Kx\n");
-    test("color step prints before and after each call",
+    test("color step contracts SK application and then I",
          [&] {
              auto expression = color_step(quoted_ski_x);
              static_cast<void>(color_step(std::move(expression)));
          },
-         std::string{"  S"} +
-             red_argument("K") +
-             green_argument("I") +
-             blue_argument("x") +
+         std::string{"  "} +
+             red_argument("SKI") +
+             "x" +
              "\n->" +
-             red_argument("K") +
-             blue_argument("x") +
-             "(" +
-             green_argument("I") +
-             blue_argument("x") +
-             ")\n  K" +
+             red_argument("I") +
+             "x\n  I" +
              red_argument("x") +
-             green_argument("(Ix)") +
              "\n->" +
              red_argument("x") +
              "\n");
@@ -1972,6 +2277,53 @@ int main() {
              green_argument("y") +
              blue_argument("z") +
              ")\n");
+    test("color step contracts SKM marked by the preceding S reduction",
+         [&] {
+             std::ostringstream first_step;
+             auto pending = color_step(
+                 wm_expanded, first_step, true);
+             static_cast<void>(
+                 color_step(std::move(pending), true));
+         },
+         std::string{"  SM"} +
+             red_argument("(SKM)") +
+             "x" +
+             "\n->" +
+             "SM" +
+             red_argument("I") +
+             "x\n");
+    test("color step contracts SKz in function position",
+         [&] {
+             static_cast<void>(
+                 color_step(s_with_sk_function));
+         },
+         std::string{"  "} +
+             red_argument("SKz") +
+             "(yz)\n->" +
+             red_argument("I") +
+             "(yz)\n");
+    test("color step contracts SKz in argument position",
+         [&] {
+             static_cast<void>(
+                 color_step(s_with_sk_argument));
+         },
+         std::string{"  xz"} +
+             red_argument("(SKz)") +
+             "\n->xz" +
+             red_argument("I") +
+             "\n");
+    test("color step contracts both SKz applications",
+         [&] {
+             static_cast<void>(
+                 color_step(s_with_two_sk_arguments));
+         },
+         std::string{"  "} +
+             red_argument("SKz") +
+             green_argument("(SKz)") +
+             "\n->" +
+             red_argument("I") +
+             green_argument("I") +
+             "\n");
     test("color step carries Y argument color into deferred Y",
          [&] { static_cast<void>(color_step(quote(Y)(x))); },
          std::string{"  Y"} +
@@ -2151,17 +2503,12 @@ int main() {
              std::cout << output.str() << "returned: ";
              expression();
          },
-         std::string{"  S"} +
-             red_argument("K") +
-             green_argument("I") +
-             blue_argument("x") +
+         std::string{"  "} +
+             red_argument("SKI") +
+             "x" +
              "\n->" +
-             red_argument("K") +
-             blue_argument("x") +
-             "(" +
-             green_argument("I") +
-             blue_argument("x") +
-             ")\nreturned: Kx(Ix)");
+             red_argument("I") +
+             "x\nreturned: Ix");
     test("color step forwards basis step",
          [&] {
              static_cast<void>(color_step(quote(M)(x), true));
@@ -2180,7 +2527,7 @@ int main() {
              std::cout << buffer.str();
          },
          "Interrupted. Press Enter to resume; type q or Q then Enter to quit.\n"
-         "Kx(Ix)\n"
+         "Ix\n"
          "x\n");
     test("single step run defaults to std::cin",
          [&] {
@@ -2192,7 +2539,7 @@ int main() {
              std::cout << buffer.str();
          },
          "Interrupted. Press Enter to resume; type q or Q then Enter to quit.\n"
-         "Kx(Ix)\n"
+         "Ix\n"
          "x\n");
     test("single step run quits after SIGINT",
          [&] {
@@ -2231,6 +2578,8 @@ int main() {
          },
          "restored");
     test("seven-character basis", seven_character_basis, "1234567");
+    test("fifteen-character basis",
+         fifteen_character_basis, "123456789012345");
     test("zero-arity basis without arguments", zero_arity_basis, "Qzero");
     test("zero-arity basis with one argument",
          zero_arity_basis(x), "Kx");
@@ -2356,12 +2705,13 @@ int main() {
     test("Sxyzw [combines (yz) after xz]", (S)(x)(y)(z)(w), "xz(yz)w");
     test("SIyzw", (S)(I)(y)(z)(w), "z(yz)w");
     test("S(SKx)yzw", (S)(S(K)(x))(y)(z)(w), "z(yz)w");
-    test("S(SKy)(SK)(zu)w", (S)(S(K)(y))(S(K))(z(u))(w), "zuIw");
+    test("S(SKy)(SK)(zu)w", (S)(S(K)(y))(S(K))(z(u))(w),
+         "zu(SK(zu))w");
     test("S(SK)yzw", (S)(S(K))(y)(z)(w), "yzw");
     test("S(SK)(Ky)zw", (S)(S(K))(K(y))(z)(w), "yw");
     test("S(SK)(zu)yw", (S)(S(K))(z(u))(y)(w), "zuyw");
     test("S(SK)yI", (S)(S(K))(y)(I), "yI");
-    test("S(SK)y(SKz)", (S)(S(K))(y)(S(K)(z)), "yI");
+    test("S(SK)y(SKz)", (S)(S(K))(y)(S(K)(z)), "y(SKz)");
     test("S(KI)yzw", (S)(K(I))(y)(z)(w), "yzw");
     test("S(KI)(Ky)zw", (S)(K(I))(K(y))(z)(w), "yw");
     test("S(KI)(zu)yw", (S)(K(I))(z(u))(y)(w), "zuyw");
@@ -2370,14 +2720,15 @@ int main() {
     test("S(K(SKx))(zu)yw", (S)(K(S(K)(x)))(z(u))(y)(w), "zuyw");
     test("SxIzw", (S)(x)(I)(z)(w), "xzzw");
     test("Sx(SKy)zw", (S)(x)(S(K)(y))(z)(w), "xzzw");
-    test("Sxy(SKz)w", (S)(x)(y)(S(K)(z))(w), "xI(yI)w");
+    test("Sxy(SKz)w", (S)(x)(y)(S(K)(z))(w),
+         "x(SKz)(y(SKz))w");
     test("SI(SKx)zw", (S)(I)(S(K)(x))(z)(w), "zzw");
     test("SKyzw", (S)(K)(y)(z)(w), "zw");
     test("SKKzw", (S)(K)(K)(z)(w), "zw");
     test("Sx(KS)zw", (S)(x)(K(S))(z)(w), "xzSw");
-    test("Sx(SK)zw", (S)(x)(S(K))(z)(w), "xzIw");
-    test("SI(SK)zw", (S)(I)(S(K))(z)(w), "zIw");
-    test("SI(SK)(zu)w", (S)(I)(S(K))(z(u))(w), "zuIw");
+    test("Sx(SK)zw", (S)(x)(S(K))(z)(w), "xz(SKz)w");
+    test("SI(SK)zw", (S)(I)(S(K))(z)(w), "z(SKz)w");
+    test("SI(SK)(zu)w", (S)(I)(S(K))(z(u))(w), "zu(SK(zu))w");
     test("SI(SK)(SKx)w", (S)(I)(S(K))(S(K)(x))(w), "w");
     test("SxKyw", (S)(x)(K)(y)(w), "xy(Ky)w");
     test("Sxy(zy)w", (S)(x)(y)(z(y))(w), "x(zy)(y(zy))w");
@@ -2394,7 +2745,7 @@ int main() {
     test("x(Sy)w", (x)(S(y))(w), "x(Sy)w");
     test("I(Sy)w", (I)(S(y))(w), "Syw");
     test("x(Syz)w", (x)(S(y)(z))(w), "x(Syz)w");
-    test("x(SKy)w", (x)(S(K)(y))(w), "xIw");
+    test("x(SKy)w", (x)(S(K)(y))(w), "x(SKy)w");
     test("I(Syz)", (I)(S(y)(z)), "Syz");
     test("I(Syz)w", (I)(S(y)(z))(w), "yw(zw)");
     test("SxI(zu)w", (S)(x)(I)(z(u))(w), "x(zu)(zu)w");
@@ -2404,14 +2755,20 @@ int main() {
     test("S(Sx)y(zu)", (S)(S(x))(y)(z(u)), "x(y(zu))(zu(y(zu)))");
     test("S(Sx)I(zu)", (S)(S(x))(I)(z(u)), "x(zu)(zu(zu))");
     test("S(Sx)yI", (S)(S(x))(y)(I), "x(yI)(yI)");
-    test("S(Sx)(SK)(Kz)u", (S)(S(x))(S(K))(K(z))(u), "xIzu");
+    test("S(Sx)(SK)(Kz)u", (S)(S(x))(S(K))(K(z))(u),
+         "x(SK(Kz))zu");
     test("SSy(SK)uw", (S)(S)(y)(S(K))(u)(w), "y(SK)uw");
-    test("S(S(Sx)(SK))yz", S(S(S(x))(S(K)))(y)(z), "xI(zI)(yz)");
-    test("S(Sx)y(SK)u", S(S(x))(y)(S(K))(u), "x(y(SK))Iu");
-    test("S(Sx)y(SKz)u", S(S(x))(y)(S(K)(z))(u), "x(yI)(yI)u");
+    test("S(S(Sx)(SK))yz", S(S(S(x))(S(K)))(y)(z),
+         "x(SKz)(z(SKz))(yz)");
+    test("S(Sx)y(SK)u", S(S(x))(y)(S(K))(u),
+         "x(y(SK))(SK(y(SK)))u");
+    test("S(Sx)y(SKz)u", S(S(x))(y)(S(K)(z))(u),
+         "x(y(SKz))(y(SKz))u");
     test("S(Sx)y(Kv)", (S)(S(x))(y)(K(v)), "x(y(Kv))v");
-    test("S(Sx)(SK)z", (S)(S(x))(S(K))(z), "xI(zI)");
-    test("S(S(Sx))(SK)z", (S)(S(S(x)))(S(K))(z), "x(zI)(zI)");
+    test("S(Sx)(SK)z", (S)(S(x))(S(K))(z),
+         "x(SKz)(z(SKz))");
+    test("S(S(Sx))(SK)z", (S)(S(S(x)))(S(K))(z),
+         "x(z(SKz))(z(SKz))");
     test("SSI(zu)y", (S)(S)(I)(z(u))(y), "zuy(zuy)");
     test("SS(SKx)(zu)y", (S)(S)(S(K)(x))(z(u))(y), "zuy(zuy)");
     test("SS(K(SKx))(zu)w", (S)(S)(K(S(K)(x)))(z(u))(w),"zuww");
@@ -2492,7 +2849,7 @@ int main() {
     bool overlong_basis_rejected = false;
     try {
         static_cast<void>(basis(
-            "12345678", 1, std::move(preserved_expression)));
+            "1234567890123456", 1, std::move(preserved_expression)));
     } catch (std::length_error const&) {
         overlong_basis_rejected = true;
     }

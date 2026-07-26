@@ -73,7 +73,7 @@ std::optional<combdsl::quoted_expression> stepped_expression;
             combdsl::detail::parser_basis_registry_mutex());
         previous_bases = combdsl::detail::parser_basis_registry();
         previous_definitions =
-            combdsl::detail::parser_set_definition_registry();
+            combdsl::detail::parser_definition_registry();
     } catch (std::exception const& error) {
         return {false, 0, 0, error.what()};
     } catch (...) {
@@ -84,7 +84,7 @@ std::optional<combdsl::quoted_expression> stepped_expression;
         std::lock_guard lock(
             combdsl::detail::parser_basis_registry_mutex());
         combdsl::detail::parser_basis_registry().swap(previous_bases);
-        combdsl::detail::parser_set_definition_registry().swap(
+        combdsl::detail::parser_definition_registry().swap(
             previous_definitions);
     };
 
@@ -165,6 +165,11 @@ std::optional<combdsl::quoted_expression> stepped_expression;
         if (parsed.is_definition) {
             return {true, true, {}, {}};
         }
+        if (parsed.is_display_only) {
+            parsed.expression.print_to(output);
+            output << '\n';
+            return {true, false, output.str(), {}};
+        }
         combdsl::eval(std::move(parsed.expression), output, input);
         return {true, false, output.str(), {}};
     } catch (std::exception const& error) {
@@ -185,6 +190,11 @@ std::optional<combdsl::quoted_expression> stepped_expression;
         if (parsed.is_definition) {
             return {true, true, {}, {}};
         }
+        if (parsed.is_display_only) {
+            parsed.expression.print_to(output);
+            output << '\n';
+            return {true, false, output.str(), {}};
+        }
         combdsl::single_step_run(
             std::move(parsed.expression), output, input, basis_step);
         return {true, false, output.str(), {}};
@@ -202,6 +212,13 @@ std::optional<combdsl::quoted_expression> stepped_expression;
         auto parsed = combdsl::detail::parse_input(escaped_source);
         if (parsed.is_definition) {
             return {true, true, {}, {}};
+        }
+        if (parsed.is_display_only) {
+            std::ostringstream output;
+            combdsl::detail::print_quoted_html(
+                output, parsed.expression);
+            output << '\n';
+            return {true, false, output.str(), {}};
         }
         auto expression = std::move(parsed.expression);
         std::ostringstream output;
@@ -243,6 +260,13 @@ std::optional<combdsl::quoted_expression> stepped_expression;
         auto parsed = combdsl::detail::parse_input(escaped_source);
         if (parsed.is_definition) {
             return {true, false, true, true, {}, {}};
+        }
+        if (parsed.is_display_only) {
+            std::ostringstream output;
+            parsed.expression.print_to(output);
+            output << '\n';
+            return {
+                true, false, true, false, output.str(), {}};
         }
         stepped_expression.emplace(std::move(parsed.expression));
         return {true, false, false, false, {}, {}};

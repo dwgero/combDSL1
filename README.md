@@ -388,9 +388,48 @@ register a declaration without evaluating or stepping its stored expression,
 and produce no output for the declaration itself. A malformed declaration does
 not register its name.
 
+At the start of a line, `define` followed by whitespace creates a named basis
+by abstracting one or more lowercase symbols from a combinator expression.
+The symbols may be adjacent or separated by whitespace. Their count becomes
+the basis arity, and abstraction proceeds from the last symbol back to the
+first:
+
+```cpp
+parse("define Flip xy = yx");            // Flip
+single_step(parse("Flip a b"), true);    // Tab
+single_step(parse("Flip a b"));          // ba
+
+parse("define Apply xyz = xz(yz)");      // Apply
+single_step(parse("Apply a b c"), true); // Sabc
+single_step(parse("Apply a b c"));       // ac(bc)
+```
+
+This is equivalent to repeatedly calling `takeout`; for example,
+`define foo xyz = exp` stores
+`takeout(x, takeout(y, takeout(z, exp)))` with arity `3`. As with `set`,
+the definition command is silent under `parse_eval`, `read_parse_eval`, and
+`parse_and_step`, and malformed definitions are not registered. After the
+final `takeout`, `define` recursively optimizes `BCT` to `V` and `BB` to `D`.
+
+At the start of a line, `show` followed by whitespace and a name displays one
+level of a named basis's stored definition without reducing it. For `S`, `K`,
+`I`, or `Y`, it reports that the name is fundamental. Anything other than a
+named basis or one of those four fundamental names is a parse error:
+
+```cpp
+parse_eval("show M");   // prints: SII
+parse_eval("show S");   // prints: S is a fundamental name
+parse_eval("show x");   // parse error: x is not a defined name
+```
+
+`parse("show M")` returns the displayed definition as a
+`quoted_expression`. `parse_eval`, `read_parse_eval`, and `parse_and_step`
+print a `show` result once without evaluating or stepping it.
+
 `set_list()` returns the effective user-defined bases in registration order as
-newline-separated `set` declarations. It always includes the arity, including
-`0`, and uses quotes and backslashes exactly as a user would enter them.
+newline-separated `set` or `define` declarations. A `set` declaration always
+includes its arity, including `0`; a `define` declaration includes its defining
+symbols. Quotes and backslashes appear exactly as a user would enter them.
 Passing each line through `input_escape` and then to `parse` recreates the
 definitions:
 
