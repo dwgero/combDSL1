@@ -901,35 +901,52 @@ int main() {
 
     test("set list accepts a later duplicate definition",
          parse(input_escape("set LPair = 1 I")), "LPair");
-    test("set list ignores a later duplicate definition",
-         [] { std::cout << set_list(); }, expected_set_list);
-    test("set list accepts a primitive definition",
-         parse(input_escape("set K = I")), "K");
-    test("set list excludes primitive definitions",
-         [] { std::cout << set_list(); }, expected_set_list);
-    test("set list accepts a predefined basis definition",
-         parse(input_escape("set M = I")), "M");
-    test("set list excludes predefined basis definitions",
-         [] { std::cout << set_list(); }, expected_set_list);
+    const std::string expected_redefined_set_list =
+        expected_set_list + "\nset LPair = 1 I";
+    test("set list records a later changed definition",
+         [] { std::cout << set_list(); },
+         expected_redefined_set_list);
+    test_parse_failure(
+        "set rejects a primitive definition",
+        input_escape("set K = I"),
+        4,
+        "K is a pre-defined basis and cannot be redefined");
+    test("set list excludes rejected primitive definitions",
+         [] { std::cout << set_list(); },
+         expected_redefined_set_list);
+    test_parse_failure(
+        "set rejects a predefined basis definition",
+        input_escape("set M = I"),
+        4,
+        "M is a pre-defined basis and cannot be redefined");
+    test("set list excludes rejected predefined definitions",
+         [] { std::cout << set_list(); },
+         expected_redefined_set_list);
     test_parse_failure("set list rejects a malformed definition",
                        "set LBad = K@", 12);
     test("set list excludes malformed definitions",
-         [] { std::cout << set_list(); }, expected_set_list);
-    test("set list output can be reparsed",
-         [&expected_set_list] {
-             std::istringstream definitions(expected_set_list);
+         [] { std::cout << set_list(); },
+         expected_redefined_set_list);
+    test("set list output can be inspected without changes",
+         [&expected_redefined_set_list] {
+             std::istringstream definitions(
+                 expected_redefined_set_list);
              std::string definition;
              while (std::getline(definitions, definition)) {
-                 static_cast<void>(parse(input_escape(definition)));
+                 static_cast<void>(combdsl::detail::parse_input(
+                     input_escape(definition),
+                     combdsl::detail::parser_definition_mode::
+                         inspect_definitions));
              }
              std::cout << set_list();
          },
-         expected_set_list);
+         expected_redefined_set_list);
 
     test("define registers a replayable basis",
          parse("define DefSave x y z = x(y z)"), "DefSave");
     const std::string expected_definition_list =
-        expected_set_list + "\ndefine DefSave xyz = x(y z)";
+        expected_redefined_set_list +
+        "\ndefine DefSave xyz = x(y z)";
     test("set list includes a canonical define command",
          [] { std::cout << set_list(); }, expected_definition_list);
     test("canonical define command can be reparsed",
@@ -939,6 +956,43 @@ int main() {
              std::cout << set_list();
          },
          expected_definition_list);
+    test_parse_failure(
+        "define cannot replace a predefined basis",
+        "define M x = x",
+        7,
+        "M is a pre-defined basis and cannot be redefined");
+    test("define registers a replaceable user basis",
+         parse("define DefReplace x = x"), "DefReplace");
+    test("equivalent set form does not require replacement",
+         [] {
+             auto inspected = combdsl::detail::parse_input(
+                 "set DefReplace = 1 I",
+                 combdsl::detail::parser_definition_mode::
+                     inspect_definitions);
+             std::cout << (inspected.replaced_definition.empty()
+                 ? "unchanged"
+                 : inspected.replaced_definition);
+         },
+         "unchanged");
+    test("changed define identifies its existing stored definition",
+         [] {
+             auto inspected = combdsl::detail::parse_input(
+                 "define DefReplace x = Kx",
+                 combdsl::detail::parser_definition_mode::
+                     inspect_definitions);
+             std::cout << inspected.replaced_definition;
+         },
+         "DefReplace=1 I");
+    test("changed define replaces a user definition",
+         parse("define DefReplace x = Kx"), "DefReplace");
+    test("show exposes a replaced define body",
+         parse("show DefReplace"), "K");
+    test("set can replace a define and its arity",
+         parse("set DefReplace = 2 I"), "DefReplace");
+    test("show exposes the cross-form replacement",
+         parse("show DefReplace"), "I");
+    test("cross-form replacement uses its new arity",
+         single_step(parse("DefReplace a b")), "ab");
 
     test("define infers arity from its symbols",
          parse("define Def3 xyz = xyz"), "Def3");
@@ -994,10 +1048,10 @@ int main() {
     test("whitespace-separated define symbols preserve their order",
          single_step(parse("Dws a b c"), true), "Iabc");
     test("define accepts a symbol adjacent to a one-letter name",
-         parse("define Gx = xSTK(KK)(SK)"), "G");
+         parse("define Fx = xSTK(KK)(SK)"), "F");
     test("compact one-letter define preserves its behavior",
          single_step(
-             parse("define Gx=xSTK(KK)(SK)")(w)),
+             parse("define Fx=xSTK(KK)(SK)")(w)),
          "wSTK(KK)(SK)");
     test("compact one-letter define infers its adjacent symbol",
          parse("define Ux = x"), "U");
@@ -1040,10 +1094,10 @@ int main() {
     test("two-character define name registers without becoming G",
          single_step(parse("Gx a")), "a");
     test("compact define accepts multiple adjacent symbols",
-         parse("define Gxyz = x(yz)"), "G");
+         parse("define Fxyz = x(yz)"), "F");
     test("compact multiple-symbol define preserves its behavior",
          single_step(
-             parse("define Gxyz=x(yz)")(a)(b)(c)),
+             parse("define Fxyz=x(yz)")(a)(b)(c)),
          "a(bc)");
     test("an overlong compact signature is not an overlong name",
          parse("define ~abcdefghijklmno = a"), "~");
@@ -1169,13 +1223,117 @@ int main() {
     test("bare set remains symbols", parse("set"), "set");
     test("first set definition",
          parse("set DynDup=I"), "DynDup");
-    test("later duplicate set definition remains usable",
-         single_step(parse("set DynDup=K")), "K");
-    test("first set definition wins parser lookup",
+    test("identical set definition needs no replacement",
+         [] {
+             auto inspected = combdsl::detail::parse_input(
+                 "set DynDup = 0 I",
+                 combdsl::detail::parser_definition_mode::
+                     inspect_definitions);
+             std::cout << (inspected.replaced_definition.empty()
+                 ? "unchanged"
+                 : inspected.replaced_definition);
+         },
+         "unchanged");
+    test("changed set definition identifies what it replaces",
+         [] {
+             auto inspected = combdsl::detail::parse_input(
+                 "set DynDup=K",
+                 combdsl::detail::parser_definition_mode::
+                     inspect_definitions);
+             std::cout << inspected.replaced_definition;
+         },
+         "DynDup=0 I");
+    auto dyn_dup_snapshot = parse("DynDup x");
+    test("inspection does not replace the existing definition",
          single_step(parse("DynDup x")), "Ix");
-    test("set primitive definition remains usable for that parse",
-         single_step(parse("set K=I")), "I");
-    test("set cannot replace a primitive", parse("K"), "K");
+    test("later changed set definition remains usable",
+         single_step(parse("set DynDup=K")), "K");
+    test("changed set definition wins future parser lookup",
+         single_step(parse("DynDup x")), "Kx");
+    test("an earlier parsed expression keeps its definition snapshot",
+         single_step(dyn_dup_snapshot), "Ix");
+    auto const dyn_dup_set_list = set_list();
+    test("identical replacement does not add saved history",
+         [&dyn_dup_set_list] {
+             static_cast<void>(parse("set DynDup = 0 K"));
+             std::cout << (set_list() == dyn_dup_set_list
+                 ? "unchanged"
+                 : "changed");
+         },
+         "unchanged");
+    test_parse_failure(
+        "set cannot replace a primitive",
+        "set K=I",
+        4,
+        "K is a pre-defined basis and cannot be redefined");
+    test("failed primitive replacement leaves K unchanged",
+         parse("K"), "K");
+    test("history registers an initial dependency",
+         parse("set HistA=I"), "HistA");
+    test("history registers a basis that captures the dependency",
+         parse("set HistB=HistA"), "HistB");
+    test("history replaces the dependency for future parsing",
+         parse("set HistA=K"), "HistA");
+    test("captured dependency keeps its earlier snapshot",
+         single_step(single_step(parse("HistB x"))), "Ix");
+    test("the replaced dependency uses its new definition",
+         single_step(parse("HistA x")), "Kx");
+    test("same source can change after a captured dependency changes",
+         [] {
+             auto inspected = combdsl::detail::parse_input(
+                 "set HistB=HistA",
+                 combdsl::detail::parser_definition_mode::
+                     inspect_definitions);
+             std::cout << inspected.replaced_definition;
+         },
+         "HistB=0 HistA");
+    test("saved history preserves dependency replacement order",
+         [] {
+             constexpr std::string_view suffix =
+                 "set HistA = 0 I\n"
+                 "set HistB = 0 HistA\n"
+                 "set HistA = 0 K";
+             std::cout << (set_list().ends_with(suffix)
+                 ? "ordered"
+                 : "not ordered");
+         },
+         "ordered");
+    test("a deeply nested equivalent definition is unchanged",
+         [] {
+             std::string definition = "set DeepEq = ";
+             definition.append(300, 'x');
+             static_cast<void>(parse(definition));
+             auto inspected = combdsl::detail::parse_input(
+                 definition,
+                 combdsl::detail::parser_definition_mode::
+                     inspect_definitions);
+             std::cout << (inspected.replaced_definition.empty()
+                 ? "unchanged"
+                 : "changed");
+         },
+         "unchanged");
+    test("a user definition can precede a C++ basis registration",
+         parse("set LateCpp=I"), "LateCpp");
+    test("a C++ basis cannot take an existing user name",
+         [] {
+             try {
+                 static_cast<void>(basis("LateCpp", 0, K));
+                 std::cout << "accepted";
+             } catch (std::invalid_argument const&) {
+                 std::cout << "rejected";
+             }
+         },
+         "rejected");
+    test("rejected C++ registration leaves the user definition",
+         parse("show LateCpp"), "I");
+    test("rejected C++ registration preserves user save history",
+         [] {
+             std::cout << (set_list().find(
+                 "set LateCpp = 0 I") != std::string::npos
+                 ? "preserved"
+                 : "missing");
+         },
+         "preserved");
     test("parse left association reduction", single_step(parse("KIxy")),
          "Iy");
     test("parse parentheses override association",

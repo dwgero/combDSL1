@@ -220,6 +220,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             font: 0.9rem/1.5 system-ui, sans-serif;
         }
 
+        .dialog-message {
+            margin: 0;
+            font: 0.9rem/1.5 system-ui, sans-serif;
+        }
+
         #combinator-info-dialog,
         #about-dialog {
             width: min(40rem, calc(100% - 2rem));
@@ -291,6 +296,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
         .dialog-controls {
             display: flex;
             justify-content: flex-end;
+            gap: 0.75rem;
             margin-top: 1.25rem;
         }
 
@@ -313,7 +319,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             color: #c33;
         }
     </style>
-    <script src="./app.js?v=1.5.4" defer></script>
+    <script src="./app.js?v=1.5.5" defer></script>
 </head>
 <body>
     <main aria-labelledby="studio-title">
@@ -365,6 +371,17 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
         <h2 id="nothing-to-save-title">Nothing to save</h2>
         <form method="dialog" class="dialog-controls">
             <button type="submit" data-dialog-initial-focus>Close</button>
+        </form>
+    </dialog>
+
+    <dialog id="replacement-dialog"
+        aria-labelledby="replacement-title">
+        <h2 id="replacement-title">Replace named basis?</h2>
+        <p id="replacement-message" class="dialog-message"></p>
+        <form method="dialog" class="dialog-controls">
+            <button type="submit" value="cancel">Cancel</button>
+            <button id="replacement-replace" type="submit"
+                value="replace">Replace</button>
         </form>
     </dialog>
 
@@ -430,6 +447,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             Eagle bird:<br>
             <code>define Exyzwv = xy(zwv)</code>
             <br><br>
+            User-defined bases may be redefined. If a command entered here
+            would change an existing definition, Replace must be confirmed.
+            Pre-defined bases are immutable and cannot be redefined.
+            <br><br>
             <code>show name</code><br>
             The <code>show</code> command displays the combinators stored
             for <code>name</code>. For example, <code>show E</code> for
@@ -440,9 +461,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             The Save button downloads to your computer the combinators added by
             <code>set</code> or <code>define</code>, with default filename
             <code>set_list.cmb</code>. Every saved definition includes its
-            arity and defining combinator expression.
+            arity and defining combinator expression. Redefinitions are saved
+            in chronological order.
             The Load button reads a <code>.cmb</code> file from your computer
-            and recreates its definitions in order. After a parse error, it
+            and recreates its definitions in order, applying redefinitions
+            without confirmation. After a parse error, it
             continues with the next line. After 15 errors, it stops
             with <code>too many errors, aborting with no changes made</code>.
             For other failed loads, no definitions from the file are kept,
@@ -506,7 +529,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             data-dialog-initial-focus>About</h2>
         <div class="license-text">
             <!-- Keep this version and the app.js cache key in sync. -->
-            <p>Combinator Studio, version 1.5.4<br>
+            <p>Combinator Studio, version 1.5.5<br>
                 Part of the C++ Combinator DSL<br>
                 Copyright (C) 2026  David W. Gero</p>
             <p>This program is free software: you can redistribute it and/or modify

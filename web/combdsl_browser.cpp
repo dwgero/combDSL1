@@ -54,6 +54,13 @@ struct load_result {
     std::string error;
 };
 
+struct definition_inspection_result {
+    bool success;
+    bool definition;
+    std::string replacement;
+    std::string error;
+};
+
 std::optional<combdsl::quoted_expression> stepped_expression;
 
 [[nodiscard]] load_result load_set_list_input(
@@ -67,6 +74,30 @@ std::optional<combdsl::quoted_expression> stepped_expression;
         result.fatal_line,
         combdsl::web_detail::format_file_load_diagnostics(
             filename, result)};
+}
+
+[[nodiscard]] definition_inspection_result inspect_definition_input(
+    std::string const& source) {
+    try {
+        auto escaped_source = combdsl::input_escape(source);
+        auto parsed = combdsl::detail::parse_input(
+            escaped_source,
+            combdsl::detail::parser_definition_mode::
+                inspect_definitions);
+        return {
+            true,
+            parsed.is_definition,
+            std::move(parsed.replaced_definition),
+            {}};
+    } catch (std::exception const& error) {
+        return {false, false, {}, error.what()};
+    } catch (...) {
+        return {
+            false,
+            false,
+            {},
+            "unknown definition inspection error"};
+    }
 }
 
 [[nodiscard]] evaluation_result parse_eval_input(std::string const& source) {
@@ -269,6 +300,17 @@ EMSCRIPTEN_BINDINGS(combdsl_browser) {
         .field("line", &load_result::line)
         .field("error", &load_result::error);
 
+    emscripten::value_object<definition_inspection_result>(
+        "DefinitionInspectionResult")
+        .field("success", &definition_inspection_result::success)
+        .field("definition", &definition_inspection_result::definition)
+        .field(
+            "replacement",
+            &definition_inspection_result::replacement)
+        .field("error", &definition_inspection_result::error);
+
+    emscripten::function(
+        "inspectDefinition", &inspect_definition_input);
     emscripten::function("parseEval", &parse_eval_input);
     emscripten::function("singleStepRun", &single_step_run_input);
     emscripten::function("colorStepRun", &color_step_run_input);

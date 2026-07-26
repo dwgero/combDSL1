@@ -21,6 +21,7 @@
 
 #include <cstddef>
 #include <iostream>
+#include <sstream>
 #include <string>
 #include <string_view>
 
@@ -47,6 +48,14 @@ void check(std::string_view title, bool condition) {
     } catch (combdsl::parse_error const&) {
         return false;
     }
+}
+
+[[nodiscard]] std::string shown_definition(std::string_view name) {
+    std::string command = "show ";
+    command += name;
+    std::ostringstream output;
+    combdsl::parse(command).print_to(output);
+    return output.str();
 }
 
 [[nodiscard]] std::string repeated_error_lines(
@@ -162,6 +171,58 @@ int main() {
     check("an error-free load has no diagnostic messages",
           format_file_load_diagnostics(
               "successful.cmb", successful).empty());
+
+    static_cast<void>(
+        combdsl::parse("set FileReplace = 0 I"));
+    auto const replacement = load_set_list(
+        "set FileReplace = 1 K\n");
+    check("a file silently replaces a user definition",
+          replacement.success &&
+          replacement.loaded == 1 &&
+          replacement.diagnostics.empty() &&
+          shown_definition("FileReplace") == "K");
+
+    auto const before_failed_replacement = combdsl::set_list();
+    auto const failed_replacement = load_set_list(
+        "set FileReplace = 2 I\n"
+        "@\n");
+    check("an error rolls back a file replacement",
+          !failed_replacement.success &&
+          shown_definition("FileReplace") == "K" &&
+          combdsl::set_list() == before_failed_replacement);
+
+    auto const repeated_replacement = load_set_list(
+        "set FileTwice = 0 I\n"
+        "set FileTwice = 0 K\n");
+    check("redefinitions within a file are silent and ordered",
+          repeated_replacement.success &&
+          repeated_replacement.loaded == 2 &&
+          shown_definition("FileTwice") == "K");
+
+    static_cast<void>(
+        combdsl::parse("set FileCycle = 0 K"));
+    auto const before_replayed_history = combdsl::set_list();
+    auto const replayed_history = load_set_list(
+        "set FileCycle = 0 I\n"
+        "set FileCycle = 0 K\n");
+    check("a load ending at the current definitions succeeds",
+          replayed_history.success &&
+          replayed_history.loaded == 2 &&
+          shown_definition("FileCycle") == "K");
+    check("a load ending at the current definitions is idempotent",
+          combdsl::set_list() == before_replayed_history);
+
+    auto const before_predefined_error = combdsl::set_list();
+    auto const predefined_error = load_set_list(
+        "set M = 0 I\n");
+    check("a file cannot replace a predefined basis",
+          !predefined_error.success &&
+          predefined_error.diagnostics.size() == 1 &&
+          predefined_error.diagnostics.front().line == 1 &&
+          predefined_error.diagnostics.front().detail ==
+              "M is a pre-defined basis and cannot be redefined" &&
+          shown_definition("M") == "SII" &&
+          combdsl::set_list() == before_predefined_error);
 
     std::cout << tests_run << " test(s) run, "
               << test_failures << " failed\n";

@@ -164,6 +164,11 @@ inline constexpr std::size_t maximum_file_parse_errors = 15;
             return {
                 false, aborted, 0, std::move(diagnostics), 0, {}};
         }
+        if (detail::same_registered_parser_bases(
+                previous_bases,
+                detail::registered_parser_bases_snapshot())) {
+            restore_registry();
+        }
         return {true, false, loaded, {}, 0, {}};
     } catch (std::exception const& error) {
         restore_registry();

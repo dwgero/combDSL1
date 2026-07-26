@@ -32,6 +32,12 @@
     const loadFile = document.querySelector("#load-file");
     const nothingToSaveDialog = document.querySelector(
         "#nothing-to-save-dialog");
+    const replacementDialog = document.querySelector(
+        "#replacement-dialog");
+    const replacementMessage = document.querySelector(
+        "#replacement-message");
+    const replacementReplace = document.querySelector(
+        "#replacement-replace");
     const help = document.querySelector("#help");
     const helpDialog = document.querySelector("#help-dialog");
     const combinatorInfo = document.querySelector("#combinator-info");
@@ -49,6 +55,7 @@
     let generation = 0;
     let nextRequestId = 0;
     let activeRequest;
+    let replacementRequest;
     let loadRequest;
     let ready = false;
     let saveInProgress = false;
@@ -166,6 +173,10 @@
             result.textContent = content;
         }
         result.dataset.kind = kind;
+        if (request.outputEntry === undefined) {
+            request.outputEntry =
+                beginEvaluationOutput(request.source);
+        }
         request.outputEntry.append("\n", result);
         scrollToNewestOutput();
     };
@@ -188,6 +199,62 @@
             {type: "text/plain;charset=utf-8"},
         ));
         updateControls();
+    };
+
+    const beginRequestEvaluation = request => {
+        if (activeRequest !== request) {
+            return;
+        }
+        if (request.outputEntry === undefined) {
+            request.outputEntry =
+                beginEvaluationOutput(request.source);
+        }
+        status.textContent = request.keyStep
+            ? "Preparing…"
+            : "Evaluating…";
+        updateControls();
+
+        const evaluationWorker = worker;
+        afterNextPaint(() => {
+            if (activeRequest !== request ||
+                worker !== evaluationWorker) {
+                return;
+            }
+            evaluationWorker.postMessage({
+                type: "evaluate",
+                id: request.id,
+                source: request.source,
+                singleStep: request.singleStep,
+                basisStep: request.basisStep,
+                keyStep: request.keyStep,
+                colorize: request.colorize,
+            });
+        });
+    };
+
+    const inspectRequestDefinition = request => {
+        const inspectionWorker = worker;
+        afterNextPaint(() => {
+            if (activeRequest !== request ||
+                worker !== inspectionWorker) {
+                return;
+            }
+            inspectionWorker.postMessage({
+                type: "inspect-definition",
+                id: request.id,
+                source: request.source,
+            });
+        });
+    };
+
+    const dismissReplacementDialog = () => {
+        if (replacementRequest !== undefined) {
+            replacementRequest.awaitingReplacement = false;
+        }
+        replacementRequest = undefined;
+        if (replacementDialog.open) {
+            replacementDialog.close("cancel");
+        }
     };
 
     const saveSetListWithPicker = async () => {
@@ -223,6 +290,7 @@
     };
 
     const showStartupError = message => {
+        dismissReplacementDialog();
         ready = false;
         activeRequest = undefined;
         loadRequest = undefined;
@@ -231,9 +299,11 @@
         updateControls();
     };
 
-    const startWorker = () => {
+    const startWorker = (setListToRestore = "") => {
+        dismissReplacementDialog();
         const currentGeneration = ++generation;
         let terminationExpected = false;
+        let restoreRequestId;
         ready = false;
         activeRequest = undefined;
         loadRequest = undefined;
@@ -261,11 +331,82 @@
 
             const message = event.data;
             if (message.type === "ready") {
+                if (setListToRestore !== "") {
+                    restoreRequestId = ++nextRequestId;
+                    status.textContent = "Restoring definitions…";
+                    currentWorker.postMessage({
+                        type: "load",
+                        id: restoreRequestId,
+                        name: "saved definitions",
+                        source: setListToRestore,
+                    });
+                    return;
+                }
                 updateSavedSetList(message.setList);
                 ready = true;
                 status.textContent = "Ready";
                 updateControls();
                 focusSourceAfterNextPaint();
+                return;
+            }
+
+            if (message.type === "load-result" &&
+                message.id === restoreRequestId) {
+                restoreRequestId = undefined;
+                if (!message.result.success) {
+                    ready = false;
+                    status.textContent = "Could not restore definitions";
+                    appendOutput(
+                        "Could not restore saved definitions after " +
+                            `cancellation:\n${message.result.error}`,
+                        "error",
+                    );
+                    updateControls();
+                    return;
+                }
+
+                updateSavedSetList(message.setList);
+                ready = true;
+                status.textContent = "Ready";
+                updateControls();
+                focusSourceAfterNextPaint();
+                return;
+            }
+
+            if (message.type === "definition-inspection-result" &&
+                message.id === activeRequest?.id) {
+                const request = activeRequest;
+                if (!message.result.success) {
+                    activeRequest = undefined;
+                    status.textContent = "Ready";
+                    completeEvaluationOutput(
+                        request, message.result.error, "error");
+                    updateControls();
+                    return;
+                }
+                if (message.result.replacement !== "") {
+                    request.awaitingReplacement = true;
+                    replacementRequest = request;
+                    replacementMessage.textContent =
+                        `About to replace ${
+                            message.result.replacement}`;
+                    replacementDialog.returnValue = "";
+                    status.textContent = "Waiting for confirmation…";
+                    replacementDialog.showModal();
+                    replacementReplace.focus({
+                        preventScroll: true,
+                    });
+                    afterNextPaint(() => {
+                        if (replacementDialog.open) {
+                            replacementReplace.focus({
+                                preventScroll: true,
+                            });
+                        }
+                    });
+                    updateControls();
+                    return;
+                }
+                beginRequestEvaluation(request);
                 return;
             }
 
@@ -368,6 +509,7 @@
 
             if (message.type === "fatal") {
                 const failedRequest = activeRequest;
+                dismissReplacementDialog();
                 activeRequest = undefined;
                 loadRequest = undefined;
                 ready = false;
@@ -392,6 +534,7 @@
             }
             event.preventDefault();
             const failedRequest = activeRequest;
+            dismissReplacementDialog();
             activeRequest = undefined;
             loadRequest = undefined;
             ready = false;
@@ -423,27 +566,12 @@
             colorize: colorizeEnabled,
             stepReady: false,
             stepPending: false,
+            awaitingReplacement: false,
             outputEntry: beginEvaluationOutput(startingExpression),
         };
-        status.textContent = keyStepEnabled ? "Preparing…" : "Evaluating…";
+        status.textContent = "Scanning…";
         updateControls();
-        const submittedRequest = activeRequest;
-        const evaluationWorker = worker;
-        afterNextPaint(() => {
-            if (activeRequest !== submittedRequest ||
-                worker !== evaluationWorker) {
-                return;
-            }
-            evaluationWorker.postMessage({
-                type: "evaluate",
-                id: submittedRequest.id,
-                source: submittedRequest.source,
-                singleStep: submittedRequest.singleStep,
-                basisStep: submittedRequest.basisStep,
-                keyStep: submittedRequest.keyStep,
-                colorize: submittedRequest.colorize,
-            });
-        });
+        inspectRequestDefinition(activeRequest);
     });
 
     singleStep.addEventListener("click", () => {
@@ -576,11 +704,15 @@
         const cancelledRequest = activeRequest;
         terminateWorker();
         completeEvaluationOutput(cancelledRequest, "[cancelled]");
-        startWorker();
+        startWorker(savedSetList);
     });
 
     const configureDialog = (button, dialog) => {
         button.addEventListener("click", () => {
+            if (replacementRequest !== undefined ||
+                replacementDialog.open) {
+                return;
+            }
             dialog.showModal();
             button.setAttribute("aria-expanded", "true");
             dialog.querySelector("[data-dialog-initial-focus]")?.focus();
@@ -626,6 +758,33 @@
         save.focus();
     });
 
+    replacementDialog.addEventListener("cancel", event => {
+        event.preventDefault();
+        replacementDialog.close("cancel");
+    });
+
+    replacementDialog.addEventListener("close", () => {
+        const request = replacementRequest;
+        replacementRequest = undefined;
+        if (request === undefined ||
+            activeRequest !== request ||
+            !request.awaitingReplacement) {
+            return;
+        }
+
+        request.awaitingReplacement = false;
+        if (replacementDialog.returnValue === "replace") {
+            beginRequestEvaluation(request);
+            return;
+        }
+
+        completeEvaluationOutput(request, "[cancelled]");
+        activeRequest = undefined;
+        status.textContent = "Ready";
+        updateControls();
+        focusSourceAfterNextPaint();
+    });
+
     window.addEventListener("pagehide", () => {
         if (saveDownloadUrl !== undefined) {
             URL.revokeObjectURL(saveDownloadUrl);
@@ -653,7 +812,7 @@
             event.altKey || event.key === "Tab" ||
             event.key === "Shift" ||
             helpDialog.open || combinatorInfoDialog.open ||
-            aboutDialog.open ||
+            aboutDialog.open || replacementDialog.open ||
             event.target instanceof HTMLButtonElement) {
             return;
         }

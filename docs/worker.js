@@ -66,6 +66,34 @@ self.addEventListener("message", async event => {
         return;
     }
 
+    if (message.type === "inspect-definition" &&
+        steppingRequestId === undefined) {
+        busy = true;
+        try {
+            const module = await modulePromise;
+            self.postMessage({
+                type: "definition-inspection-result",
+                id: message.id,
+                result: module.inspectDefinition(
+                    String(message.source)),
+            });
+        } catch (error) {
+            self.postMessage({
+                type: "definition-inspection-result",
+                id: message.id,
+                result: {
+                    success: false,
+                    definition: false,
+                    replacement: "",
+                    error: errorMessage(error),
+                },
+            });
+        } finally {
+            busy = false;
+        }
+        return;
+    }
+
     if (message.type === "load" &&
         steppingRequestId === undefined) {
         busy = true;

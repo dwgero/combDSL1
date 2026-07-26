@@ -429,6 +429,14 @@ The resulting recursive transformation is
 `Y(optimize(takeout(rec_func, previous_takeout_result)))`. The optimization
 pass recursively replaces `BCT` with `V` and `BB` with `D`.
 
+Names created with `set` or `define` may be redefined. A changed definition
+replaces the user-defined basis for future parsing; expressions parsed earlier
+retain the basis snapshot they already contain. Repeating an equivalent arity
+and stored expression makes no change. The fundamental names `S`, `K`, `I`,
+and `Y`, and every pre-defined basis registered by C++ `basis(...)`, are
+immutable; attempting to redefine one is a parse error. A later C++ basis
+registration cannot take a name that is already user-defined.
+
 At the start of a line, `show` followed by whitespace and a name displays one
 level of a named basis's stored definition without reducing it. For `S`, `K`,
 `I`, or `Y`, it reports that the name is fundamental. Anything other than a
@@ -444,8 +452,10 @@ parse_eval("show x");   // parse error: x is not a defined name
 `quoted_expression`. `parse_eval`, `read_parse_eval`, and `parse_and_step`
 print a `show` result once without evaluating or stepping it.
 
-`set_list()` returns the effective user-defined bases in registration order as
-newline-separated `set` or `define` declarations. A `set` declaration always
+`set_list()` returns the chronological history of successful user definitions
+as newline-separated `set` or `define` declarations. Changed redefinitions are
+included so replay preserves definitions that captured earlier basis
+snapshots; equivalent repetitions are omitted. A `set` declaration always
 includes its arity, including `0`; a `define` declaration includes its defining
 symbols. Quotes and backslashes appear exactly as a user would enter them.
 Passing each line through `input_escape` and then to `parse` recreates the
@@ -459,8 +469,8 @@ for (std::string line; std::getline(input, line);) {
 }
 ```
 
-Definitions made by C++ `basis(...)` calls are not included. Neither are
-rejected redefinitions or attempts to replace `S`, `K`, `I`, or `Y`.
+Definitions made by C++ `basis(...)` calls and rejected attempts to replace
+pre-defined bases are not included.
 
 `parse_eval` parses a string and passes the resulting quoted expression to
 `eval`. Its output and input streams can be supplied as the second and third
@@ -639,17 +649,21 @@ color at the left margin. The browser prints the submitted starting expression
 immediately, then appends the output beneath it. A successfully registered
 `set` command leaves only that submitted definition line, with no output
 beneath it. The Save button downloads all successfully registered user
-definitions as `set_list.cmb`, with explicit arities and user-facing quoting
-that can be entered again. If there are no user-defined bases, Save opens a
-dialog that says `Nothing to save` instead. The Load button opens a file picker
-filtered for `.cmb` files and recreates those definitions in file order by
-applying `parse(input_escape(record))` to each saved record; it does not
-evaluate the stored expressions. A parser failure is reported with the file
-name, one-based line number, and one-based byte position. Loading continues
-with the next line after a parse error. It stops after the fifteenth parse
-error and reports `too many errors, aborting with no changes made`. If any
-error is found, the entire load is rolled back, so no definitions from that
-file are kept. Failed loads below the cutoff report
+definitions and redefinitions as `set_list.cmb`, with explicit arities and
+user-facing quoting that can be entered again. If there are no user-defined
+bases, Save opens a dialog that says `Nothing to save` instead. When a command
+entered in the browser would change a user definition, a confirmation dialog
+shows `About to replace name=arity expression`; Cancel preserves the existing
+definition, while Replace is initially focused so Enter confirms it. The Load
+button opens a file picker filtered for `.cmb` files and recreates those
+definitions in file order by applying `parse(input_escape(record))` to each
+saved record; file redefinitions are applied silently and the expressions are
+not evaluated. A parser failure is reported with the file name, one-based line
+number, and one-based byte position. Loading continues with the next line after
+a parse error. It stops after the fifteenth parse error and reports
+`too many errors, aborting with no changes made`. If any error is found, the
+entire load is rolled back, so no definitions from that file are kept. Failed
+loads below the cutoff report
 `errors are preventing any changes from being made`; a load aborted at the
 cutoff displays only the `too many errors` status after its diagnostics.
 Basis Step and Colorize may remain on when neither stepping mode is active;

@@ -30,6 +30,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <sstream>
 #include <streambuf>
 #include <stdexcept>
 #include <string>
@@ -37,6 +38,7 @@
 #include <tuple>
 #include <type_traits>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -3267,8 +3269,8 @@ namespace detail {
 
 class registered_parser_basis {
 public:
-    explicit registered_parser_basis(std::string name)
-        : name_(std::move(name)) {}
+    registered_parser_basis(std::string name, bool predefined)
+        : name_(std::move(name)), predefined_(predefined) {}
 
     virtual ~registered_parser_basis() = default;
 
@@ -3276,17 +3278,25 @@ public:
         return name_;
     }
 
+    [[nodiscard]] bool predefined() const noexcept {
+        return predefined_;
+    }
+
     [[nodiscard]] virtual quoted_expression expression() const = 0;
 
 private:
     std::string name_;
+    bool predefined_;
 };
 
 template <class Basis>
 class registered_parser_basis_model final : public registered_parser_basis {
 public:
-    registered_parser_basis_model(std::string name, Basis const& basis)
-        : registered_parser_basis(std::move(name)),
+    registered_parser_basis_model(
+        std::string name,
+        Basis const& basis,
+        bool predefined)
+        : registered_parser_basis(std::move(name), predefined),
           basis_(std::make_shared<Basis>(basis)) {}
 
     [[nodiscard]] quoted_expression expression() const override {
@@ -3344,6 +3354,194 @@ parser_definition_registry() {
     return name == "S" || name == "K" || name == "I" || name == "Y";
 }
 
+enum class parser_definition_change {
+    inserted,
+    unchanged,
+    replaced,
+    rejected_predefined
+};
+
+struct parser_definition_inspection {
+    parser_definition_change change;
+    std::string replaced_definition;
+};
+
+[[nodiscard]] inline bool same_parser_definition_expression(
+    quoted_expression const& left,
+    quoted_expression const& right) {
+    using quoted_root = std::shared_ptr<quoted_node const>;
+    using quoted_root_pair = std::pair<quoted_root, quoted_root>;
+
+    struct root_pair_hash {
+        [[nodiscard]] std::size_t operator()(
+            quoted_root_pair const& value) const noexcept {
+            auto const left_hash =
+                std::hash<quoted_node const*>{}(value.first.get());
+            auto const right_hash =
+                std::hash<quoted_node const*>{}(value.second.get());
+            return left_hash ^
+                   (right_hash +
+                    static_cast<std::size_t>(
+                        0x9e3779b97f4a7c15ULL) +
+                    (left_hash << 6) +
+                    (left_hash >> 2));
+        }
+    };
+
+    struct root_pair_equal {
+        [[nodiscard]] bool operator()(
+            quoted_root_pair const& left_pair,
+            quoted_root_pair const& right_pair) const noexcept {
+            return left_pair.first == right_pair.first &&
+                   left_pair.second == right_pair.second;
+        }
+    };
+
+    std::vector<quoted_root_pair> pending;
+    pending.emplace_back(
+        quoted_access::root(left),
+        quoted_access::root(right));
+    std::unordered_set<
+        quoted_root_pair,
+        root_pair_hash,
+        root_pair_equal> compared;
+
+    auto add_pair = [&pending](
+        quoted_expression const& left_expression,
+        quoted_expression const& right_expression) {
+        pending.emplace_back(
+            quoted_access::root(left_expression),
+            quoted_access::root(right_expression));
+    };
+
+    while (!pending.empty()) {
+        auto [left_root, right_root] =
+            std::move(pending.back());
+        pending.pop_back();
+        if (left_root == right_root) {
+            continue;
+        }
+        if (!compared.emplace(left_root, right_root).second) {
+            continue;
+        }
+        if (left_root->kind() != right_root->kind()) {
+            return false;
+        }
+
+        auto const left_atomic = left_root->atomic_kind();
+        auto const right_atomic = right_root->atomic_kind();
+        if (left_atomic != quoted_atomic_kind::none ||
+            right_atomic != quoted_atomic_kind::none) {
+            if (left_atomic == quoted_atomic_kind::none ||
+                left_atomic != right_atomic ||
+                left_root->atomic_name() !=
+                    right_root->atomic_name()) {
+                return false;
+            }
+            continue;
+        }
+
+        switch (left_root->kind()) {
+        case quoted_node_kind::identity:
+        case quoted_node_kind::constant:
+        case quoted_node_kind::substitution:
+        case quoted_node_kind::fixed_point:
+            break;
+        case quoted_node_kind::application: {
+            auto const& left_application =
+                static_cast<quoted_application_node const&>(
+                    *left_root);
+            auto const& right_application =
+                static_cast<quoted_application_node const&>(
+                    *right_root);
+            add_pair(
+                left_application.function(),
+                right_application.function());
+            add_pair(
+                left_application.argument(),
+                right_application.argument());
+            break;
+        }
+        case quoted_node_kind::pending_sk:
+            add_pair(
+                static_cast<quoted_pending_sk_node const&>(
+                    *left_root).application(),
+                static_cast<quoted_pending_sk_node const&>(
+                    *right_root).application());
+            break;
+        case quoted_node_kind::recursive_y:
+            add_pair(
+                static_cast<quoted_recursive_y_node const&>(
+                    *left_root).generator(),
+                static_cast<quoted_recursive_y_node const&>(
+                    *right_root).generator());
+            break;
+        case quoted_node_kind::basis_argument:
+            add_pair(
+                static_cast<quoted_basis_argument_node const&>(
+                    *left_root).argument(),
+                static_cast<quoted_basis_argument_node const&>(
+                    *right_root).argument());
+            break;
+        case quoted_node_kind::basis: {
+            auto const& left_basis =
+                static_cast<quoted_basis_node_base const&>(
+                    *left_root);
+            auto const& right_basis =
+                static_cast<quoted_basis_node_base const&>(
+                    *right_root);
+            if (left_basis.name() != right_basis.name() ||
+                left_basis.arity() != right_basis.arity()) {
+                return false;
+            }
+            add_pair(left_basis.body(), right_basis.body());
+            break;
+        }
+        case quoted_node_kind::opaque:
+        case quoted_node_kind::rec_func:
+        case quoted_node_kind::html_argument:
+            return false;
+        }
+    }
+    return true;
+}
+
+[[nodiscard]] inline bool same_parser_basis_definition(
+    quoted_expression const& left,
+    quoted_expression const& right) {
+    auto const& left_root = quoted_access::root(left);
+    auto const& right_root = quoted_access::root(right);
+    if (left_root->kind() != quoted_node_kind::basis ||
+        right_root->kind() != quoted_node_kind::basis) {
+        return false;
+    }
+
+    auto const& left_basis =
+        static_cast<quoted_basis_node_base const&>(*left_root);
+    auto const& right_basis =
+        static_cast<quoted_basis_node_base const&>(*right_root);
+    return left_basis.name() == right_basis.name() &&
+           left_basis.arity() == right_basis.arity() &&
+           same_parser_definition_expression(
+               left_basis.body(), right_basis.body());
+}
+
+[[nodiscard]] inline std::string format_parser_basis_definition(
+    quoted_expression const& expression) {
+    auto const& root = quoted_access::root(expression);
+    if (root->kind() != quoted_node_kind::basis) {
+        throw std::logic_error(
+            "combdsl::registered parser basis is not a basis");
+    }
+
+    auto const& basis =
+        static_cast<quoted_basis_node_base const&>(*root);
+    std::ostringstream output;
+    output << basis.name() << '=' << basis.arity() << ' ';
+    basis.body().print_to(output);
+    return output.str();
+}
+
 template <class Basis>
 void register_parser_basis(std::string_view name, Basis const& basis) {
     if (is_primitive_name(name)) {
@@ -3352,36 +3550,96 @@ void register_parser_basis(std::string_view name, Basis const& basis) {
 
     auto registration =
         std::make_shared<registered_parser_basis_model<Basis>>(
-            std::string(name), basis);
+            std::string(name), basis, true);
 
     std::lock_guard lock(parser_basis_registry_mutex());
     auto& entries = parser_basis_registry();
-    if (!entries.contains(name)) {
+    auto const existing = entries.find(name);
+    if (existing == entries.end()) {
         entries.emplace(std::string(name), std::move(registration));
+        return;
     }
+    if (existing->second->predefined()) {
+        return;
+    }
+
+    auto message =
+        std::string("combdsl::basis name is already user-defined: ");
+    message += name;
+    throw std::invalid_argument(message);
 }
 
-template <class Basis>
-void register_parser_definition_basis(
+[[nodiscard]] inline parser_definition_inspection
+inspect_parser_definition_basis(
     std::string_view name,
-    Basis const& basis,
+    quoted_expression const& basis) {
+    if (is_primitive_name(name)) {
+        return {
+            parser_definition_change::rejected_predefined, {}};
+    }
+
+    registered_parser_basis_ptr existing;
+    {
+        std::lock_guard lock(parser_basis_registry_mutex());
+        auto const& entries = parser_basis_registry();
+        auto const match = entries.find(name);
+        if (match == entries.end()) {
+            return {parser_definition_change::inserted, {}};
+        }
+        existing = match->second;
+    }
+
+    if (existing->predefined()) {
+        return {
+            parser_definition_change::rejected_predefined, {}};
+    }
+    if (same_parser_basis_definition(
+            existing->expression(), basis)) {
+        return {parser_definition_change::unchanged, {}};
+    }
+    return {
+        parser_definition_change::replaced,
+        format_parser_basis_definition(existing->expression())};
+}
+
+[[nodiscard]] inline parser_definition_change
+register_parser_definition_basis(
+    std::string_view name,
+    quoted_expression const& basis,
     std::string user_source) {
     if (is_primitive_name(name)) {
-        return;
+        return parser_definition_change::rejected_predefined;
     }
 
     auto registration =
-        std::make_shared<registered_parser_basis_model<Basis>>(
-            std::string(name), basis);
+        std::make_shared<
+            registered_parser_basis_model<quoted_expression>>(
+            std::string(name), basis, false);
 
     std::lock_guard lock(parser_basis_registry_mutex());
     auto& entries = parser_basis_registry();
+    auto const existing = entries.find(name);
+    if (existing != entries.end()) {
+        if (existing->second->predefined()) {
+            return parser_definition_change::rejected_predefined;
+        }
+        if (same_parser_basis_definition(
+                existing->second->expression(), basis)) {
+            return parser_definition_change::unchanged;
+        }
+
+        parser_definition_registry().push_back(
+            std::move(user_source));
+        existing->second = std::move(registration);
+        return parser_definition_change::replaced;
+    }
+
     auto [entry, inserted] =
         entries.emplace(std::string(name), std::move(registration));
     if (!inserted) {
-        return;
+        throw std::logic_error(
+            "combdsl::parser basis insertion unexpectedly failed");
     }
-
     try {
         parser_definition_registry().push_back(
             std::move(user_source));
@@ -3389,12 +3647,43 @@ void register_parser_definition_basis(
         entries.erase(entry);
         throw;
     }
+    return parser_definition_change::inserted;
 }
 
 [[nodiscard]] inline registered_parser_basis_table
 registered_parser_bases_snapshot() {
     std::lock_guard lock(parser_basis_registry_mutex());
     return parser_basis_registry();
+}
+
+[[nodiscard]] inline bool same_registered_parser_bases(
+    registered_parser_basis_table const& left,
+    registered_parser_basis_table const& right) {
+    if (left.size() != right.size()) {
+        return false;
+    }
+
+    for (auto const& [name, left_basis] : left) {
+        auto const match = right.find(name);
+        if (match == right.end()) {
+            return false;
+        }
+
+        auto const& right_basis = match->second;
+        if (left_basis == right_basis) {
+            continue;
+        }
+        if (left_basis->predefined() !=
+            right_basis->predefined()) {
+            return false;
+        }
+        if (!same_parser_basis_definition(
+                left_basis->expression(),
+                right_basis->expression())) {
+            return false;
+        }
+    }
+    return true;
 }
 
 } // namespace detail
@@ -3504,17 +3793,26 @@ private:
 
 namespace detail {
 
+enum class parser_definition_mode {
+    register_definitions,
+    inspect_definitions
+};
+
 struct parsed_input {
     quoted_expression expression;
     bool is_definition;
     bool is_display_only;
+    std::string replaced_definition;
 };
 
 class quoted_expression_parser {
 public:
-    explicit quoted_expression_parser(std::string_view source)
+    explicit quoted_expression_parser(
+        std::string_view source,
+        parser_definition_mode definition_mode)
         : source_(source),
-          registered_bases_(registered_parser_bases_snapshot()) {}
+          registered_bases_(registered_parser_bases_snapshot()),
+          definition_mode_(definition_mode) {}
 
     [[nodiscard]] parsed_input parse_input() {
         skip_whitespace();
@@ -3545,7 +3843,10 @@ public:
             fail("unexpected ')'");
         }
         return {
-            std::move(result), is_definition, is_show_command};
+            std::move(result),
+            is_definition,
+            is_show_command,
+            std::move(replaced_definition_)};
     }
 
 private:
@@ -3562,6 +3863,7 @@ private:
         position_ += keyword_size;
         skip_whitespace();
 
+        auto const name_position = position_;
         auto name = parse_definition_basis_name();
 
         skip_whitespace();
@@ -3582,8 +3884,11 @@ private:
             name.view(), arity, source_.substr(body_position));
         auto result = make_quoted_basis_snapshot(
             name, arity, std::move(body));
-        register_parser_definition_basis(
-            name.view(), result, std::move(user_source));
+        finish_definition(
+            name.view(),
+            name_position,
+            result,
+            std::move(user_source));
         return result;
     }
 
@@ -3634,6 +3939,7 @@ private:
         position_ += keyword_size;
         skip_whitespace();
 
+        auto const name_position = position_;
         auto [name, symbols] = parse_define_signature();
         auto const body_position = position_;
         auto recursive_function = make_quoted_rec_func(name);
@@ -3666,9 +3972,39 @@ private:
 
         auto result = make_quoted_basis_snapshot(
             name, symbols.size(), std::move(body));
-        register_parser_definition_basis(
-            name.view(), result, std::move(user_source));
+        finish_definition(
+            name.view(),
+            name_position,
+            result,
+            std::move(user_source));
         return result;
+    }
+
+    void finish_definition(
+        std::string_view name,
+        std::size_t name_position,
+        quoted_expression const& result,
+        std::string user_source) {
+        parser_definition_change change;
+        if (definition_mode_ ==
+            parser_definition_mode::inspect_definitions) {
+            auto inspection =
+                inspect_parser_definition_basis(name, result);
+            change = inspection.change;
+            replaced_definition_ =
+                std::move(inspection.replaced_definition);
+        } else {
+            change = register_parser_definition_basis(
+                name, result, std::move(user_source));
+        }
+
+        if (change ==
+            parser_definition_change::rejected_predefined) {
+            auto message = std::string(name);
+            message +=
+                " is a pre-defined basis and cannot be redefined";
+            throw parse_error(name_position, message);
+        }
     }
 
     [[nodiscard]] basis_label parse_definition_basis_name() {
@@ -4261,10 +4597,16 @@ private:
     std::size_t position_ = 0;
     registered_parser_basis_table registered_bases_;
     std::optional<quoted_expression> recursive_function_;
+    parser_definition_mode definition_mode_;
+    std::string replaced_definition_;
 };
 
-[[nodiscard]] inline parsed_input parse_input(std::string_view source) {
-    return quoted_expression_parser(source).parse_input();
+[[nodiscard]] inline parsed_input parse_input(
+    std::string_view source,
+    parser_definition_mode definition_mode =
+        parser_definition_mode::register_definitions) {
+    return quoted_expression_parser(
+        source, definition_mode).parse_input();
 }
 
 } // namespace detail
