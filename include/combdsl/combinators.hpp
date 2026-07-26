@@ -1693,6 +1693,7 @@ namespace detail {
 
 enum class quoted_node_kind {
     opaque,
+    rec_func,
     identity,
     constant,
     substitution,
@@ -1708,7 +1709,8 @@ enum class quoted_node_kind {
 enum class quoted_atomic_kind {
     none,
     symbol,
-    symbolic_string
+    symbolic_string,
+    rec_func
 };
 
 class quoted_node {
@@ -1849,6 +1851,37 @@ public:
 
 private:
     std::shared_ptr<Value const> value_;
+};
+
+class quoted_rec_func_node final : public quoted_node {
+public:
+    explicit quoted_rec_func_node(basis_label name)
+        : name_(std::move(name)) {}
+
+    [[nodiscard]] quoted_node_kind kind() const noexcept override {
+        return quoted_node_kind::rec_func;
+    }
+
+    [[nodiscard]] quoted_atomic_kind
+    atomic_kind() const noexcept override {
+        return quoted_atomic_kind::rec_func;
+    }
+
+    [[nodiscard]] std::string_view
+    atomic_name() const noexcept override {
+        return name_.view();
+    }
+
+    void print_to(std::ostream& output) const override {
+        name_.print_to(output);
+    }
+
+    void print_as_operand_to(std::ostream& output) const override {
+        name_.print_as_operand_to(output);
+    }
+
+private:
+    basis_label name_;
 };
 
 class quoted_application_node final : public quoted_node {
@@ -2155,6 +2188,12 @@ make_quoted_primitive(quoted_node_kind kind) {
 }
 
 [[nodiscard]] inline quoted_expression
+make_quoted_rec_func(basis_label name) {
+    return quoted_access::make(
+        std::make_shared<quoted_rec_func_node>(std::move(name)));
+}
+
+[[nodiscard]] inline quoted_expression
 make_quoted_application(quoted_expression function,
                         quoted_expression argument) {
     return quoted_access::make(std::make_shared<quoted_application_node>(
@@ -2421,7 +2460,7 @@ public:
         if (!detail::is_quoted_atomic(expression_)) {
             throw std::invalid_argument(
                 "combdsl::quoted_atomic requires a quoted symbol or "
-                "symbolic string");
+                "symbolic string or recursive function");
         }
     }
 
@@ -2485,7 +2524,7 @@ namespace detail {
 
 struct reduction_options {
     bool basis_step = false;
-    bool reduce_bare_recursive_y = true;
+    bool reduce_recursive_y = true;
 };
 
 struct reduction_trace {
@@ -2856,8 +2895,7 @@ reduce_at_head(
         }
         break;
     case quoted_node_kind::recursive_y: {
-        if (!options.reduce_bare_recursive_y &&
-            reversed_arguments.empty()) {
+        if (!options.reduce_recursive_y) {
             break;
         }
 
@@ -2895,7 +2933,7 @@ reduce_at_head(
 
             constexpr reduction_options basis_reduction{
                 .basis_step = false,
-                .reduce_bare_recursive_y = false,
+                .reduce_recursive_y = false,
             };
             while (auto reduced =
                        reduce_next_redex(result, basis_reduction)) {
@@ -3586,10 +3624,12 @@ private:
         position_ += keyword_size;
         skip_whitespace();
 
-        auto name = parse_definition_basis_name();
-        auto symbols = parse_definition_symbols();
+        auto [name, symbols] = parse_define_signature();
         auto const body_position = position_;
+        auto recursive_function = make_quoted_rec_func(name);
+        recursive_function_.emplace(recursive_function);
         auto body = parse_expression();
+        recursive_function_.reset();
         skip_whitespace();
         if (!at_end()) {
             fail("unexpected ')'");
@@ -3604,7 +3644,15 @@ private:
                 quoted_atomic{symbol(*symbol_position)},
                 std::move(body));
         }
-        body = optimize_final_takeout(std::move(body));
+        if (contains_quoted_atom(recursive_function, body)) {
+            body = takeout(
+                quoted_atomic{recursive_function},
+                std::move(body));
+            body = quote(Y)(
+                optimize_final_takeout(std::move(body)));
+        } else {
+            body = optimize_final_takeout(std::move(body));
+        }
 
         auto result = make_quoted_basis_snapshot(
             name, symbols.size(), std::move(body));
@@ -3614,6 +3662,14 @@ private:
     }
 
     [[nodiscard]] basis_label parse_definition_basis_name() {
+        auto const [name_text, name_position] =
+            parse_definition_basis_name_token();
+        return validated_definition_basis_name(
+            name_text, name_position);
+    }
+
+    [[nodiscard]] std::pair<std::string_view, std::size_t>
+    parse_definition_basis_name_token() {
         auto const name_position = position_;
         while (!at_end() &&
                !is_basis_token_delimiter(position_) &&
@@ -3626,8 +3682,25 @@ private:
 
         auto const name_text =
             source_.substr(name_position, position_ - name_position);
-        return validated_definition_basis_name(
-            name_text, name_position);
+        return {name_text, name_position};
+    }
+
+    [[nodiscard]] std::pair<basis_label, std::string>
+    parse_define_signature() {
+        auto const [token, name_position] =
+            parse_definition_basis_name_token();
+        if (auto symbols =
+                parse_adjacent_definition_symbols(token)) {
+            auto const name_size = token.size() - symbols->size();
+            auto name = validated_definition_basis_name(
+                token.substr(0, name_size), name_position);
+            return {std::move(name), std::move(*symbols)};
+        }
+
+        auto name = validated_definition_basis_name(
+            token, name_position);
+        auto symbols = parse_definition_symbols();
+        return {std::move(name), std::move(symbols)};
     }
 
     [[nodiscard]] std::string parse_definition_symbols() {
@@ -3657,6 +3730,48 @@ private:
             fail("expected at least one symbol");
         }
         fail("expected '='");
+    }
+
+    [[nodiscard]] std::optional<std::string>
+    parse_adjacent_definition_symbols(std::string_view token) {
+        if (token.size() < 2) {
+            return std::nullopt;
+        }
+
+        std::size_t name_size = 0;
+        auto const maximum_name_size =
+            std::min<std::size_t>(4, token.size() - 1);
+        for (std::size_t length = 1;
+             length <= maximum_name_size;
+             ++length) {
+            if (is_single_utf8_char(token.substr(0, length))) {
+                name_size = length;
+                break;
+            }
+        }
+        if (name_size == 0) {
+            return std::nullopt;
+        }
+
+        auto const symbols = token.substr(name_size);
+        for (auto symbol : symbols) {
+            if (symbol < 'a' || symbol > 'z') {
+                return std::nullopt;
+            }
+        }
+
+        auto equals_position = position_;
+        while (equals_position < source_.size() &&
+               is_whitespace(source_[equals_position])) {
+            ++equals_position;
+        }
+        if (equals_position == source_.size() ||
+            source_[equals_position] != '=') {
+            return std::nullopt;
+        }
+
+        position_ = equals_position + 1;
+        return std::string(symbols);
     }
 
     [[nodiscard]] static bool is_named_basis(
@@ -3900,8 +4015,23 @@ private:
             return parse_escaped_atom();
         }
 
+        if (auto recursive_function =
+                parse_exact_recursive_function_token()) {
+            return std::move(*recursive_function);
+        }
+
         if (auto named_basis = parse_named_basis_token()) {
             return std::move(*named_basis);
+        }
+
+        if (begins_with_unseparated_recursive_function(
+                current_basis_token())) {
+            fail("unknown operand");
+        }
+
+        if (auto recursive_function =
+                parse_single_character_recursive_function()) {
+            return std::move(*recursive_function);
         }
 
         auto const name = current();
@@ -3986,6 +4116,22 @@ private:
     }
 
     [[nodiscard]] std::optional<quoted_expression>
+    parse_exact_recursive_function_token() {
+        if (!recursive_function_) {
+            return std::nullopt;
+        }
+
+        auto const name =
+            quoted_access::root(*recursive_function_)->atomic_name();
+        if (current_basis_token() != name) {
+            return std::nullopt;
+        }
+
+        position_ += name.size();
+        return *recursive_function_;
+    }
+
+    [[nodiscard]] std::optional<quoted_expression>
     parse_named_basis_token() {
         auto const name = current_basis_token();
         auto const match = registered_bases_.find(name);
@@ -3995,6 +4141,35 @@ private:
 
         position_ += name.size();
         return match->second->expression();
+    }
+
+    [[nodiscard]] bool begins_with_unseparated_recursive_function(
+        std::string_view token) const noexcept {
+        if (!recursive_function_) {
+            return false;
+        }
+
+        auto const name =
+            quoted_access::root(*recursive_function_)->atomic_name();
+        return name.size() > 1 &&
+               token.size() > name.size() &&
+               token.starts_with(name);
+    }
+
+    [[nodiscard]] std::optional<quoted_expression>
+    parse_single_character_recursive_function() {
+        if (!recursive_function_) {
+            return std::nullopt;
+        }
+
+        auto const name =
+            quoted_access::root(*recursive_function_)->atomic_name();
+        if (name.size() != 1 || current() != name.front()) {
+            return std::nullopt;
+        }
+
+        ++position_;
+        return *recursive_function_;
     }
 
     [[nodiscard]] std::optional<quoted_expression>
@@ -4075,6 +4250,7 @@ private:
     std::string_view source_;
     std::size_t position_ = 0;
     registered_parser_basis_table registered_bases_;
+    std::optional<quoted_expression> recursive_function_;
 };
 
 [[nodiscard]] inline parsed_input parse_input(std::string_view source) {

@@ -993,6 +993,60 @@ int main() {
          parse(" \tdefine\nDws \tx y\nz =\v xyz\f"), "Dws");
     test("whitespace-separated define symbols preserve their order",
          single_step(parse("Dws a b c"), true), "Iabc");
+    test("define accepts a symbol adjacent to a one-letter name",
+         parse("define Gx = xSTK(KK)(SK)"), "G");
+    test("compact one-letter define preserves its behavior",
+         single_step(
+             parse("define Gx=xSTK(KK)(SK)")(w)),
+         "wSTK(KK)(SK)");
+    test("compact one-letter define infers its adjacent symbol",
+         parse("define Ux = x"), "U");
+    test("compact one-letter define registers its basis",
+         single_step(parse("Ua")), "a");
+    test("compact one-letter define canonicalizes its signature",
+         [] {
+             auto definitions = set_list();
+             auto const line_position = definitions.rfind('\n');
+             std::cout << definitions.substr(
+                 line_position == std::string::npos
+                     ? 0
+                     : line_position + 1);
+         },
+         "define U x = x");
+    test("compact define accepts a single UTF-8 character name",
+         parse("define \xE2\x96\xB2x = x"), "\xE2\x96\xB2");
+    test("compact UTF-8 define registers its basis",
+         single_step(parse("\xE2\x96\xB2 a")), "a");
+    test("compact UTF-8 define accepts multiple adjacent symbols",
+         parse("define \xE2\x96\xA0xyz = x(yz)"), "\xE2\x96\xA0");
+    test("compact UTF-8 multi-symbol define registers its basis",
+         single_step(parse("\xE2\x96\xA0 a b c")), "a(bc)");
+    test("compact multi-symbol define canonicalizes its signature",
+         [] {
+             auto definitions = set_list();
+             auto const line_position = definitions.rfind('\n');
+             std::cout << definitions.substr(
+                 line_position == std::string::npos
+                     ? 0
+                     : line_position + 1);
+         },
+         "define \xE2\x96\xA0 xyz = x(yz)");
+    test("compact one-letter define recognizes recursion",
+         parse("define Fx = x(Fx)"), "F");
+    test("compact recursive define is wrapped in Y",
+         parse("show F"), "YO");
+    test("two-character define names retain their spaced symbol",
+         parse("define Gx y = y"), "Gx");
+    test("two-character define name registers without becoming G",
+         single_step(parse("Gx a")), "a");
+    test("compact define accepts multiple adjacent symbols",
+         parse("define Gxyz = x(yz)"), "G");
+    test("compact multiple-symbol define preserves its behavior",
+         single_step(
+             parse("define Gxyz=x(yz)")(a)(b)(c)),
+         "a(bc)");
+    test("an overlong compact signature is not an overlong name",
+         parse("define ~abcdefghijklmno = a"), "~");
     test("define keeps symbols distinct from symbolic strings",
          parse(input_escape("define DRaw x = \"x\"x")), "DRaw");
     test("defined symbolic string is not abstracted as a symbol",
@@ -1007,6 +1061,58 @@ int main() {
                      : line_position + 1);
          },
          "define DRaw x = \"x\"x");
+    test("define creates the Eagle",
+         parse("define E xyzwv = xy(zwv)"), "E");
+    test("show exposes the defined Eagle",
+         parse("show E"), "BDD");
+    test("define recognizes a recursive name",
+         parse("define Repeat x = x(Repeat x)"), "Repeat");
+    test("recursive define stores a Y application",
+         parse("show Repeat"), "YO");
+    test("set list preserves a recursive define",
+         [] {
+             auto definitions = set_list();
+             auto const line_position = definitions.rfind('\n');
+             std::cout << definitions.substr(
+                 line_position == std::string::npos
+                     ? 0
+                     : line_position + 1);
+         },
+         "define Repeat x = x(Repeat x)");
+    test("recursive define can reach a terminating result",
+         parse("define Recur x = Kx Recur"), "Recur");
+    test("show exposes recursive abstraction",
+         parse("show Recur"), "Y(CK)");
+    test("recursive basis evaluates through Y",
+         single_step(parse("Recur a")), "a");
+    test("recursive abstraction precedes optimization",
+         parse("define RV x = C(T RV)x"), "RV");
+    test("recursive abstraction optimization is wrapped in Y",
+         parse("show RV"), "YV");
+    test("a quoted word matching the definition name is not recursive",
+         parse(input_escape(
+             "define WordRec x = \"WordRec\"")), "WordRec");
+    test("show keeps the matching quoted word nonrecursive",
+         parse("show WordRec"), "K WordRec");
+    test("a single-character recursive name may be adjacent",
+         parse("define X x = Xx"), "X");
+    test("single-character recursive adjacency stores YI",
+         parse("show X"), "YI");
+    test("define accepts a nonterminating recursive body",
+         parse("define Loop x = Loop x"), "Loop");
+    test("show exposes the nonterminating recursive body",
+         parse("show Loop"), "YI");
+    test("single step stops at a recursive Y boundary",
+         single_step(parse("Loop a")), "<deferred Y(I)>a");
+    test("ordinary stepping may unfold the recursive boundary",
+         single_step(single_step(parse("Loop a"))),
+         "I<deferred Y(I)>a");
+    test("nonterminating recursion remains step-responsive",
+         single_step(single_step(single_step(parse("Loop a")))),
+         "<deferred Y(I)>a");
+    test_parse_failure(
+        "a multicharacter recursive name requires a delimiter",
+        "define BadRec x = BadRecx", 18);
     test("set registers a reducible body for show",
          parse("set ShRed = 0 Kxy"), "ShRed");
     test("show exposes a reducible stored body without reducing it",
@@ -1702,6 +1808,18 @@ int main() {
              quote(y)(x)(quote(z)(x))(
                  quote(w)(x)(quote(v)(x)))),
          "S(Syz)(Swv)");
+    const auto recursive_x = combdsl::detail::make_quoted_rec_func(
+        combdsl::detail::basis_label("x"));
+    test("recursive function atom prints like its name",
+         recursive_x, "x");
+    test("takeout matches the same recursive function atom",
+         takeout(quoted_atomic{recursive_x}, recursive_x), "I");
+    test("recursive function atom does not match a symbol",
+         takeout(quoted_atomic{recursive_x}, quote(x)), "Kx");
+    test("symbol atom does not match a recursive function",
+         takeout(quoted_atomic{x}, recursive_x), "Kx");
+    test("recursive function atom does not match a symbolic string",
+         takeout(quoted_atomic{recursive_x}, quote("x")), "Kx");
     test("quoted atomic rejects a primitive",
          [] {
              try {
@@ -1711,7 +1829,7 @@ int main() {
              }
          },
          "combdsl::quoted_atomic requires a quoted symbol or symbolic "
-         "string");
+         "string or recursive function");
     test("quoted atomic rejects a named basis",
          [] {
              try {
@@ -1721,7 +1839,7 @@ int main() {
              }
          },
          "combdsl::quoted_atomic requires a quoted symbol or symbolic "
-         "string");
+         "string or recursive function");
     test("quoted atomic rejects another opaque value",
          [] {
              try {
@@ -1731,7 +1849,7 @@ int main() {
              }
          },
          "combdsl::quoted_atomic requires a quoted symbol or symbolic "
-         "string");
+         "string or recursive function");
     test("quoted atomic rejects an application",
          [] {
              try {
@@ -1741,7 +1859,7 @@ int main() {
              }
          },
          "combdsl::quoted_atomic requires a quoted symbol or symbolic "
-         "string");
+         "string or recursive function");
     test("single step I", single_step(quote(I)(x)), "x");
     test("single step I with trailing argument", single_step(quote(I)(x)(y)),
          "xy");

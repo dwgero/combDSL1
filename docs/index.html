@@ -311,7 +311,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             color: #c33;
         }
     </style>
-    <script src="./app.js?v=1.4.0" defer></script>
+    <script src="./app.js?v=1.4.3" defer></script>
 </head>
 <body>
     <main>
@@ -426,6 +426,16 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             <code>combinator_expression</code>. For example, to add the
             Eagle bird:
             <code>define E xyzwv = xy(zwv)</code>
+            For a one-character name, the separating space may be omitted;
+            every following lowercase letter before <code>=</code> is a
+            symbol: <code>define Gxyz = x(yz)</code>.
+            A space before the symbols keeps the preceding token as a
+            multicharacter name: <code>define Gx y = y</code>.
+            Occurrences of <code>name</code> in the expression are
+            recursive references and are incorporated using <code>Y</code>.
+            For example:
+            <code>define Repeat x = x(Repeat x)</code>;
+            <code>show Repeat</code> displays <code>YO</code>.
             <br><br>
             <code>show name</code><br>
             The <code>show</code> command displays the combinators stored
@@ -501,7 +511,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             data-dialog-initial-focus>About</h2>
         <div class="license-text">
             <!-- Keep this version and the app.js cache key in sync. -->
-            <p>C++ Combinator DSL, version 1.4.0<br>Copyright (C) 2026  David W. Gero</p>
+            <p>C++ Combinator DSL, version 1.4.3<br>Copyright (C) 2026  David W. Gero</p>
             <p>This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU Affero General Public License as published by
 the Free Software Foundation, either version 3 of the License, or

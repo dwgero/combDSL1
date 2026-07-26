@@ -392,7 +392,9 @@ At the start of a line, `define` followed by whitespace creates a named basis
 by abstracting one or more lowercase symbols from a combinator expression.
 The symbols may be adjacent or separated by whitespace. Their count becomes
 the basis arity, and abstraction proceeds from the last symbol back to the
-first:
+first. For a one-character basis name, the separating space may be omitted;
+all following lowercase letters before `=` become symbols. A space before the
+symbols keeps the preceding token as a multicharacter name:
 
 ```cpp
 parse("define Flip xy = yx");            // Flip
@@ -402,14 +404,30 @@ single_step(parse("Flip a b"));          // ba
 parse("define Apply xyz = xz(yz)");      // Apply
 single_step(parse("Apply a b c"), true); // Sabc
 single_step(parse("Apply a b c"));       // ac(bc)
+
+parse("define Gx = xSTK(KK)(SK)");       // G
+parse("define Gxyz = x(yz)");            // G
+parse("define Gx y = y");                // Gx
 ```
 
 This is equivalent to repeatedly calling `takeout`; for example,
 `define foo xyz = exp` stores
 `takeout(x, takeout(y, takeout(z, exp)))` with arity `3`. As with `set`,
 the definition command is silent under `parse_eval`, `read_parse_eval`, and
-`parse_and_step`, and malformed definitions are not registered. After the
-final `takeout`, `define` recursively optimizes `BCT` to `V` and `BB` to `D`.
+`parse_and_step`, and malformed definitions are not registered.
+
+Occurrences of the defined name in the combinator expression are recursive
+references. If any remain after the argument symbols are abstracted, `define`
+abstracts the recursive name, optimizes the result, and stores it under `Y`:
+
+```cpp
+parse("define Repeat x = x(Repeat x)"); // Repeat
+parse_eval("show Repeat");              // prints: YO
+```
+
+The resulting recursive transformation is
+`Y(optimize(takeout(rec_func, previous_takeout_result)))`. The optimization
+pass recursively replaces `BCT` with `V` and `BB` with `D`.
 
 At the start of a line, `show` followed by whitespace and a name displays one
 level of a named basis's stored definition without reducing it. For `S`, `K`,
