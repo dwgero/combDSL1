@@ -403,7 +403,7 @@ void test_parse_failure(
     } catch (parse_error const& error) {
         auto expected_message =
             std::string("parse error at position ");
-        expected_message += std::to_string(expected_position);
+        expected_message += std::to_string(expected_position + 1);
         expected_message += ": ";
         expected_message += expected_detail;
         if (error.position() != expected_position ||
@@ -1328,7 +1328,8 @@ int main() {
     test_parse_failure("parse extra nested close", "x(y))", 4);
     test_parse_failure("parse uppercase symbol", "Q", 0);
     test_parse_failure("parse numeric symbol", "x2", 1);
-    test_parse_failure("parse punctuation symbol", "@", 0);
+    test_parse_failure(
+        "parse punctuation symbol", "@", 0, "unknown operand");
     test_parse_failure("parse UTF-8 symbol", "\xCE\xBB", 0);
     test_parse_failure("parse escaped word opener only", "\\\"", 2);
     test_parse_failure("parse empty escaped word", "\\\"\\\"", 2);
@@ -1545,7 +1546,7 @@ int main() {
                 std::cout << error.what();
             }
         },
-        "parse error at position 5: Ix is not a defined name");
+        "parse error at position 6: Ix is not a defined name");
     test("parse eval does not mistake showx for a command",
          [&] { parse_eval("showx"); }, "showx\n");
     test("parse eval treats bare show as symbols",

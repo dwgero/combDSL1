@@ -273,17 +273,15 @@
                 message.id === loadRequest?.id) {
                 const completedRequest = loadRequest;
                 loadRequest = undefined;
-                if (message.result.success) {
+                if (message.setList !== undefined) {
                     updateSavedSetList(message.setList);
+                }
+                if (message.result.success) {
                     status.textContent = `Loaded ${completedRequest.name}`;
                 } else {
                     status.textContent = "Ready";
-                    const line = message.result.line === 0
-                        ? ""
-                        : `line ${message.result.line}: `;
                     appendOutput(
-                        `${completedRequest.name}: ${line}${
-                            message.result.error}`,
+                        message.result.error,
                         "error",
                     );
                 }
@@ -547,6 +545,7 @@
             worker.postMessage({
                 type: "load",
                 id: request.id,
+                name: request.name,
                 source: request.reader.result,
             });
         });

@@ -512,8 +512,10 @@ raw.
 
 Malformed or empty input throws `combdsl::parse_error`. Its `position()` is the
 zero-based byte position of the error; an error at the end of input reports the
-input length. `parse_and_step` uses the same `std::cout` and `std::cin` defaults,
-including the same Ctrl-C pause behavior, as `single_step_run`.
+input length. Its human-readable `what()` message displays that position
+one-based, so the first byte is position 1 and the end of input is the input
+length plus 1. `parse_and_step` uses the same `std::cout` and `std::cin`
+defaults, including the same Ctrl-C pause behavior, as `single_step_run`.
 
 ## Recursion with Y
 
@@ -642,11 +644,19 @@ that can be entered again. If there are no user-defined bases, Save opens a
 dialog that says `Nothing to save` instead. The Load button opens a file picker
 filtered for `.cmb` files and recreates those definitions in file order by
 applying `parse(input_escape(record))` to each saved record; it does not
-evaluate the stored expressions. Basis Step and Colorize may remain on when
-neither stepping mode is active; ordinary evaluation ignores both settings.
-Cancelling an evaluation appends `[cancelled]` beneath its starting expression.
-The Help button summarizes the stepping, definition, saving, and loading
-options in a keyboard-accessible dialog.
+evaluate the stored expressions. A parser failure is reported with the file
+name, one-based line number, and one-based byte position. Loading continues
+with the next line after a parse error. It stops after the fifteenth parse
+error and reports `too many errors, aborting with no changes made`. If any
+error is found, the entire load is rolled back, so no definitions from that
+file are kept. Failed loads below the cutoff report
+`errors are preventing any changes from being made`; a load aborted at the
+cutoff displays only the `too many errors` status after its diagnostics.
+Basis Step and Colorize may remain on when neither stepping mode is active;
+ordinary evaluation ignores both settings. Cancelling an evaluation appends
+`[cancelled]` beneath its starting expression. The Help button summarizes the
+stepping, definition, saving, and loading options in a keyboard-accessible
+dialog.
 
 For another CMake project, link the interface target after adding this project:
 

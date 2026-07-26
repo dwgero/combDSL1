@@ -151,11 +151,42 @@ if(COMBDSL_BUILD_TESTS)
     )
     target_link_libraries(combdsl_tests PRIVATE combdsl::combdsl)
 
+    add_executable(
+        combdsl_browser_load_tests
+        tests/browser_load_test.cpp
+    )
+    target_link_libraries(
+        combdsl_browser_load_tests
+        PRIVATE combdsl::combdsl
+    )
+    target_include_directories(
+        combdsl_browser_load_tests
+        PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}"
+    )
+
     if(MSVC)
-        target_compile_options(combdsl_tests PRIVATE /W4 /permissive-)
+        target_compile_options(
+            combdsl_tests
+            PRIVATE /W4 /permissive-
+        )
+        target_compile_options(
+            combdsl_browser_load_tests
+            PRIVATE /W4 /permissive-
+        )
     else()
-        target_compile_options(combdsl_tests PRIVATE -Wall -Wextra -Wpedantic)
+        target_compile_options(
+            combdsl_tests
+            PRIVATE -Wall -Wextra -Wpedantic
+        )
+        target_compile_options(
+            combdsl_browser_load_tests
+            PRIVATE -Wall -Wextra -Wpedantic
+        )
     endif()
 
     add_test(NAME combinators COMMAND combdsl_tests)
+    add_test(
+        NAME browser_load
+        COMMAND combdsl_browser_load_tests
+    )
 endif()

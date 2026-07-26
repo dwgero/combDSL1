@@ -71,7 +71,8 @@ self.addEventListener("message", async event => {
         busy = true;
         try {
             const module = await modulePromise;
-            const result = module.loadSetList(String(message.source));
+            const result = module.loadSetList(
+                String(message.source), String(message.name));
             self.postMessage({
                 type: "load-result",
                 id: message.id,
@@ -86,7 +87,9 @@ self.addEventListener("message", async event => {
                     success: false,
                     loaded: 0,
                     line: 0,
-                    error: errorMessage(error),
+                    error: `${String(message.name)}: ${
+                        errorMessage(error)}\n` +
+                        "errors are preventing any changes from being made",
                 },
             });
         } finally {

@@ -3472,10 +3472,15 @@ class parse_error : public std::invalid_argument {
 public:
     parse_error(std::size_t position, std::string_view message)
         : std::invalid_argument(make_message(position, message)),
-          position_(position) {}
+          position_(position),
+          detail_(message) {}
 
     [[nodiscard]] std::size_t position() const noexcept {
         return position_;
+    }
+
+    [[nodiscard]] std::string_view detail() const noexcept {
+        return detail_;
     }
 
 private:
@@ -3483,13 +3488,18 @@ private:
         std::size_t position,
         std::string_view message) {
         auto result = std::string("parse error at position ");
-        result += std::to_string(position);
+        auto const displayed_position =
+            position == std::numeric_limits<std::size_t>::max()
+                ? position
+                : position + 1;
+        result += std::to_string(displayed_position);
         result += ": ";
         result += message;
         return result;
     }
 
     std::size_t position_;
+    std::string detail_;
 };
 
 namespace detail {
