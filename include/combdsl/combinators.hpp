@@ -3776,7 +3776,7 @@ private:
     [[nodiscard]] static std::string make_message(
         std::size_t position,
         std::string_view message) {
-        auto result = std::string("parse error at position ");
+        auto result = std::string("Parse error at position ");
         auto const displayed_position =
             position == std::numeric_limits<std::size_t>::max()
                 ? position

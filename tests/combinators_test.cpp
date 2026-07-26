@@ -402,7 +402,7 @@ void test_parse_failure(
         static_cast<void>(parse(source));
     } catch (parse_error const& error) {
         auto expected_message =
-            std::string("parse error at position ");
+            std::string("Parse error at position ");
         expected_message += std::to_string(expected_position + 1);
         expected_message += ": ";
         expected_message += expected_detail;
@@ -1704,7 +1704,7 @@ int main() {
                 std::cout << error.what();
             }
         },
-        "parse error at position 6: Ix is not a defined name");
+        "Parse error at position 6: Ix is not a defined name");
     test("parse eval does not mistake showx for a command",
          [&] { parse_eval("showx"); }, "showx\n");
     test("parse eval treats bare show as symbols",

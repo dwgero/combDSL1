@@ -117,7 +117,7 @@ self.addEventListener("message", async event => {
                     line: 0,
                     error: `${String(message.name)}: ${
                         errorMessage(error)}\n` +
-                        "errors are preventing any changes from being made",
+                        "Errors are preventing any changes from being made",
                 },
             });
         } finally {

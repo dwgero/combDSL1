@@ -99,11 +99,11 @@ int main() {
     check("continued errors use the requested display format",
           format_file_load_diagnostics(
               "broken.cmb", continued) ==
-          "parse error in file broken.cmb on line 2 at position 1: "
+          "Parse error in file broken.cmb on line 2 at position 1: "
           "unknown operand\n"
-          "parse error in file broken.cmb on line 4 at position 1: "
+          "Parse error in file broken.cmb on line 4 at position 1: "
           "unknown operand\n"
-          "errors are preventing any changes from being made");
+          "Errors are preventing any changes from being made");
     check("a failed load rolls back an earlier valid definition",
           !defined_name("FileBefore"));
     check("a failed load rolls back a later valid definition",
@@ -121,13 +121,13 @@ int main() {
     check("fourteen errors omit the abort message",
           format_file_load_diagnostics(
               "fourteen.cmb", fourteen)
-              .find("too many errors, aborting with no changes made") ==
+              .find("Too many errors, aborting with no changes made") ==
           std::string::npos);
     check("parse errors explain why definitions are not retained",
           format_file_load_diagnostics(
               "fourteen.cmb", fourteen)
               .ends_with(
-                  "\nerrors are preventing any changes from being made"));
+                  "\nErrors are preventing any changes from being made"));
 
     auto fifteen_source = repeated_error_lines(15);
     fifteen_source += "#\n";
@@ -144,10 +144,10 @@ int main() {
           fifteen.diagnostics.back().line == 15);
     check("the cutoff displays only its final status message",
           fifteen_messages.ends_with(
-              "\ntoo many errors, aborting with no changes made"));
+              "\nToo many errors, aborting with no changes made"));
     check("the cutoff omits the ordinary rollback message",
           fifteen_messages.find(
-              "errors are preventing any changes from being made") ==
+              "Errors are preventing any changes from being made") ==
           std::string::npos);
 
     combdsl::web_detail::set_list_load_result const fatal{
@@ -155,7 +155,7 @@ int main() {
     check("fatal load errors explain why definitions are not retained",
           format_file_load_diagnostics("fatal.cmb", fatal) ==
           "fatal.cmb: line 3: unexpected loading error\n"
-          "errors are preventing any changes from being made");
+          "Errors are preventing any changes from being made");
 
     auto const successful = load_set_list(
         "set FileGood = 0 I\n"

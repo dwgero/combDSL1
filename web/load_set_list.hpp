@@ -216,7 +216,7 @@ inline void append_load_message(
             ? diagnostic.position
             : diagnostic.position + 1;
 
-    std::string result = "parse error in file ";
+    std::string result = "Parse error in file ";
     result += filename;
     result += " on line ";
     result += std::to_string(diagnostic.line);
@@ -247,12 +247,12 @@ inline void append_load_message(
     if (!load_result.success && !load_result.aborted) {
         append_load_message(
             result,
-            "errors are preventing any changes from being made");
+            "Errors are preventing any changes from being made");
     }
     if (load_result.aborted) {
         append_load_message(
             result,
-            "too many errors, aborting with no changes made");
+            "Too many errors, aborting with no changes made");
     }
     return result;
 }

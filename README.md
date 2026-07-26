@@ -661,11 +661,11 @@ saved record; file redefinitions are applied silently and the expressions are
 not evaluated. A parser failure is reported with the file name, one-based line
 number, and one-based byte position. Loading continues with the next line after
 a parse error. It stops after the fifteenth parse error and reports
-`too many errors, aborting with no changes made`. If any error is found, the
+`Too many errors, aborting with no changes made`. If any error is found, the
 entire load is rolled back, so no definitions from that file are kept. Failed
 loads below the cutoff report
-`errors are preventing any changes from being made`; a load aborted at the
-cutoff displays only the `too many errors` status after its diagnostics.
+`Errors are preventing any changes from being made`; a load aborted at the
+cutoff displays only the `Too many errors` status after its diagnostics.
 Basis Step and Colorize may remain on when neither stepping mode is active;
 ordinary evaluation ignores both settings. Cancelling an evaluation appends
 `[cancelled]` beneath its starting expression. The Help button summarizes the
