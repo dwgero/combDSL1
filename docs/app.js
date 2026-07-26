@@ -1,5 +1,6 @@
 /*
- * C++ combinator DSL
+ * Combinator Studio
+ * Part of C++ Combinator DSL
  * Copyright (C) 2026  David W. Gero
  *
  * This program is free software: you can redistribute it and/or modify
@@ -40,6 +41,8 @@
     const aboutDialog = document.querySelector("#about-dialog");
     const status = document.querySelector("#status");
     const output = document.querySelector("#output");
+    const user = "airings-pinker.3e";
+    const domain = "icloud.com";
 
     let worker;
     let terminateWorker = () => {};
@@ -84,20 +87,12 @@
     const updateModeButtons = () => {
         singleStep.setAttribute(
             "aria-pressed", String(singleStepEnabled));
-        singleStep.textContent = `Single Step: ${
-            singleStepEnabled ? "On" : "Off"}`;
         basisStep.setAttribute(
             "aria-pressed", String(basisStepEnabled));
-        basisStep.textContent = `Basis Step: ${
-            basisStepEnabled ? "On" : "Off"}`;
         keyStep.setAttribute(
             "aria-pressed", String(keyStepEnabled));
-        keyStep.textContent = `Key Step: ${
-            keyStepEnabled ? "On" : "Off"}`;
         colorize.setAttribute(
             "aria-pressed", String(colorizeEnabled));
-        colorize.textContent = `Colorize: ${
-            colorizeEnabled ? "On" : "Off"}`;
     };
 
     const outputText = text => text.endsWith("\n")
@@ -670,6 +665,9 @@
         status.textContent = "Reducing…";
         worker.postMessage({type: "step", id: request.id});
     });
+
+    const emailElement = document.getElementById("email-box");
+    emailElement.innerHTML = `<a href="mailto:${user}@${domain}">${user}@${domain}</a>`;
 
     updateModeButtons();
 

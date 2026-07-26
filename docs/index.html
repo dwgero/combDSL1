@@ -1,6 +1,7 @@
 <!doctype html>
 <!--
-C++ combinator DSL
+Combinator Studio
+Part of C++ Combinator DSL
 Copyright (C) 2026  David W. Gero
 
 This program is free software: you can redistribute it and/or modify
@@ -79,7 +80,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             overflow: hidden;
         }
 
-        h1 {
+        .studio-title {
             margin: 0;
             font-family: system-ui, sans-serif;
             font-size: clamp(1.5rem, 4vw, 2.25rem);
@@ -148,14 +149,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
         }
 
         #single-step[aria-pressed="true"],
+        #key-step[aria-pressed="true"],
         #basis-step[aria-pressed="true"],
         #colorize[aria-pressed="true"] {
-            border-color: #315be8;
-            background: #315be8;
-            color: white;
-        }
-
-        #key-step[aria-pressed="true"] {
             border-color: #315be8;
             background: #315be8;
             color: white;
@@ -237,6 +233,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             overscroll-behavior-y: contain;
         }
 
+        #help-dialog {
+            width: min(48rem, calc(100% - 2rem));
+            max-width: calc(100vw - 2rem);
+            resize: both;
+        }
+
         #help-dialog dl,
         .help-section,
         .license-text {
@@ -311,29 +313,29 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             color: #c33;
         }
     </style>
-    <script src="./app.js?v=1.4.3" defer></script>
+    <script src="./app.js?v=1.4.8" defer></script>
 </head>
 <body>
-    <main>
-        <h1>Combinator Studio</h1>
+    <main aria-labelledby="studio-title">
+        <h2 id="studio-title" class="studio-title">Combinator Studio</h2>
 
         <section class="result" aria-label="Evaluation results">
             <pre id="output" aria-live="polite" tabindex="0"></pre>
         </section>
 
         <form id="evaluation-form">
-            <label for="source">Combinator Expression</label>
+            <label for="source">Combinator Expression or Command</label>
             <textarea id="source" name="source" spellcheck="false"
                 autocapitalize="off" wrap="soft" autofocus></textarea>
             <div class="controls">
                 <button id="single-step" type="button"
-                    aria-pressed="false" disabled>Single Step: Off</button>
+                    aria-pressed="false" disabled>Single Step</button>
                 <button id="key-step" type="button"
-                    aria-pressed="false" disabled>Key Step: Off</button>
+                    aria-pressed="false" disabled>Key Step</button>
                 <button id="basis-step" type="button"
-                    aria-pressed="false" disabled>Basis Step: Off</button>
+                    aria-pressed="false" disabled>Basis Step</button>
                 <button id="colorize" type="button"
-                    aria-pressed="false" disabled>Colorize: Off</button>
+                    aria-pressed="false" disabled>Colorize</button>
                 <button id="cancel" type="button" disabled>Cancel</button>
                 <a id="save" class="button-link" role="button"
                     aria-label="Save user-defined combinators"
@@ -349,7 +351,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
                 <button id="combinator-info" type="button"
                     aria-haspopup="dialog"
                     aria-controls="combinator-info-dialog"
-                    aria-expanded="false">Combinator Info</button>
+                    aria-expanded="false">Bird Info</button>
                 <button id="about" type="button" aria-haspopup="dialog"
                     aria-controls="about-dialog"
                     aria-expanded="false">About</button>
@@ -385,10 +387,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             <dd>
                 Changes how Single Step and Key Step handle named bases
                 defined by compound combinators. All the bird combinators (see
-                Combinator Info) except S, K, I, and Y are named bases. Basis
-                Step: Off contracts a saturated named basis directly (for
-                example, <code>Mx</code> becomes <code>xx</code>). Basis Step:
-                On exposes its underlying definition as a separate reduction
+                Bird Info) except S, K, I, and Y are named bases. Basis
+                Step off contracts a saturated named basis directly (for
+                example, <code>Mx</code> becomes <code>xx</code>). Basis Step
+                on exposes its underlying definition as a separate reduction
                 first (so
                 <code>Mx</code> becomes <code>SIIx</code>). It may remain on
                 when neither stepping mode is active; ordinary evaluation
@@ -420,37 +422,25 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             to reduce.
             <br><br>
             <code>define name symbols = combinator_expression</code><br>
-            The <code>define</code> form requires one or more lowercase
-            symbols, infers the arity from their count, and computes a
-            series of combinators that will reproduce the
-            <code>combinator_expression</code>. For example, to add the
-            Eagle bird:
-            <code>define E xyzwv = xy(zwv)</code>
-            For a one-character name, the separating space may be omitted;
-            every following lowercase letter before <code>=</code> is a
-            symbol: <code>define Gxyz = x(yz)</code>.
-            A space before the symbols keeps the preceding token as a
-            multicharacter name: <code>define Gx y = y</code>.
-            Occurrences of <code>name</code> in the expression are
-            recursive references and are incorporated using <code>Y</code>.
-            For example:
-            <code>define Repeat x = x(Repeat x)</code>;
-            <code>show Repeat</code> displays <code>YO</code>.
+            The <code>define</code> form requires one or more <code>symbols</code>
+            (lower case letters) after the name, infers the arity from their count,
+            and computes a series of combinators that will reproduce the
+            <code>combinator_expression</code>.  For a one-character name,
+            the space before the symbols may be omitted. For example, to add the
+            Eagle bird:<br>
+            <code>define Exyzwv = xy(zwv)</code>
             <br><br>
             <code>show name</code><br>
             The <code>show</code> command displays the combinators stored
             for <code>name</code>. For example, <code>show E</code> for
-            above would display <code>BDD</code>. For
-            <code>S</code>, <code>K</code>, <code>I</code>, or
-            <code>Y</code>, it reports that the name is fundamental.
+            the Eagle bird would display <code>BDD</code>.
         </div>
         <h2 class="help-subheading">Saving and Loading Combinators</h2>
         <div class="help-section">
             The Save button downloads to your computer the combinators added by
             <code>set</code> or <code>define</code>, with default filename
             <code>set_list.cmb</code>. Every saved definition includes its
-            arity or defining symbols and can be entered again to recreate
-            the combinator.
+            arity and defining combinator expression.
             The Load button reads a <code>.cmb</code> file from your computer
             and recreates its definitions in order.
         </div>
@@ -511,7 +501,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             data-dialog-initial-focus>About</h2>
         <div class="license-text">
             <!-- Keep this version and the app.js cache key in sync. -->
-            <p>C++ Combinator DSL, version 1.4.3<br>Copyright (C) 2026  David W. Gero</p>
+            <p>Combinator Studio, version 1.4.8<br>
+                Part of the C++ Combinator DSL<br>
+                Copyright (C) 2026  David W. Gero</p>
             <p>This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU Affero General Public License as published by
 the Free Software Foundation, either version 3 of the License, or
@@ -528,7 +520,8 @@ at &lt;<a href="https://www.gnu.org/licenses/agpl-3.0.html#license-text"
                     rel="noopener noreferrer">https://dwgero.github.io/combDSL1/</a>&gt;.
                 The source for this program is available at
                 &lt;<a href="https://github.com/dwgero/combDSL1" target="_blank"
-                    rel="noopener noreferrer">https://github.com/dwgero/combDSL1</a>&gt;.</p>
+                    rel="noopener noreferrer">https://github.com/dwgero/combDSL1</a>&gt;.
+                    My hidden email is &lt;<span id="email-box"></span>&gt;</p>
         </div>
         <form method="dialog" class="dialog-controls">
             <button type="submit">Close</button>
