@@ -297,7 +297,9 @@ eval(quote(S)(K)(I)(x)); // prints: x
 A different output stream can be supplied as the second argument, and an
 input stream can be supplied as the third. The input defaults to `std::cin`.
 An optional trailing `basis_step` boolean selects the same named-basis
-behavior for every reduction performed by `eval`.
+behavior for every reduction performed by `eval`. A five-argument overload
+accepts an `evaluation_progress_callback`, which receives the accumulated
+reduction count after every completed reduction.
 SIGINT (normally Ctrl-C) pauses evaluation at the next reduction boundary and
 prints the current expression as one line. Press Enter to resume, or enter `q`
 or `Q` to quit; end-of-input also quits. If a reduction finished before the
@@ -477,7 +479,8 @@ pre-defined bases are not included.
 `eval`. Its output and input streams can be supplied as the second and third
 arguments; they default to `std::cout` and `std::cin`. A trailing
 `basis_step` boolean is forwarded by `parse_eval`, `read_parse_eval`, and
-`parse_and_step`.
+`parse_and_step`. A five-argument `parse_eval` overload also forwards an
+`evaluation_progress_callback` to `eval`.
 
 `read_parse_eval` reads exactly one line and passes it to `parse_eval`:
 
@@ -494,7 +497,10 @@ expression produces no output, while malformed or empty lines throw
 
 The `crepl` executable applies `input_escape` to each line before passing it to
 `parse_eval`, so ordinary quoted words and backslashes can be entered directly.
-Enter exactly `q` or `Q` at its prompt to exit.
+When standard output is a terminal, long evaluations display the accumulated
+step count every 1,000 reductions by overwriting one status line; the line is
+cleared before evaluation output is printed. Redirected output contains no
+progress status. Enter exactly `q` or `Q` at its prompt to exit.
 
 `S`, `K`, `I`, and `Y` are reserved combinators. A single-character name
 registered by `basis(...)` parses the same way, so `Mx` means `M` applied to

@@ -272,6 +272,27 @@ static_assert(std::is_same_v<
 static_assert(std::is_same_v<
               decltype(static_cast<eval_with_progress_signature>(&eval)),
               eval_with_progress_signature>);
+using parse_eval_without_progress_signature = void (*)(
+    std::string_view,
+    std::ostream&,
+    std::istream&,
+    bool);
+using parse_eval_with_progress_signature = void (*)(
+    std::string_view,
+    std::ostream&,
+    std::istream&,
+    bool,
+    evaluation_progress_callback const&);
+static_assert(std::is_same_v<
+              decltype(static_cast<
+                       parse_eval_without_progress_signature>(
+                  &parse_eval)),
+              parse_eval_without_progress_signature>);
+static_assert(std::is_same_v<
+              decltype(static_cast<
+                       parse_eval_with_progress_signature>(
+                  &parse_eval)),
+              parse_eval_with_progress_signature>);
 using single_step_run_without_progress_signature = void (*)(
     combdsl::quoted_expression,
     std::ostream&,
@@ -1735,6 +1756,25 @@ int main() {
          "invalid");
 
     test("parse eval", [&] { parse_eval("K(Ix)y"); }, "x\n");
+    test("parse eval reports completed reductions",
+         [] {
+             std::vector<std::size_t> reports;
+             std::istringstream input;
+             std::ostringstream output;
+             parse_eval(
+                 "IIIx",
+                 output,
+                 input,
+                 false,
+                 [&reports](std::size_t reductions) {
+                     reports.push_back(reductions);
+                 });
+             for (auto reductions : reports) {
+                 std::cout << reductions;
+             }
+             std::cout << '/' << output.str();
+         },
+         "123/x\n");
     test("parse eval set only registers its definition",
          [&] { parse_eval("set EvalK=K"); }, "");
     test("parse eval uses a silently registered set basis",
@@ -2246,6 +2286,88 @@ int main() {
          bkm_self_first_step, "K(M(BKM))");
     test("next BKM self-application step reduces inside K",
          single_step(bkm_self_first_step), "K(BKM(BKM))");
+    test("eval scans a deeply nested discarded argument iteratively",
+         [] {
+             constexpr std::size_t depth = 100'000;
+             // Keep every level alive so this test isolates traversal from
+             // shared_ptr's separate recursive destruction behavior.
+             std::vector<combdsl::quoted_expression> retained_levels;
+             retained_levels.reserve(depth + 1);
+
+             auto deep_argument = quote(z);
+             retained_levels.push_back(deep_argument);
+             for (std::size_t level = 0; level < depth; ++level) {
+                 deep_argument = quote(y)(deep_argument);
+                 retained_levels.push_back(deep_argument);
+             }
+
+             std::istringstream input;
+             std::ostringstream output;
+             eval(quote(K)(x)(deep_argument), output, input, false);
+             std::cout << (output.str() == "x\n" ? "ok" : "failed");
+
+             deep_argument = quote(z);
+             while (!retained_levels.empty()) {
+                 retained_levels.pop_back();
+             }
+         },
+         "ok");
+    test("single step finds a redex beneath 100000 applications",
+         [] {
+             constexpr std::size_t depth = 100'000;
+             // Retaining each level also lets the two deep persistent trees
+             // be released safely from their outermost nodes inward.
+             std::vector<combdsl::quoted_expression> original_levels;
+             original_levels.reserve(depth + 1);
+
+             auto original = quote(I)(z);
+             original_levels.push_back(original);
+             for (std::size_t level = 0; level < depth; ++level) {
+                 original = quote(x)(original);
+                 original_levels.push_back(original);
+             }
+
+             auto reduced = single_step(original);
+             auto current = reduced;
+             std::vector<combdsl::quoted_expression> reduced_levels;
+             reduced_levels.reserve(depth);
+             bool correct = true;
+             for (std::size_t level = 0; level < depth; ++level) {
+                 auto const& root =
+                     combdsl::detail::quoted_access::root(current);
+                 if (root->kind() !=
+                     combdsl::detail::quoted_node_kind::application) {
+                     correct = false;
+                     break;
+                 }
+                 reduced_levels.push_back(current);
+                 auto const& application = static_cast<
+                     combdsl::detail::quoted_application_node const&>(
+                         *root);
+                 if (!combdsl::detail::same_quoted_atom(
+                         quote(x), application.function())) {
+                     correct = false;
+                     break;
+                 }
+                 current = application.argument();
+             }
+             correct =
+                 correct &&
+                 combdsl::detail::same_quoted_atom(quote(z), current);
+             std::cout << (correct ? "ok" : "failed");
+
+             auto const shallow = quote(z);
+             reduced = shallow;
+             current = shallow;
+             for (auto& level : reduced_levels) {
+                 level = shallow;
+             }
+             original = shallow;
+             while (!original_levels.empty()) {
+                 original_levels.pop_back();
+             }
+         },
+         "ok");
     const auto fixed_point_basis = basis("FY", 1, Y);
     test("single step stops at deferred Y in a basis result",
          single_step(quote(fixed_point_basis)(x)),

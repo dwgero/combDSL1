@@ -2651,59 +2651,86 @@ struct pending_sk_reduction {
 reduce_pending_sk_applications(
     quoted_expression const& expression,
     std::size_t& replacements) {
-    auto const& root = quoted_access::root(expression);
-    if (root->kind() == quoted_node_kind::pending_sk) {
-        auto const& pending =
-            static_cast<quoted_pending_sk_node const&>(*root);
-        auto const identity =
-            make_quoted_primitive(quoted_node_kind::identity);
-        auto const color =
-            replacements++ == 0
-                ? html_argument_color::red
-                : html_argument_color::green;
-        return pending_sk_reduction{
-            identity,
-            make_quoted_html_argument(
-                pending.application(), color),
-            make_quoted_html_argument(identity, color)};
+    struct traversal_frame {
+        quoted_expression expression;
+        bool children_visited = false;
+    };
+
+    std::vector<traversal_frame> traversal;
+    std::vector<std::optional<pending_sk_reduction>> results;
+    traversal.push_back({expression});
+
+    while (!traversal.empty()) {
+        auto frame = std::move(traversal.back());
+        traversal.pop_back();
+        auto const& root = quoted_access::root(frame.expression);
+
+        if (root->kind() == quoted_node_kind::pending_sk) {
+            auto const& pending =
+                static_cast<quoted_pending_sk_node const&>(*root);
+            auto const identity =
+                make_quoted_primitive(quoted_node_kind::identity);
+            auto const color =
+                replacements++ == 0
+                    ? html_argument_color::red
+                    : html_argument_color::green;
+            results.emplace_back(pending_sk_reduction{
+                identity,
+                make_quoted_html_argument(
+                    pending.application(), color),
+                make_quoted_html_argument(identity, color)});
+            continue;
+        }
+
+        if (root->kind() != quoted_node_kind::application) {
+            results.emplace_back(std::nullopt);
+            continue;
+        }
+
+        auto const& application =
+            static_cast<quoted_application_node const&>(*root);
+        if (!frame.children_visited) {
+            frame.children_visited = true;
+            traversal.push_back(std::move(frame));
+            traversal.push_back({application.argument()});
+            traversal.push_back({application.function()});
+            continue;
+        }
+
+        auto reduced_argument = std::move(results.back());
+        results.pop_back();
+        auto reduced_function = std::move(results.back());
+        results.pop_back();
+        if (!reduced_function && !reduced_argument) {
+            results.emplace_back(std::nullopt);
+            continue;
+        }
+
+        results.emplace_back(pending_sk_reduction{
+            make_quoted_application(
+                reduced_function
+                    ? reduced_function->result
+                    : application.function(),
+                reduced_argument
+                    ? reduced_argument->result
+                    : application.argument()),
+            make_quoted_application(
+                reduced_function
+                    ? reduced_function->before
+                    : application.function(),
+                reduced_argument
+                    ? reduced_argument->before
+                    : application.argument()),
+            make_quoted_application(
+                reduced_function
+                    ? reduced_function->after
+                    : application.function(),
+                reduced_argument
+                    ? reduced_argument->after
+                    : application.argument())});
     }
 
-    if (root->kind() != quoted_node_kind::application) {
-        return std::nullopt;
-    }
-
-    auto const& application =
-        static_cast<quoted_application_node const&>(*root);
-    auto reduced_function = reduce_pending_sk_applications(
-        application.function(), replacements);
-    auto reduced_argument = reduce_pending_sk_applications(
-        application.argument(), replacements);
-    if (!reduced_function && !reduced_argument) {
-        return std::nullopt;
-    }
-
-    return pending_sk_reduction{
-        make_quoted_application(
-            reduced_function
-                ? reduced_function->result
-                : application.function(),
-            reduced_argument
-                ? reduced_argument->result
-                : application.argument()),
-        make_quoted_application(
-            reduced_function
-                ? reduced_function->before
-                : application.function(),
-            reduced_argument
-                ? reduced_argument->before
-                : application.argument()),
-        make_quoted_application(
-            reduced_function
-                ? reduced_function->after
-                : application.function(),
-            reduced_argument
-                ? reduced_argument->after
-                : application.argument())};
+    return std::move(results.back());
 }
 
 [[nodiscard]] inline std::optional<quoted_expression>
@@ -2970,42 +2997,73 @@ reduce_next_redex(quoted_expression const& expression,
         return pending->result;
     }
 
-    auto reduced = reduce_at_head(expression, options, trace);
-    if (quoted_access::root(reduced) != quoted_access::root(expression)) {
-        return reduced;
-    }
+    struct path_frame {
+        quoted_expression function;
+        quoted_expression argument;
+        bool visiting_argument = false;
+    };
 
-    auto const& root = quoted_access::root(expression);
-    if (root->kind() != quoted_node_kind::application) {
-        return std::nullopt;
-    }
+    std::vector<path_frame> path;
+    auto current = expression;
 
-    auto const& application =
-        static_cast<quoted_application_node const&>(*root);
-    if (auto reduced_function =
-            reduce_next_redex(application.function(), options, trace)) {
-        auto result = make_quoted_application(
-            std::move(*reduced_function), application.argument());
-        if (trace != nullptr) {
-            trace->before = make_quoted_application(
-                std::move(*trace->before), application.argument());
-            trace->after = result;
+    for (;;) {
+        auto reduced = reduce_at_head(current, options, trace);
+        if (quoted_access::root(reduced) !=
+            quoted_access::root(current)) {
+            for (auto frame = path.rbegin();
+                 frame != path.rend();
+                 ++frame) {
+                if (frame->visiting_argument) {
+                    reduced = make_quoted_application(
+                        frame->function, std::move(reduced));
+                    if (trace != nullptr) {
+                        trace->before = make_quoted_application(
+                            frame->function,
+                            std::move(*trace->before));
+                    }
+                } else {
+                    reduced = make_quoted_application(
+                        std::move(reduced), frame->argument);
+                    if (trace != nullptr) {
+                        trace->before = make_quoted_application(
+                            std::move(*trace->before),
+                            frame->argument);
+                    }
+                }
+                if (trace != nullptr) {
+                    trace->after = reduced;
+                }
+            }
+            return reduced;
         }
-        return result;
-    }
-    if (auto reduced_argument =
-            reduce_next_redex(application.argument(), options, trace)) {
-        auto result = make_quoted_application(
-            application.function(), std::move(*reduced_argument));
-        if (trace != nullptr) {
-            trace->before = make_quoted_application(
-                application.function(), std::move(*trace->before));
-            trace->after = result;
-        }
-        return result;
-    }
 
-    return std::nullopt;
+        auto const& root = quoted_access::root(current);
+        if (root->kind() == quoted_node_kind::application) {
+            auto const& application =
+                static_cast<quoted_application_node const&>(*root);
+            path.push_back({
+                application.function(),
+                application.argument(),
+            });
+            current = application.function();
+            continue;
+        }
+
+        bool found_argument = false;
+        while (!path.empty()) {
+            auto& frame = path.back();
+            if (!frame.visiting_argument) {
+                frame.visiting_argument = true;
+                current = frame.argument;
+                found_argument = true;
+                break;
+            }
+            path.pop_back();
+        }
+        if (!found_argument) {
+            return std::nullopt;
+        }
+    }
 }
 
 } // namespace detail
@@ -4774,9 +4832,10 @@ private:
 
 inline void parse_eval(
     std::string_view source,
-    std::ostream& output = std::cout,
-    std::istream& input = std::cin,
-    bool basis_step = false) {
+    std::ostream& output,
+    std::istream& input,
+    bool basis_step,
+    evaluation_progress_callback const& progress_callback) {
     auto parsed = detail::parse_input(source);
     if (parsed.is_definition) {
         return;
@@ -4787,7 +4846,25 @@ inline void parse_eval(
         output.flush();
         return;
     }
-    eval(std::move(parsed.expression), output, input, basis_step);
+    eval(
+        std::move(parsed.expression),
+        output,
+        input,
+        basis_step,
+        progress_callback);
+}
+
+inline void parse_eval(
+    std::string_view source,
+    std::ostream& output = std::cout,
+    std::istream& input = std::cin,
+    bool basis_step = false) {
+    parse_eval(
+        source,
+        output,
+        input,
+        basis_step,
+        evaluation_progress_callback{});
 }
 
 inline void read_parse_eval(
