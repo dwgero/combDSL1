@@ -154,7 +154,16 @@ int main() {
         false, false, 0, {}, 3, "unexpected loading error"};
     check("fatal load errors explain why definitions are not retained",
           format_file_load_diagnostics("fatal.cmb", fatal) ==
-          "fatal.cmb: line 3: unexpected loading error\n"
+          "Error while loading file fatal.cmb on line 3: "
+          "unexpected loading error\n"
+          "Errors are preventing any changes from being made");
+
+    combdsl::web_detail::set_list_load_result const fatal_without_line{
+        false, false, 0, {}, 0, "setup loading error"};
+    check("fatal load errors omit an unavailable line number",
+          format_file_load_diagnostics(
+              "fatal.cmb", fatal_without_line) ==
+          "Error while loading file fatal.cmb: setup loading error\n"
           "Errors are preventing any changes from being made");
 
     auto const successful = load_set_list(

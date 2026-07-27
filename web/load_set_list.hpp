@@ -196,13 +196,13 @@ inline void append_load_message(
     std::string_view filename,
     std::size_t line,
     std::string_view message) {
-    std::string result(filename);
-    result += ": ";
+    std::string result("Error while loading file ");
+    result += filename;
     if (line != 0) {
-        result += "line ";
+        result += " on line ";
         result += std::to_string(line);
-        result += ": ";
     }
+    result += ": ";
     result += message;
     return result;
 }

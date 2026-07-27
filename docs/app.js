@@ -437,6 +437,7 @@
                 if (message.result.success) {
                     request.stepReady = true;
                     status.textContent = "Press a key for the next step";
+                    focusSourceAfterNextPaint();
                 } else {
                     activeRequest = undefined;
                     status.textContent = "Ready";
@@ -472,6 +473,7 @@
                         request.stepReady = true;
                         status.textContent =
                             "Press a key for the next step";
+                        focusSourceAfterNextPaint();
                     }
                 } else {
                     clearCompletedSource(request);
@@ -595,6 +597,7 @@
         }
         updateModeButtons();
         updateControls();
+        focusSourceAfterNextPaint();
     });
 
     colorize.addEventListener("click", () => {
@@ -624,7 +627,7 @@
             return;
         }
 
-        status.textContent = "Saved set_list.cmb";
+        status.textContent = "Saved all definitions";
     });
 
     load.addEventListener("click", () => {

@@ -2191,6 +2191,12 @@ int main() {
          single_step(quote(T)(x)(y), true), "S(K(SI))Kxy");
     test("single step contracts basis containing another basis",
          single_step(quote(C)(x)(y)(z)), "xzy");
+    const auto bkm_self_first_step =
+        single_step(parse("BKM(BKM)"));
+    test("single step contracts self-referential BKM application",
+         bkm_self_first_step, "K(M(BKM))");
+    test("next BKM self-application step reduces inside K",
+         single_step(bkm_self_first_step), "K(BKM(BKM))");
     const auto fixed_point_basis = basis("FY", 1, Y);
     test("single step stops at deferred Y in a basis result",
          single_step(quote(fixed_point_basis)(x)),
