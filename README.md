@@ -220,7 +220,7 @@ single_step(expression)();             // Kx(Ix)
 single_step(single_step(expression))(); // x
 ```
 
-`color_step` performs the same single reduction, returns the uncolored
+`color_step_html` performs the same single reduction, returns the uncolored
 resulting expression, and prints the before and after expressions as a
 two-line HTML fragment. Its output defaults to `std::cout`; a different
 stream can be passed as the second argument. Like `single_step`, it also
@@ -257,11 +257,11 @@ expression twice. Because the next call colors a new redex, the two copies can
 have different markup even though they represent the same expression:
 
 ```cpp
-auto next = color_step(expression);
+auto next = color_step_html(expression);
 //   S<span class="wor">K</span><span class="wog">I</span><span class="wob">x</span>
 // -><span class="wor">K</span><span class="wob">x</span>(<span class="wog">I</span><span class="wob">x</span>)
 
-next = color_step(std::move(next));
+next = color_step_html(std::move(next));
 //   K<span class="wor">x</span><span class="wog">(Ix)</span>
 // -><span class="wor">x</span>
 ```
@@ -663,7 +663,7 @@ Step and Key Step modes are mutually exclusive. The independent Basis Step
 button controls whether either stepping mode exposes a saturated named basis
 definition as a separate step. With Basis Step off, `Mx` goes directly to
 `xx`; with it on, the first step is `SIIx`. While either stepping mode is
-active, the Colorize button uses `color_step` to highlight the first, second,
+active, the Colorize button uses `color_step_html` to highlight the first, second,
 third, fourth, and fifth arguments of each reduction in red, tunic green, blue,
 dark orange, and Munsell purple and carries those highlights into the reduced
 result. After the final colorized reduction, the normal form is printed without

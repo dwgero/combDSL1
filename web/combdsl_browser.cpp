@@ -225,7 +225,7 @@ make_evaluation_progress_callback(
     }
 }
 
-[[nodiscard]] evaluation_result color_step_run_input(
+[[nodiscard]] evaluation_result color_step_html_run_input(
     std::string const& source,
     bool basis_step,
     std::size_t request_id) {
@@ -256,7 +256,7 @@ make_evaluation_progress_callback(
 
             for (;;) {
                 std::ostringstream step_output;
-                auto next = combdsl::color_step(
+                auto next = combdsl::color_step_html(
                     expression, step_output, basis_step);
                 if (combdsl::detail::quoted_access::root(next) ==
                     combdsl::detail::quoted_access::root(expression)) {
@@ -330,7 +330,7 @@ make_evaluation_progress_callback(
     try {
         std::ostringstream output;
         auto next = colorize
-            ? combdsl::color_step(
+            ? combdsl::color_step_html(
                   *stepped_expression, output, basis_step)
             : combdsl::single_step(
                   *stepped_expression, basis_step);
@@ -424,7 +424,7 @@ EMSCRIPTEN_BINDINGS(combdsl_browser) {
         "inspectDefinition", &inspect_definition_input);
     emscripten::function("parseEval", &parse_eval_input);
     emscripten::function("singleStepRun", &single_step_run_input);
-    emscripten::function("colorStepRun", &color_step_run_input);
+    emscripten::function("colorStepRun", &color_step_html_run_input);
     emscripten::function("beginSingleStep", &begin_single_step_input);
     emscripten::function("takeSingleStep", &take_single_step);
     emscripten::function("setList", &combdsl::set_list);

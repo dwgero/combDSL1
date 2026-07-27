@@ -241,7 +241,7 @@
 
         const result = document.createElement("span");
         if (html) {
-            // color_step escapes expression text and emits only its fixed
+            // color_step_html escapes expression text and emits only its fixed
             // color markup.
             result.innerHTML = content;
         } else {

@@ -3106,7 +3106,7 @@ single_step(quoted_expression expression, bool basis_step = false) {
     return expression;
 }
 
-[[nodiscard]] inline quoted_expression color_step(
+[[nodiscard]] inline quoted_expression color_step_html(
     quoted_expression expression,
     std::ostream& output = std::cout,
     bool basis_step = false) {
@@ -3137,10 +3137,10 @@ single_step(quoted_expression expression, bool basis_step = false) {
     return expression;
 }
 
-[[nodiscard]] inline quoted_expression color_step(
+[[nodiscard]] inline quoted_expression color_step_html(
     quoted_expression expression,
     bool basis_step) {
-    return color_step(
+    return color_step_html(
         std::move(expression), std::cout, basis_step);
 }
 
