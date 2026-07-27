@@ -1,10 +1,5 @@
-Press Enter for one reduction step; type q then Enter to quit.
-SKIx
-Ix
 x
 x
-Press Enter for one reduction step; type q then Enter to quit.
-Kxy
 x
 Ix
 x

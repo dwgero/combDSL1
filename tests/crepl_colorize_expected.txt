@@ -2,9 +2,5 @@
 -><ESC>[38;2;255;255;255m<ESC>[48;2;255;000;000mx<ESC>[0m
 x
 x
-Press Enter for one reduction step; type q then Enter to quit.
-Kxy
-  K<ESC>[38;2;255;255;255m<ESC>[48;2;255;000;000mx<ESC>[0m<ESC>[38;2;255;255;255m<ESC>[48;2;000;204;000my<ESC>[0m
--><ESC>[38;2;255;255;255m<ESC>[48;2;255;000;000mx<ESC>[0m
 x
 x

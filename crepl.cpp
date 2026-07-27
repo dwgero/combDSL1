@@ -264,6 +264,16 @@ void parse_and_color_step_ansi(
 #endif
 }
 
+[[nodiscard]] bool standard_input_is_terminal() noexcept {
+#if defined(_WIN32)
+    return ::_isatty(::_fileno(stdin)) != 0;
+#elif defined(__unix__) || defined(__APPLE__)
+    return ::isatty(::fileno(stdin)) != 0;
+#else
+    return false;
+#endif
+}
+
 class progress_output_buffer final : public std::streambuf {
 public:
     explicit progress_output_buffer(std::streambuf* destination)
@@ -341,6 +351,7 @@ private:
 
 int main() {
     auto const interactive_output = standard_output_is_terminal();
+    auto const interactive_input = standard_input_is_terminal();
     auto active_stepping_mode = stepping_mode::none;
     bool basis_step_mode = false;
     bool colorize_mode = false;
@@ -368,6 +379,10 @@ int main() {
                 }
                 if (command->kind == mode_command_kind::colorize) {
                     colorize_mode = command->enabled;
+                    continue;
+                }
+                if (command->kind == mode_command_kind::key &&
+                    !interactive_input) {
                     continue;
                 }
 

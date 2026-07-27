@@ -3,11 +3,9 @@ single step
 Ix
 colorize off
 Ix
-key step
+single step off
 colorize on
 Kxy
-
-key step off
-Ix
 colorize off
+Ix
 q

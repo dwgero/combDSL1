@@ -521,11 +521,13 @@ progress status. Enter `single step` or `single step on` to print every
 subsequent reduction, and enter `single step off` to return to printing only
 the final result. Enter `key step` or `key step on` to display the starting
 expression and wait for Enter before each reduction; `key step off` disables
-that mode. Enabling either stepping mode disables the other, while turning off
-an inactive mode leaves the active mode unchanged. Omitting `on` or `off`
-enables the selected mode. `basis step`, `basis step on`, and `basis step off`
-independently control whether named-basis expansion is shown as a separate
-reduction in either stepping mode; ordinary evaluation ignores this setting.
+that mode. When standard input is redirected from a file or pipe, all three
+Key Step commands are silently ignored. Enabling either stepping mode disables
+the other, while turning off an inactive mode leaves the active mode unchanged.
+Omitting `on` or `off` enables the selected mode. `basis step`, `basis step on`,
+and `basis step off` independently control whether named-basis expansion is
+shown as a separate reduction in either stepping mode; ordinary evaluation
+ignores this setting.
 Enter `colorize`, `colorize on`, or `colorize off` to independently control
 ANSI argument highlighting while either stepping mode is active. Colorized
 stepping uses `color_step_ansi` and prints the final normal form without color
