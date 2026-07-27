@@ -39,7 +39,6 @@ using combdsl::basis;
 using combdsl::color_step;
 using combdsl::defer;
 using combdsl::eval;
-using combdsl::evaluation_progress;
 using combdsl::evaluation_progress_callback;
 using combdsl::force;
 using combdsl::input_escape;
@@ -261,19 +260,39 @@ using eval_without_progress_signature = void (*)(
     std::ostream&,
     std::istream&,
     bool);
+using eval_with_progress_signature = void (*)(
+    combdsl::quoted_expression,
+    std::ostream&,
+    std::istream&,
+    bool,
+    evaluation_progress_callback const&);
 static_assert(std::is_same_v<
               decltype(static_cast<eval_without_progress_signature>(&eval)),
               eval_without_progress_signature>);
+static_assert(std::is_same_v<
+              decltype(static_cast<eval_with_progress_signature>(&eval)),
+              eval_with_progress_signature>);
 using single_step_run_without_progress_signature = void (*)(
     combdsl::quoted_expression,
     std::ostream&,
     std::istream&,
     bool);
+using single_step_run_with_progress_signature = void (*)(
+    combdsl::quoted_expression,
+    std::ostream&,
+    std::istream&,
+    bool,
+    evaluation_progress_callback const&);
 static_assert(std::is_same_v<
               decltype(static_cast<
                        single_step_run_without_progress_signature>(
                   &single_step_run)),
               single_step_run_without_progress_signature>);
+static_assert(std::is_same_v<
+              decltype(static_cast<
+                       single_step_run_with_progress_signature>(
+                  &single_step_run)),
+              single_step_run_with_progress_signature>);
 
 std::size_t test_failures = 0;
 std::size_t tests_run = 0;
@@ -2243,137 +2262,67 @@ int main() {
          single_step(quoted_move_only_basis(x), true), "K<move-only>x");
     test("second default step leaves contracted move-only basis",
          single_step(single_step(quoted_move_only_basis(x))), "<move-only>");
-    test("progress reporter waits for 100 reductions",
+    test("progress reporter reports every completed reduction",
          [] {
-             std::vector<evaluation_progress> reports;
+             std::vector<std::size_t> reports;
              evaluation_progress_callback callback =
-                 [&reports](evaluation_progress const& progress) {
-                     reports.push_back(progress);
+                 [&reports](std::size_t reductions) {
+                     reports.push_back(reductions);
                  };
              combdsl::detail::evaluation_progress_reporter reporter(
                  callback);
-             for (std::size_t step = 0; step < 99; ++step) {
+             for (std::size_t step = 0; step < 3; ++step) {
                  reporter.completed_reduction();
              }
-             std::cout << reports.size();
+             for (auto reductions : reports) {
+                 std::cout << reductions;
+             }
          },
-         "0");
-    test("progress reporter describes its first message",
+         "123");
+    test("progress reporter accepts an empty callback",
          [] {
-             std::vector<evaluation_progress> reports;
-             evaluation_progress_callback callback =
-                 [&reports](evaluation_progress const& progress) {
-                     reports.push_back(progress);
-                 };
+             evaluation_progress_callback callback;
              combdsl::detail::evaluation_progress_reporter reporter(
                  callback);
-             for (std::size_t step = 0; step < 100; ++step) {
-                 reporter.completed_reduction();
-             }
-             if (reports.empty()) {
-                 std::cout << "missing";
-                 return;
-             }
-             auto const& progress = reports.front();
-             std::cout << reports.size() << '/'
-                       << progress.sequence << '/'
-                       << progress.reductions << '/'
-                       << progress.steps_per_message << '/'
-                       << progress.next_steps_per_message;
+             reporter.completed_reduction();
+             std::cout << "ok";
          },
-         "1/1/100/100/100");
-    test("progress reporter advances to 1000-step messages",
-         [] {
-             std::vector<evaluation_progress> reports;
-             evaluation_progress_callback callback =
-                 [&reports](evaluation_progress const& progress) {
-                     reports.push_back(progress);
-                 };
-             combdsl::detail::evaluation_progress_reporter reporter(
-                 callback);
-             for (std::size_t step = 0; step < 2000; ++step) {
-                 reporter.completed_reduction();
-             }
-             if (reports.size() < 11) {
-                 std::cout << reports.size();
-                 return;
-             }
-             auto const& transition = reports[9];
-             auto const& progress = reports[10];
-             std::cout << reports.size() << '/'
-                       << transition.sequence << '/'
-                       << transition.reductions << '/'
-                       << transition.steps_per_message << '/'
-                       << transition.next_steps_per_message << '/'
-                       << progress.sequence << '/'
-                       << progress.reductions << '/'
-                       << progress.steps_per_message << '/'
-                       << progress.next_steps_per_message;
-         },
-         "11/10/1000/100/1000/11/2000/1000/1000");
-    test("progress reporter advances to 10000-step messages",
-         [] {
-             std::vector<evaluation_progress> reports;
-             evaluation_progress_callback callback =
-                 [&reports](evaluation_progress const& progress) {
-                     reports.push_back(progress);
-                 };
-             combdsl::detail::evaluation_progress_reporter reporter(
-                 callback);
-             for (std::size_t step = 0; step < 11000; ++step) {
-                 reporter.completed_reduction();
-             }
-             if (reports.empty()) {
-                 std::cout << "missing";
-                 return;
-             }
-             auto const& progress = reports.back();
-             std::cout << reports.size() << '/'
-                       << progress.sequence << '/'
-                       << progress.reductions << '/'
-                       << progress.steps_per_message << '/'
-                       << progress.next_steps_per_message;
-         },
-         "20/20/11000/1000/10000");
+         "ok");
     test("eval reports completed reductions",
          [] {
-             std::vector<evaluation_progress> reports;
+             std::vector<std::size_t> reports;
              std::istringstream input;
              std::ostringstream output;
              eval(
-                 repeated_identity_expression(100),
+                 repeated_identity_expression(3),
                  output,
                  input,
                  false,
-                 [&reports](evaluation_progress const& progress) {
-                     reports.push_back(progress);
+                 [&reports](std::size_t reductions) {
+                     reports.push_back(reductions);
                  });
-             if (reports.empty()) {
-                 std::cout << "missing/" << output.str();
-                 return;
+             for (auto reductions : reports) {
+                 std::cout << reductions;
              }
-             std::cout << reports.size() << '/'
-                       << reports.front().reductions << '/'
-                       << output.str();
+             std::cout << '/' << output.str();
          },
-         "1/100/x\n");
+         "123/x\n");
     test("single step run reports completed reductions",
          [] {
-             std::vector<evaluation_progress> reports;
+             std::vector<std::size_t> reports;
              std::istringstream input;
              std::ostringstream output;
              single_step_run(
-                 repeated_identity_expression(100),
+                 repeated_identity_expression(3),
                  output,
                  input,
                  false,
-                 [&reports](evaluation_progress const& progress) {
-                     reports.push_back(progress);
+                 [&reports](std::size_t reductions) {
+                     reports.push_back(reductions);
                  });
              auto const text = output.str();
-             if (reports.empty()) {
-                 std::cout << "missing/" << text;
-                 return;
+             for (auto reductions : reports) {
+                 std::cout << reductions;
              }
              std::size_t lines = 0;
              for (char value : text) {
@@ -2381,12 +2330,10 @@ int main() {
                      ++lines;
                  }
              }
-             std::cout << reports.size() << '/'
-                       << reports.front().reductions << '/'
-                       << lines << '/'
+             std::cout << '/' << lines << '/'
                        << (text.ends_with("x\n") ? "x" : "wrong");
          },
-         "1/100/100/x");
+         "123/3/x");
     test("eval prints only reduced expression",
          [&] { eval(quoted_ski_x); },
          "x\n");

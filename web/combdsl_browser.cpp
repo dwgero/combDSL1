@@ -105,23 +105,27 @@ std::optional<combdsl::quoted_expression> stepped_expression;
 
 [[nodiscard]] combdsl::evaluation_progress_callback
 make_evaluation_progress_callback(std::size_t request_id) {
-    auto const started_at = emscripten_get_now();
-    return [request_id, started_at](
-               combdsl::evaluation_progress const& progress) {
+    constexpr double heartbeat_interval_ms = 100.0;
+    auto last_heartbeat_at = emscripten_get_now();
+    std::size_t sequence = 0;
+    return [
+        request_id,
+        last_heartbeat_at,
+        sequence
+    ](std::size_t reductions) mutable {
+        auto const now = emscripten_get_now();
+        if (now - last_heartbeat_at < heartbeat_interval_ms) {
+            return;
+        }
+
+        last_heartbeat_at = now;
         auto message = emscripten::val::object();
         message.set("type", std::string{"eval-progress"});
         message.set("id", static_cast<double>(request_id));
         message.set(
-            "sequence", static_cast<double>(progress.sequence));
+            "sequence", static_cast<double>(++sequence));
         message.set(
-            "reductions", static_cast<double>(progress.reductions));
-        message.set(
-            "stepsPerMessage",
-            static_cast<double>(progress.steps_per_message));
-        message.set(
-            "nextStepsPerMessage",
-            static_cast<double>(progress.next_steps_per_message));
-        message.set("elapsedMs", emscripten_get_now() - started_at);
+            "reductions", static_cast<double>(reductions));
         emscripten::val::global("self").call<void>(
             "postMessage", message);
     };

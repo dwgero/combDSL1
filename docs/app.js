@@ -127,8 +127,6 @@
         afterNextPaint(focusSource);
     };
 
-    window.addEventListener("pageshow", focusSourceAfterNextPaint);
-
     const clearEvaluationWatchdog = request => {
         if (request?.evaluationWatchdogTimer !== undefined) {
             clearTimeout(request.evaluationWatchdogTimer);
@@ -142,7 +140,7 @@
 
     const armEvaluationWatchdog = (request, waitMs) => {
         clearEvaluationWatchdog(request);
-        if (request.keyStep) {
+        if (request.keyStep || document.hidden) {
             return;
         }
 
@@ -161,6 +159,31 @@
             timeoutAndRestart(request);
         }, Math.min(waitMs, maximumTimerDelay));
     };
+
+    const rearmVisibleEvaluationWatchdog = () => {
+        const request = activeRequest;
+        if (document.hidden ||
+            request?.evaluationWorker !== worker ||
+            request.evaluationGeneration !== generation ||
+            request.keyStep) {
+            return;
+        }
+        armEvaluationWatchdog(
+            request, evaluationWatchdog.timeoutMs);
+    };
+
+    window.addEventListener("pageshow", () => {
+        focusSourceAfterNextPaint();
+        rearmVisibleEvaluationWatchdog();
+    });
+
+    document.addEventListener("visibilitychange", () => {
+        if (document.hidden) {
+            clearEvaluationWatchdog(activeRequest);
+            return;
+        }
+        rearmVisibleEvaluationWatchdog();
+    });
 
     const createOutputEntry = () => {
         if (output.childNodes.length !== 0) {
@@ -262,7 +285,7 @@
                 request.evaluationProgress =
                     evaluationWatchdog.createProgressState();
                 armEvaluationWatchdog(
-                    request, evaluationWatchdog.initialWaitMs);
+                    request, evaluationWatchdog.timeoutMs);
             }
             evaluationWorker.postMessage({
                 type: "evaluate",
@@ -384,7 +407,7 @@
                 request.evaluationProgress =
                     evaluationWatchdog.createProgressState();
                 armEvaluationWatchdog(
-                    request, evaluationWatchdog.initialWaitMs);
+                    request, evaluationWatchdog.timeoutMs);
                 return;
             }
 
@@ -393,10 +416,10 @@
                 !activeRequest.keyStep &&
                 activeRequest.evaluationStarted) {
                 const request = activeRequest;
-                const waitMs = evaluationWatchdog.acceptProgress(
-                    request.evaluationProgress, message);
-                if (waitMs !== undefined) {
-                    armEvaluationWatchdog(request, waitMs);
+                if (evaluationWatchdog.acceptProgress(
+                    request.evaluationProgress, message)) {
+                    armEvaluationWatchdog(
+                        request, evaluationWatchdog.timeoutMs);
                 }
                 return;
             }
@@ -559,7 +582,7 @@
                 message.id === activeRequest?.id) {
                 const completedRequest = activeRequest;
                 if (message.result.recoverWorker) {
-                    cancelAndRestart(completedRequest);
+                    failedEvaluationAndRestart(completedRequest);
                     return;
                 }
                 clearEvaluationWatchdog(completedRequest);
@@ -588,7 +611,7 @@
             if (message.type === "fatal") {
                 const failedRequest = activeRequest;
                 if (failedRequest !== undefined) {
-                    cancelAndRestart(failedRequest);
+                    failedEvaluationAndRestart(failedRequest);
                     return;
                 }
                 dismissReplacementDialog();
@@ -617,7 +640,7 @@
             event.preventDefault();
             const failedRequest = activeRequest;
             if (failedRequest !== undefined) {
-                cancelAndRestart(failedRequest);
+                failedEvaluationAndRestart(failedRequest);
                 return;
             }
             dismissReplacementDialog();
@@ -656,6 +679,15 @@
             evaluationWatchdog.timeoutMessage(
                 request.evaluationProgress),
         );
+    };
+
+    const failedEvaluationAndRestart = request => {
+        if (!request.keyStep &&
+            request.evaluationProgress !== undefined) {
+            timeoutAndRestart(request);
+            return;
+        }
+        cancelAndRestart(request);
     };
 
     form.addEventListener("submit", event => {

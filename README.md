@@ -629,8 +629,9 @@ EM_CACHE="$PWD/build-emscripten-cache" \
 ```
 
 The `combdsl_browser_docs` target builds the WebAssembly application and
-refreshes the tracked browser files in `docs`. Serve those static files with
-any HTTP server and open
+refreshes the tracked browser files in `docs`. Its WebAssembly heap starts at
+64 MiB and may grow to 4 GiB, subject to browser and device limits. Serve those
+static files with any HTTP server and open
 `http://localhost:8000/`:
 
 ```sh
@@ -679,11 +680,15 @@ loads below the cutoff report
 cutoff displays only the `Too many errors` status after its diagnostics.
 Basis Step and Colorize may remain on when neither stepping mode is active;
 ordinary evaluation ignores both settings. Cancelling an evaluation appends
-`[cancelled]` beneath its starting expression. If automatic evaluation stops
-reporting progress, the watchdog appends
+`[cancelled]` beneath its starting expression. During automatic evaluation,
+the worker sends its accumulated reduction count about every 100 milliseconds.
+If a heartbeat is missing for one second, the watchdog stops and replaces the
+worker, then appends
 `[timed out after more than nnn steps]`, where `nnn` is the last reported
-accumulated reduction count. The Help button summarizes the stepping,
-definition, saving, and loading options in a keyboard-accessible dialog.
+accumulated reduction count. Automatic worker failure uses the same timeout
+message; `[cancelled]` is reserved for user cancellation. The Help button
+summarizes the stepping, definition, saving, and loading options in a
+keyboard-accessible dialog.
 
 For another CMake project, link the interface target after adding this project:
 

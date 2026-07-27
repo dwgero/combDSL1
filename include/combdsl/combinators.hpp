@@ -3059,15 +3059,8 @@ single_step(quoted_expression expression, bool basis_step = false) {
         std::move(expression), std::cout, basis_step);
 }
 
-struct evaluation_progress {
-    std::size_t sequence;
-    std::size_t reductions;
-    std::size_t steps_per_message;
-    std::size_t next_steps_per_message;
-};
-
 using evaluation_progress_callback =
-    std::function<void(evaluation_progress const&)>;
+    std::function<void(std::size_t)>;
 
 namespace detail {
 
@@ -3141,49 +3134,17 @@ public:
         : callback_(callback) {}
 
     void completed_reduction() {
+        ++reductions_;
         if (!callback_) {
             return;
         }
 
-        ++reductions_;
-        if (--steps_until_message_ != 0) {
-            return;
-        }
-
-        ++sequence_;
-        auto const steps_per_message = steps_per_message_;
-        auto next_steps_per_message = steps_per_message;
-        if (++messages_at_current_interval_ == messages_per_interval) {
-            messages_at_current_interval_ = 0;
-            if (steps_per_message <=
-                std::numeric_limits<std::size_t>::max() / 10) {
-                next_steps_per_message *= 10;
-            } else {
-                next_steps_per_message =
-                    std::numeric_limits<std::size_t>::max();
-            }
-        }
-
-        evaluation_progress const progress{
-            sequence_,
-            reductions_,
-            steps_per_message,
-            next_steps_per_message};
-        steps_per_message_ = next_steps_per_message;
-        steps_until_message_ = next_steps_per_message;
-        callback_(progress);
+        callback_(reductions_);
     }
 
 private:
-    static constexpr std::size_t initial_steps_per_message = 100;
-    static constexpr std::size_t messages_per_interval = 10;
-
     evaluation_progress_callback const& callback_;
-    std::size_t sequence_ = 0;
     std::size_t reductions_ = 0;
-    std::size_t steps_per_message_ = initial_steps_per_message;
-    std::size_t steps_until_message_ = initial_steps_per_message;
-    std::size_t messages_at_current_interval_ = 0;
 };
 
 } // namespace detail
