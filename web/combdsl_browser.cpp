@@ -39,6 +39,7 @@ struct evaluation_result {
     bool recover_worker;
     std::string output;
     std::string error;
+    std::size_t reductions = 0;
 };
 
 struct single_step_result {
@@ -104,15 +105,19 @@ std::optional<combdsl::quoted_expression> stepped_expression;
 }
 
 [[nodiscard]] combdsl::evaluation_progress_callback
-make_evaluation_progress_callback(std::size_t request_id) {
+make_evaluation_progress_callback(
+    std::size_t request_id,
+    std::size_t& completed_reductions) {
     constexpr double heartbeat_interval_ms = 100.0;
     auto last_heartbeat_at = emscripten_get_now();
     std::size_t sequence = 0;
     return [
         request_id,
+        &completed_reductions,
         last_heartbeat_at,
         sequence
     ](std::size_t reductions) mutable {
+        completed_reductions = reductions;
         auto const now = emscripten_get_now();
         if (now - last_heartbeat_at < heartbeat_interval_ms) {
             return;
@@ -150,12 +155,16 @@ make_evaluation_progress_callback(std::size_t request_id) {
         }
 
         try {
+            std::size_t completed_reductions = 0;
             auto progress =
-                make_evaluation_progress_callback(request_id);
+                make_evaluation_progress_callback(
+                    request_id, completed_reductions);
             combdsl::eval(
                 std::move(parsed.expression), output, input, false,
                 progress);
-            return {true, false, false, output.str(), {}};
+            return {
+                true, false, false, output.str(), {},
+                completed_reductions};
         } catch (std::exception const& error) {
             return {false, false, true, {}, error.what()};
         } catch (...) {
@@ -191,12 +200,16 @@ make_evaluation_progress_callback(std::size_t request_id) {
         }
 
         try {
+            std::size_t completed_reductions = 0;
             auto progress =
-                make_evaluation_progress_callback(request_id);
+                make_evaluation_progress_callback(
+                    request_id, completed_reductions);
             combdsl::single_step_run(
                 std::move(parsed.expression), output, input, basis_step,
                 progress);
-            return {true, false, false, output.str(), {}};
+            return {
+                true, false, false, output.str(), {},
+                completed_reductions};
         } catch (std::exception const& error) {
             return {false, false, true, {}, error.what()};
         } catch (...) {
@@ -234,8 +247,10 @@ make_evaluation_progress_callback(std::size_t request_id) {
             auto expression = std::move(parsed.expression);
             std::ostringstream output;
             bool reduced = false;
+            std::size_t completed_reductions = 0;
             auto progress =
-                make_evaluation_progress_callback(request_id);
+                make_evaluation_progress_callback(
+                    request_id, completed_reductions);
             combdsl::detail::evaluation_progress_reporter reporter(
                 progress);
 
@@ -259,7 +274,9 @@ make_evaluation_progress_callback(std::size_t request_id) {
                 reporter.completed_reduction();
             }
 
-            return {true, false, false, output.str(), {}};
+            return {
+                true, false, false, output.str(), {},
+                completed_reductions};
         } catch (std::exception const& error) {
             return {false, false, true, {}, error.what()};
         } catch (...) {
@@ -364,7 +381,8 @@ EMSCRIPTEN_BINDINGS(combdsl_browser) {
         .field("definition", &evaluation_result::definition)
         .field("recoverWorker", &evaluation_result::recover_worker)
         .field("output", &evaluation_result::output)
-        .field("error", &evaluation_result::error);
+        .field("error", &evaluation_result::error)
+        .field("reductions", &evaluation_result::reductions);
 
     emscripten::value_object<single_step_result>("SingleStepResult")
         .field("success", &single_step_result::success)

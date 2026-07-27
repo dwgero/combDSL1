@@ -33,6 +33,61 @@ const watchdog = context.combdslEvaluationWatchdog;
 test("exports watchdog timing constants", () => {
     assert.equal(watchdog.heartbeatIntervalMs, 100);
     assert.equal(watchdog.timeoutMs, 1000);
+    assert.equal(watchdog.stepDisplayInterval, 1000);
+});
+
+test("rounds progress down to completed thousand-step milestones", () => {
+    const expected = new Map([
+        [1, 0],
+        [999, 0],
+        [1000, 1000],
+        [1001, 1000],
+        [1999, 1000],
+        [2000, 2000],
+        [3035, 3000],
+    ]);
+
+    for (const [reductions, milestone] of expected) {
+        assert.equal(
+            watchdog.displayedStepCount(reductions),
+            milestone);
+    }
+
+    for (const invalid of [
+        0,
+        -1,
+        1.5,
+        Number.NaN,
+        Number.POSITIVE_INFINITY,
+        Number.MAX_SAFE_INTEGER + 1,
+        "1000",
+        null,
+        undefined,
+    ]) {
+        assert.equal(watchdog.displayedStepCount(invalid), 0);
+    }
+});
+
+test("preserves an exact valid final reduction count", () => {
+    for (const reductions of [1, 999, 1000, 2537, 10_001]) {
+        assert.equal(
+            watchdog.exactStepCount(reductions),
+            reductions);
+    }
+
+    for (const invalid of [
+        0,
+        -1,
+        1.5,
+        Number.NaN,
+        Number.POSITIVE_INFINITY,
+        Number.MAX_SAFE_INTEGER + 1,
+        "2537",
+        null,
+        undefined,
+    ]) {
+        assert.equal(watchdog.exactStepCount(invalid), 0);
+    }
 });
 
 test("creates empty progress state", () => {

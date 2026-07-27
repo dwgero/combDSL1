@@ -22,6 +22,7 @@
 globalThis.combdslEvaluationWatchdog = (() => {
     const heartbeatIntervalMs = 100;
     const timeoutMs = 1000;
+    const stepDisplayInterval = 1000;
 
     const safePositiveInteger = value =>
         Number.isSafeInteger(value) && value > 0;
@@ -38,6 +39,17 @@ globalThis.combdslEvaluationWatchdog = (() => {
                 ? state.reductions
                 : 0;
         return `[timed out after more than ${reductions} steps]`;
+    };
+
+    const exactStepCount = reductions =>
+        safePositiveInteger(reductions) ? reductions : 0;
+
+    const displayedStepCount = reductions => {
+        const exact = exactStepCount(reductions);
+        if (exact === 0) {
+            return 0;
+        }
+        return exact - exact % stepDisplayInterval;
     };
 
     const acceptProgress = (state, message) => {
@@ -64,8 +76,11 @@ globalThis.combdslEvaluationWatchdog = (() => {
     return Object.freeze({
         heartbeatIntervalMs,
         timeoutMs,
+        stepDisplayInterval,
         createProgressState,
         acceptProgress,
+        exactStepCount,
+        displayedStepCount,
         timeoutMessage,
     });
 })();

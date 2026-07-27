@@ -239,6 +239,34 @@
         scrollToNewestOutput();
     };
 
+    const updateEvaluationProgress = (
+        request,
+        reductions,
+        exact = false,
+    ) => {
+        const completedMilestone = exact
+            ? evaluationWatchdog.exactStepCount(reductions)
+            : evaluationWatchdog.displayedStepCount(reductions);
+        const displayedMilestone = request.displayedSteps;
+        if (completedMilestone <= displayedMilestone) {
+            return;
+        }
+
+        if (request.outputEntry === undefined) {
+            request.outputEntry =
+                beginEvaluationOutput(request.source);
+        }
+        if (request.progressEntry === undefined) {
+            request.progressEntry = document.createElement("span");
+            request.progressEntry.dataset.kind = "progress";
+            request.outputEntry.append("\n", request.progressEntry);
+        }
+        request.displayedSteps = completedMilestone;
+        request.progressEntry.textContent =
+            `${completedMilestone} steps`;
+        scrollToNewestOutput();
+    };
+
     const clearCompletedSource = request => {
         if (source.value === request.source) {
             source.value = "";
@@ -420,6 +448,12 @@
                     request.evaluationProgress, message)) {
                     armEvaluationWatchdog(
                         request, evaluationWatchdog.timeoutMs);
+                    if (!request.singleStep &&
+                        !request.keyStep) {
+                        updateEvaluationProgress(
+                            request,
+                            request.evaluationProgress.reductions);
+                    }
                 }
                 return;
             }
@@ -585,6 +619,14 @@
                     failedEvaluationAndRestart(completedRequest);
                     return;
                 }
+                if (message.result.success &&
+                    !completedRequest.singleStep &&
+                    !completedRequest.keyStep) {
+                    updateEvaluationProgress(
+                        completedRequest,
+                        message.result.reductions,
+                        true);
+                }
                 clearEvaluationWatchdog(completedRequest);
                 activeRequest = undefined;
                 status.textContent = "Ready";
@@ -707,6 +749,7 @@
             colorize: colorizeEnabled,
             stepReady: false,
             stepPending: false,
+            displayedSteps: 0,
             awaitingReplacement: false,
             outputEntry: beginEvaluationOutput(startingExpression),
         };
