@@ -16,7 +16,10 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include <fmt/format.h>
+
 #include <combdsl/combinators.hpp>
+#include <combdsl/color_step_ansi.hpp>
 
 #include <csignal>
 #include <cstdlib>
@@ -37,6 +40,7 @@ using combdsl::S;
 using combdsl::Y;
 using combdsl::basis;
 using combdsl::color_step_html;
+using combdsl::color_step_ansi;
 using combdsl::defer;
 using combdsl::eval;
 using combdsl::evaluation_progress_callback;
@@ -44,6 +48,7 @@ using combdsl::force;
 using combdsl::input_escape;
 using combdsl::is_single_utf8_char;
 using combdsl::parse;
+using combdsl::parse_and_key_step;
 using combdsl::parse_and_step;
 using combdsl::parse_eval;
 using combdsl::parse_error;
@@ -459,6 +464,46 @@ void test_invalid_utf8_symbol(
 [[nodiscard]] std::string munsell_purple_argument(
     std::string_view argument) {
     return colored_argument("wop", argument);
+}
+
+[[nodiscard]] std::string terminal_colored_argument(
+    std::string_view background,
+    std::string_view argument) {
+    std::string result = "\x1b[38;2;255;255;255m";
+    result += background;
+    result += argument;
+    result += "\x1b[0m";
+    return result;
+}
+
+[[nodiscard]] std::string
+terminal_red_argument(std::string_view argument) {
+    return terminal_colored_argument(
+        "\x1b[48;2;255;000;000m", argument);
+}
+
+[[nodiscard]] std::string
+terminal_green_argument(std::string_view argument) {
+    return terminal_colored_argument(
+        "\x1b[48;2;000;204;000m", argument);
+}
+
+[[nodiscard]] std::string
+terminal_blue_argument(std::string_view argument) {
+    return terminal_colored_argument(
+        "\x1b[48;2;000;000;255m", argument);
+}
+
+[[nodiscard]] std::string terminal_dark_orange_argument(
+    std::string_view argument) {
+    return terminal_colored_argument(
+        "\x1b[48;2;255;140;000m", argument);
+}
+
+[[nodiscard]] std::string terminal_munsell_purple_argument(
+    std::string_view argument) {
+    return terminal_colored_argument(
+        "\x1b[48;2;204;000;255m", argument);
 }
 
 void test_parse_failure(
@@ -1917,6 +1962,39 @@ int main() {
          "Interrupted. Press Enter to resume; type q or Q then Enter to quit.\n"
          "Ix\n"
          "x\n");
+    test("parse and key step",
+         [&] {
+             std::istringstream input("\n\n\n");
+             parse_and_key_step("SKIx", std::cout, input);
+         },
+         "Press Enter for one reduction step; type q then Enter to quit.\n"
+         "SKIx\n"
+         "Ix\n"
+         "x\n");
+    test("parse and key step set only registers its definition",
+         [&] {
+             std::istringstream input;
+             parse_and_key_step(
+                 "set KeyStepI=I", std::cout, input);
+         },
+         "");
+    test("parse and key step show displays without stepping",
+         [&] {
+             std::istringstream input;
+             parse_and_key_step("show ShRed", std::cout, input);
+         },
+         "Kxy\n");
+    test("parse and key step forwards basis step",
+         [&] {
+             std::istringstream input("\n\n\n\n\n");
+             parse_and_key_step("Mx", std::cout, input, true);
+         },
+         "Press Enter for one reduction step; type q then Enter to quit.\n"
+         "Mx\n"
+         "SIIx\n"
+         "Ix(Ix)\n"
+         "x(Ix)\n"
+         "xx\n");
     const auto quoted_ski_x = quote(S)(K)(I)(x);
     test("quote SKIx", quoted_ski_x, "SKIx");
     test("takeout equal symbol",
@@ -3077,6 +3155,138 @@ int main() {
              red_argument("x") +
              "\n->SII" +
              red_argument("x") +
+             "\n");
+    test("terminal color step carries S argument colors through reduction",
+         [&] {
+             static_cast<void>(
+                 color_step_ansi(quote(S)(x)(y)(z)));
+         },
+         std::string{"  S"} +
+             terminal_red_argument("x") +
+             terminal_green_argument("y") +
+             terminal_blue_argument("z") +
+             "\n->" +
+             terminal_red_argument("x") +
+             terminal_blue_argument("z") +
+             "(" +
+             terminal_green_argument("y") +
+             terminal_blue_argument("z") +
+             ")\n");
+    test("terminal color step preserves trailing K operand",
+         [&] {
+             static_cast<void>(
+                 color_step_ansi(quote(K)(x)(y)(w)));
+         },
+         std::string{"  K"} +
+             terminal_red_argument("x") +
+             terminal_green_argument("y") +
+             "w\n->" +
+             terminal_red_argument("x") +
+             "w\n");
+    test("terminal color step carries fourth and fifth basis colors",
+         [&] {
+             static_cast<void>(
+                 color_step_ansi(
+                     quote(fifth_argument_projection)
+                         (u)(v)(w)(x)(y)(z)));
+         },
+         std::string{"  Fifth"} +
+             terminal_red_argument(" u") +
+             terminal_green_argument("v") +
+             terminal_blue_argument("w") +
+             terminal_dark_orange_argument("x") +
+             terminal_munsell_purple_argument("y") +
+             "z\n->" +
+             terminal_munsell_purple_argument("y") +
+             "z\n");
+    test("terminal color step leaves normal form uncolored",
+         [&] {
+             static_cast<void>(color_step_ansi(quote(x)));
+         },
+         "  x\n"
+         "->x\n");
+    test("terminal color step leaves zero-arity basis uncolored",
+         [&] {
+             static_cast<void>(
+                 color_step_ansi(quote(zero_arity_basis)));
+         },
+         "  Qzero\n"
+         "->K\n");
+    test("terminal color step preserves multicharacter basis spacing",
+         [&] {
+             static_cast<void>(
+                 color_step_ansi(quote(I)(Cstar)));
+         },
+         std::string{"  I"} +
+             terminal_red_argument(" Cstar") +
+             "\n->" +
+             terminal_red_argument("Cstar") +
+             "\n");
+    test("terminal color step does not HTML-escape expression text",
+         [&] {
+             static_cast<void>(
+                 color_step_ansi(
+                     quote(I)(std::string{"<&>\"'"})));
+         },
+         std::string{"  I"} +
+             terminal_red_argument(" <&>\"'") +
+             "\n->" +
+             terminal_red_argument("<&>\"'") +
+             "\n");
+    test("terminal color step preserves stream formatting",
+         [&] {
+             std::ostringstream output;
+             output << std::hex;
+             static_cast<void>(
+                 color_step_ansi(quote(I)(255), output));
+             std::cout << output.str();
+         },
+         std::string{"  I"} +
+             terminal_red_argument("<ff>") +
+             "\n->" +
+             terminal_red_argument("<ff>") +
+             "\n");
+    test("terminal color step leaves a failed output stream untouched",
+         [&] {
+             std::ostringstream output;
+             output.setstate(std::ios_base::failbit);
+             auto result =
+                 color_step_ansi(quote(I)(x), output);
+             std::cout << "returned: ";
+             result();
+         },
+         "returned: x");
+    test("terminal color step accepts an output stream without a buffer",
+         [&] {
+             std::ostream output(nullptr);
+             auto result =
+                 color_step_ansi(quote(I)(x), output);
+             std::cout << "returned: ";
+             result();
+         },
+         "returned: x");
+    test("terminal color step supports a custom output stream",
+         [&] {
+             std::ostringstream output;
+             auto expression =
+                 color_step_ansi(quote(I)(x), output);
+             std::cout << output.str() << "returned: ";
+             expression();
+         },
+         std::string{"  I"} +
+             terminal_red_argument("x") +
+             "\n->" +
+             terminal_red_argument("x") +
+             "\nreturned: x");
+    test("terminal color step forwards basis step",
+         [&] {
+             static_cast<void>(
+                 color_step_ansi(quote(M)(x), true));
+         },
+         std::string{"  M"} +
+             terminal_red_argument("x") +
+             "\n->SII" +
+             terminal_red_argument("x") +
              "\n");
     test("single step run resumes after SIGINT",
          [&] {

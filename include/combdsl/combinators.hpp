@@ -1704,7 +1704,7 @@ enum class quoted_node_kind {
     pending_sk,
     recursive_y,
     basis_argument,
-    html_argument,
+    colored_argument,
     basis
 };
 
@@ -2025,7 +2025,7 @@ private:
     quoted_expression argument_;
 };
 
-enum class html_argument_color {
+enum class argument_color {
     red,
     green,
     blue,
@@ -2033,15 +2033,30 @@ enum class html_argument_color {
     munsell_purple
 };
 
-class quoted_html_argument_node final : public quoted_node {
+class argument_color_renderer {
 public:
-    quoted_html_argument_node(
+    virtual ~argument_color_renderer() = default;
+
+    virtual void begin_argument_color(
+        std::ostream& output,
+        argument_color color) = 0;
+    virtual void end_argument_color(std::ostream& output) = 0;
+};
+
+[[nodiscard]] inline int argument_color_renderer_index() {
+    static int const index = std::ios_base::xalloc();
+    return index;
+}
+
+class quoted_colored_argument_node final : public quoted_node {
+public:
+    quoted_colored_argument_node(
         quoted_expression argument,
-        html_argument_color color)
+        argument_color color)
         : argument_(std::move(argument)), color_(color) {}
 
     [[nodiscard]] quoted_node_kind kind() const noexcept override {
-        return quoted_node_kind::html_argument;
+        return quoted_node_kind::colored_argument;
     }
 
     void print_to(std::ostream& output) const override {
@@ -2060,33 +2075,54 @@ private:
     void print_with_markup(
         std::ostream& output,
         bool as_operand) const {
-        print_html_markup(output, opening_markup());
-        if (as_operand) {
-            argument_.print_as_operand_to(output);
-        } else {
-            argument_.print_to(output);
+        auto print_argument = [&] {
+            if (as_operand) {
+                argument_.print_as_operand_to(output);
+            } else {
+                argument_.print_to(output);
+            }
+        };
+
+        auto* renderer = static_cast<argument_color_renderer*>(
+            output.pword(argument_color_renderer_index()));
+        if (renderer != nullptr) {
+            renderer->begin_argument_color(output, color_);
+            try {
+                print_argument();
+            } catch (...) {
+                try {
+                    renderer->end_argument_color(output);
+                } catch (...) {
+                }
+                throw;
+            }
+            renderer->end_argument_color(output);
+            return;
         }
+
+        print_html_markup(output, opening_markup());
+        print_argument();
         print_html_markup(output, "</span>");
     }
 
     [[nodiscard]] std::string_view opening_markup() const noexcept {
         switch (color_) {
-        case html_argument_color::red:
+        case argument_color::red:
             return "<span class=\"wor\">";
-        case html_argument_color::green:
+        case argument_color::green:
             return "<span class=\"wog\">";
-        case html_argument_color::blue:
+        case argument_color::blue:
             return "<span class=\"wob\">";
-        case html_argument_color::dark_orange:
+        case argument_color::dark_orange:
             return "<span class=\"woo\">";
-        case html_argument_color::munsell_purple:
+        case argument_color::munsell_purple:
             return "<span class=\"wop\">";
         }
         return {};
     }
 
     quoted_expression argument_;
-    html_argument_color color_;
+    argument_color color_;
 };
 
 class quoted_basis_node_base : public quoted_node {
@@ -2175,10 +2211,10 @@ contains_quoted_atom(quoted_expression const& atom,
         return contains_quoted_atom(
             atom,
             static_cast<quoted_basis_argument_node const&>(*root).argument());
-    case quoted_node_kind::html_argument:
+    case quoted_node_kind::colored_argument:
         return contains_quoted_atom(
             atom,
-            static_cast<quoted_html_argument_node const&>(*root).argument());
+            static_cast<quoted_colored_argument_node const&>(*root).argument());
     default:
         return false;
     }
@@ -2221,11 +2257,11 @@ make_quoted_basis_argument(quoted_expression argument) {
         std::make_shared<quoted_basis_argument_node>(std::move(argument)));
 }
 
-[[nodiscard]] inline quoted_expression make_quoted_html_argument(
+[[nodiscard]] inline quoted_expression make_quoted_colored_argument(
     quoted_expression argument,
-    html_argument_color color) {
+    argument_color color) {
     return quoted_access::make(
-        std::make_shared<quoted_html_argument_node>(
+        std::make_shared<quoted_colored_argument_node>(
             std::move(argument), color));
 }
 
@@ -2571,34 +2607,34 @@ restore_basis_arguments(quoted_expression const& expression) {
 }
 
 [[nodiscard]] inline quoted_expression
-strip_html_argument_colors(quoted_expression const& expression) {
+strip_argument_colors(quoted_expression const& expression) {
     auto const& root = quoted_access::root(expression);
     switch (root->kind()) {
-    case quoted_node_kind::html_argument:
-        return strip_html_argument_colors(
-            static_cast<quoted_html_argument_node const&>(*root)
+    case quoted_node_kind::colored_argument:
+        return strip_argument_colors(
+            static_cast<quoted_colored_argument_node const&>(*root)
                 .argument());
     case quoted_node_kind::application: {
         auto const& application =
             static_cast<quoted_application_node const&>(*root);
         return make_quoted_application(
-            strip_html_argument_colors(application.function()),
-            strip_html_argument_colors(application.argument()));
+            strip_argument_colors(application.function()),
+            strip_argument_colors(application.argument()));
     }
     case quoted_node_kind::pending_sk:
         return make_quoted_pending_sk(
-            strip_html_argument_colors(
+            strip_argument_colors(
                 static_cast<quoted_pending_sk_node const&>(*root)
                     .application()));
     case quoted_node_kind::recursive_y: {
         auto const& recursive =
             static_cast<quoted_recursive_y_node const&>(*root);
         return make_quoted_recursive_y(
-            strip_html_argument_colors(recursive.generator()));
+            strip_argument_colors(recursive.generator()));
     }
     case quoted_node_kind::basis_argument:
         return make_quoted_basis_argument(
-            strip_html_argument_colors(
+            strip_argument_colors(
                 static_cast<quoted_basis_argument_node const&>(*root)
                     .argument()));
     default:
@@ -2687,13 +2723,13 @@ reduce_pending_sk_applications(
                 make_quoted_primitive(quoted_node_kind::identity);
             auto const color =
                 replacements++ == 0
-                    ? html_argument_color::red
-                    : html_argument_color::green;
+                    ? argument_color::red
+                    : argument_color::green;
             results.emplace_back(pending_sk_reduction{
                 identity,
-                make_quoted_html_argument(
+                make_quoted_colored_argument(
                     pending.application(), color),
-                make_quoted_html_argument(identity, color)});
+                make_quoted_colored_argument(identity, color)});
             continue;
         }
 
@@ -2804,17 +2840,17 @@ reduce_sk_application_at_head(
         auto sk_application = make_quoted_application(
             make_quoted_application(head, arguments[0]),
             arguments[1]);
-        auto before = make_quoted_html_argument(
+        auto before = make_quoted_colored_argument(
             std::move(sk_application),
-            html_argument_color::red);
-        auto after = make_quoted_html_argument(
-            identity, html_argument_color::red);
+            argument_color::red);
+        auto after = make_quoted_colored_argument(
+            identity, argument_color::red);
 
         if (reduce_second_sk) {
-            before = before(make_quoted_html_argument(
-                arguments[2], html_argument_color::green));
-            after = after(make_quoted_html_argument(
-                identity, html_argument_color::green));
+            before = before(make_quoted_colored_argument(
+                arguments[2], argument_color::green));
+            after = after(make_quoted_colored_argument(
+                identity, argument_color::green));
         }
 
         trace->before = append_arguments(
@@ -2866,19 +2902,19 @@ reduce_at_head(
             return;
         }
 
-        constexpr html_argument_color colors[] = {
-            html_argument_color::red,
-            html_argument_color::green,
-            html_argument_color::blue,
-            html_argument_color::dark_orange,
-            html_argument_color::munsell_purple,
+        constexpr argument_color colors[] = {
+            argument_color::red,
+            argument_color::green,
+            argument_color::blue,
+            argument_color::dark_orange,
+            argument_color::munsell_purple,
         };
         auto const colored_arguments =
             std::min(arity, std::size(colors));
         for (std::size_t index = 0;
              index < colored_arguments;
              ++index) {
-            reversed_arguments[index] = make_quoted_html_argument(
+            reversed_arguments[index] = make_quoted_colored_argument(
                 std::move(reversed_arguments[index]), colors[index]);
         }
         trace->before = append_arguments(head, 0);
@@ -2953,8 +2989,8 @@ reduce_at_head(
                 *quoted_access::root(head));
         if (trace != nullptr) {
             head = make_quoted_recursive_y(
-                make_quoted_html_argument(
-                    recursive.generator(), html_argument_color::red));
+                make_quoted_colored_argument(
+                    recursive.generator(), argument_color::red));
             trace->before = append_arguments(head, 0);
         }
         auto const& traced_recursive =
@@ -3132,7 +3168,7 @@ single_step(quoted_expression expression, bool basis_step = false) {
     output.flush();
 
     if (reduced) {
-        return detail::strip_html_argument_colors(after);
+        return detail::strip_argument_colors(after);
     }
     return expression;
 }
@@ -3660,7 +3696,7 @@ struct parser_definition_inspection {
         }
         case quoted_node_kind::opaque:
         case quoted_node_kind::rec_func:
-        case quoted_node_kind::html_argument:
+        case quoted_node_kind::colored_argument:
             return false;
         }
     }
@@ -4929,6 +4965,25 @@ inline void parse_and_step(
     }
     single_step_run(
         std::move(parsed.expression), output, input, basis_step);
+}
+
+inline void parse_and_key_step(
+    std::string_view source,
+    std::ostream& output = std::cout,
+    std::istream& input = std::cin,
+    bool basis_step = false) {
+    auto parsed = detail::parse_input(source);
+    if (parsed.is_definition) {
+        return;
+    }
+    if (parsed.is_display_only) {
+        parsed.expression.print_to(output);
+        detail::print_layout(output, "\n");
+        output.flush();
+        return;
+    }
+    single_step_loop(
+        std::move(parsed.expression), input, output, basis_step);
 }
 
 #define BASIS(name, arity, expression) \

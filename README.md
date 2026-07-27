@@ -227,6 +227,14 @@ stream can be passed as the second argument. Like `single_step`, it also
 accepts `basis_step` as a second argument; when supplying both, pass the
 output stream before `basis_step`.
 
+For native terminal output, include
+`<combdsl/color_step_ansi.hpp>` and call `color_step_ansi` instead.
+It has the same arguments and return value, but uses the bundled
+`fmt/color.h` to emit true-color ANSI escape sequences with white text on the
+colored backgrounds. Because the function intentionally produces terminal
+control sequences even when passed a file or string stream, the caller should
+only select it when output to an ANSI-capable terminal is wanted.
+
 For the redex selected by that step, the first required argument is shown red,
 the second tunic green (`#00cc00`), the third blue, the fourth dark orange
 (`#ff8c00`), and the fifth Munsell purple (`#cc00ff`). This applies to `S`, `K`,
@@ -368,6 +376,9 @@ parse_and_step("K (I x) y");
 // Ix
 // x
 
+parse_and_key_step("K (I x) y");
+// waits for Enter before printing each reduction
+
 parse_eval("K (I x) y"); // prints: x
 ```
 
@@ -390,10 +401,10 @@ from its expression. The declaration acts like
 first registered definition wins, and `S`, `K`, `I`, and `Y` retain their
 primitive meanings. Because a leading decimal token followed by whitespace is
 treated as the arity, parenthesize a numeric basis name when it begins the
-stored expression. `parse_eval`, `read_parse_eval`, and `parse_and_step`
-register a declaration without evaluating or stepping its stored expression,
-and produce no output for the declaration itself. A malformed declaration does
-not register its name.
+stored expression. `parse_eval`, `read_parse_eval`, `parse_and_step`, and
+`parse_and_key_step` register a declaration without evaluating or stepping its
+stored expression, and produce no output for the declaration itself. A
+malformed declaration does not register its name.
 
 At the start of a line, `define` followed by whitespace creates a named basis
 by abstracting one or more lowercase symbols from a combinator expression.
@@ -421,7 +432,8 @@ This is equivalent to repeatedly calling `takeout`; for example,
 `define foo xyz = exp` stores
 `takeout(x, takeout(y, takeout(z, exp)))` with arity `3`. As with `set`,
 the definition command is silent under `parse_eval`, `read_parse_eval`, and
-`parse_and_step`, and malformed definitions are not registered.
+`parse_and_step` or `parse_and_key_step`, and malformed definitions are not
+registered.
 
 Occurrences of the defined name in the combinator expression are recursive
 references. If any remain after the argument symbols are abstracted, `define`
@@ -456,8 +468,9 @@ parse_eval("show x");   // parse error: x is not a defined name
 ```
 
 `parse("show M")` returns the displayed definition as a
-`quoted_expression`. `parse_eval`, `read_parse_eval`, and `parse_and_step`
-print a `show` result once without evaluating or stepping it.
+`quoted_expression`. `parse_eval`, `read_parse_eval`, `parse_and_step`, and
+`parse_and_key_step` print a `show` result once without evaluating or stepping
+it.
 
 `set_list()` returns the chronological history of successful user definitions
 as newline-separated `set` or `define` declarations. Changed redefinitions are
@@ -483,8 +496,8 @@ pre-defined bases are not included.
 `eval`. Its output and input streams can be supplied as the second and third
 arguments; they default to `std::cout` and `std::cin`. A trailing
 `basis_step` boolean is forwarded by `parse_eval`, `read_parse_eval`, and
-`parse_and_step`. A five-argument `parse_eval` overload also forwards an
-`evaluation_progress_callback` to `eval`.
+`parse_and_step` or `parse_and_key_step`. A five-argument `parse_eval` overload
+also forwards an `evaluation_progress_callback` to `eval`.
 
 `read_parse_eval` reads exactly one line and passes it to `parse_eval`:
 
@@ -504,7 +517,21 @@ The `crepl` executable applies `input_escape` to each line before passing it to
 When standard output is a terminal, long evaluations display the accumulated
 step count every 1,000 reductions by overwriting one status line; the line is
 cleared before evaluation output is printed. Redirected output contains no
-progress status. Enter exactly `q` or `Q` at its prompt to exit.
+progress status. Enter `single step` or `single step on` to print every
+subsequent reduction, and enter `single step off` to return to printing only
+the final result. Enter `key step` or `key step on` to display the starting
+expression and wait for Enter before each reduction; `key step off` disables
+that mode. Enabling either stepping mode disables the other, while turning off
+an inactive mode leaves the active mode unchanged. Omitting `on` or `off`
+enables the selected mode. `basis step`, `basis step on`, and `basis step off`
+independently control whether named-basis expansion is shown as a separate
+reduction in either stepping mode; ordinary evaluation ignores this setting.
+Enter `colorize`, `colorize on`, or `colorize off` to independently control
+ANSI argument highlighting while either stepping mode is active. Colorized
+stepping uses `color_step_ansi` and prints the final normal form without color
+at the left margin; ordinary evaluation ignores this setting.
+The mode commands themselves produce no output. Enter exactly `q` or `Q` at
+the prompt to exit.
 
 `S`, `K`, `I`, and `Y` are reserved combinators. A single-character name
 registered by `basis(...)` parses the same way, so `Mx` means `M` applied to
@@ -547,6 +574,7 @@ input length. Its human-readable `what()` message displays that position
 one-based, so the first byte is position 1 and the end of input is the input
 length plus 1. `parse_and_step` uses the same `std::cout` and `std::cin`
 defaults, including the same Ctrl-C pause behavior, as `single_step_run`.
+`parse_and_key_step` uses those stream defaults with `single_step_loop`.
 
 ## Recursion with Y
 

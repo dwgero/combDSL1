@@ -1,0 +1,15 @@
+SIIx
+Ix(Ix)
+x(Ix)
+xx
+xx
+Press Enter for one reduction step; type q then Enter to quit.
+Mx
+SIIx
+Ix(Ix)
+x(Ix)
+xx
+Press Enter for one reduction step; type q then Enter to quit.
+Mx
+xx
+xx

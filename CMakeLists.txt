@@ -203,6 +203,49 @@ if(COMBDSL_BUILD_TESTS)
         COMMAND combdsl_browser_load_tests
     )
 
+    if(TARGET crepl)
+        add_test(
+            NAME crepl_single_step
+            COMMAND
+                "${CMAKE_COMMAND}"
+                "-DCREPL_EXECUTABLE=$<TARGET_FILE:crepl>"
+                "-DCREPL_INPUT_FILE=${CMAKE_CURRENT_SOURCE_DIR}/tests/crepl_single_step_input.cmb"
+                "-DCREPL_EXPECTED_FILE=${CMAKE_CURRENT_SOURCE_DIR}/tests/crepl_single_step_expected.txt"
+                -P
+                "${CMAKE_CURRENT_SOURCE_DIR}/tests/crepl_command_test.cmake"
+        )
+        add_test(
+            NAME crepl_key_step
+            COMMAND
+                "${CMAKE_COMMAND}"
+                "-DCREPL_EXECUTABLE=$<TARGET_FILE:crepl>"
+                "-DCREPL_INPUT_FILE=${CMAKE_CURRENT_SOURCE_DIR}/tests/crepl_key_step_input.cmb"
+                "-DCREPL_EXPECTED_FILE=${CMAKE_CURRENT_SOURCE_DIR}/tests/crepl_key_step_expected.txt"
+                -P
+                "${CMAKE_CURRENT_SOURCE_DIR}/tests/crepl_command_test.cmake"
+        )
+        add_test(
+            NAME crepl_basis_step
+            COMMAND
+                "${CMAKE_COMMAND}"
+                "-DCREPL_EXECUTABLE=$<TARGET_FILE:crepl>"
+                "-DCREPL_INPUT_FILE=${CMAKE_CURRENT_SOURCE_DIR}/tests/crepl_basis_step_input.cmb"
+                "-DCREPL_EXPECTED_FILE=${CMAKE_CURRENT_SOURCE_DIR}/tests/crepl_basis_step_expected.txt"
+                -P
+                "${CMAKE_CURRENT_SOURCE_DIR}/tests/crepl_command_test.cmake"
+        )
+        add_test(
+            NAME crepl_colorize
+            COMMAND
+                "${CMAKE_COMMAND}"
+                "-DCREPL_EXECUTABLE=$<TARGET_FILE:crepl>"
+                "-DCREPL_INPUT_FILE=${CMAKE_CURRENT_SOURCE_DIR}/tests/crepl_colorize_input.cmb"
+                "-DCREPL_EXPECTED_FILE=${CMAKE_CURRENT_SOURCE_DIR}/tests/crepl_colorize_expected.txt"
+                -P
+                "${CMAKE_CURRENT_SOURCE_DIR}/tests/crepl_command_test.cmake"
+        )
+    endif()
+
     find_program(COMBDSL_NODE_EXECUTABLE NAMES node nodejs)
     if(COMBDSL_NODE_EXECUTABLE)
         add_test(
