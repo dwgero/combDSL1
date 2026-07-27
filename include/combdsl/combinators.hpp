@@ -3059,6 +3059,16 @@ single_step(quoted_expression expression, bool basis_step = false) {
         std::move(expression), std::cout, basis_step);
 }
 
+struct evaluation_progress {
+    std::size_t sequence;
+    std::size_t reductions;
+    std::size_t steps_per_message;
+    std::size_t next_steps_per_message;
+};
+
+using evaluation_progress_callback =
+    std::function<void(evaluation_progress const&)>;
+
 namespace detail {
 
 inline std::atomic_flag evaluation_not_interrupted = ATOMIC_FLAG_INIT;
@@ -3124,14 +3134,68 @@ enum class evaluation_interrupt_result {
     quit
 };
 
+class evaluation_progress_reporter {
+public:
+    explicit evaluation_progress_reporter(
+        evaluation_progress_callback const& callback)
+        : callback_(callback) {}
+
+    void completed_reduction() {
+        if (!callback_) {
+            return;
+        }
+
+        ++reductions_;
+        if (--steps_until_message_ != 0) {
+            return;
+        }
+
+        ++sequence_;
+        auto const steps_per_message = steps_per_message_;
+        auto next_steps_per_message = steps_per_message;
+        if (++messages_at_current_interval_ == messages_per_interval) {
+            messages_at_current_interval_ = 0;
+            if (steps_per_message <=
+                std::numeric_limits<std::size_t>::max() / 10) {
+                next_steps_per_message *= 10;
+            } else {
+                next_steps_per_message =
+                    std::numeric_limits<std::size_t>::max();
+            }
+        }
+
+        evaluation_progress const progress{
+            sequence_,
+            reductions_,
+            steps_per_message,
+            next_steps_per_message};
+        steps_per_message_ = next_steps_per_message;
+        steps_until_message_ = next_steps_per_message;
+        callback_(progress);
+    }
+
+private:
+    static constexpr std::size_t initial_steps_per_message = 100;
+    static constexpr std::size_t messages_per_interval = 10;
+
+    evaluation_progress_callback const& callback_;
+    std::size_t sequence_ = 0;
+    std::size_t reductions_ = 0;
+    std::size_t steps_per_message_ = initial_steps_per_message;
+    std::size_t steps_until_message_ = initial_steps_per_message;
+    std::size_t messages_at_current_interval_ = 0;
+};
+
 } // namespace detail
 
 inline void eval(
     quoted_expression expression,
-    std::ostream& output = std::cout,
-    std::istream& input = std::cin,
-    bool basis_step = false) {
+    std::ostream& output,
+    std::istream& input,
+    bool basis_step,
+    evaluation_progress_callback const& progress_callback) {
     detail::scoped_evaluation_sigint_handler sigint_handler;
+    detail::evaluation_progress_reporter progress(progress_callback);
     auto print_expression = [&output](quoted_expression const& current) {
         current.print_to(output);
         detail::print_layout(output, "\n");
@@ -3162,6 +3226,9 @@ inline void eval(
         auto const no_reduction =
             detail::quoted_access::root(next) ==
             detail::quoted_access::root(expression);
+        if (!no_reduction) {
+            progress.completed_reduction();
+        }
         auto const after_step = wait_after_interrupt(next);
         if (after_step == detail::evaluation_interrupt_result::quit) {
             return;
@@ -3179,6 +3246,19 @@ inline void eval(
         expression = std::move(next);
         expression_was_printed = next_was_printed;
     }
+}
+
+inline void eval(
+    quoted_expression expression,
+    std::ostream& output = std::cout,
+    std::istream& input = std::cin,
+    bool basis_step = false) {
+    eval(
+        std::move(expression),
+        output,
+        input,
+        basis_step,
+        evaluation_progress_callback{});
 }
 
 inline void single_step_loop(
@@ -3221,6 +3301,13 @@ inline void single_step_run(
     std::istream& input = std::cin,
     bool basis_step = false);
 
+inline void single_step_run(
+    quoted_expression expression,
+    std::ostream& output,
+    std::istream& input,
+    bool basis_step,
+    evaluation_progress_callback const& progress_callback);
+
 namespace detail {
 
 [[nodiscard]] inline bool wait_after_single_step_run_interrupt(
@@ -3238,8 +3325,10 @@ inline void single_step_run(
     quoted_expression expression,
     std::ostream& output,
     std::istream& input,
-    bool basis_step) {
+    bool basis_step,
+    evaluation_progress_callback const& progress_callback) {
     detail::scoped_evaluation_sigint_handler sigint_handler;
+    detail::evaluation_progress_reporter progress(progress_callback);
 
     output.flush();
 
@@ -3249,12 +3338,17 @@ inline void single_step_run(
         }
 
         auto next = single_step(expression, basis_step);
+        auto const no_reduction =
+            detail::quoted_access::root(next) ==
+            detail::quoted_access::root(expression);
+        if (!no_reduction) {
+            progress.completed_reduction();
+        }
         if (!detail::wait_after_single_step_run_interrupt(input, output)) {
             return;
         }
 
-        if (detail::quoted_access::root(next) ==
-            detail::quoted_access::root(expression)) {
+        if (no_reduction) {
             return;
         }
 
@@ -3263,6 +3357,19 @@ inline void single_step_run(
         detail::print_layout(output, "\n");
         output.flush();
     }
+}
+
+inline void single_step_run(
+    quoted_expression expression,
+    std::ostream& output,
+    std::istream& input,
+    bool basis_step) {
+    single_step_run(
+        std::move(expression),
+        output,
+        input,
+        basis_step,
+        evaluation_progress_callback{});
 }
 
 namespace detail {

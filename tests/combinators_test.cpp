@@ -29,6 +29,7 @@
 #include <string_view>
 #include <type_traits>
 #include <utility>
+#include <vector>
 
 using combdsl::I;
 using combdsl::K;
@@ -38,6 +39,8 @@ using combdsl::basis;
 using combdsl::color_step;
 using combdsl::defer;
 using combdsl::eval;
+using combdsl::evaluation_progress;
+using combdsl::evaluation_progress_callback;
 using combdsl::force;
 using combdsl::input_escape;
 using combdsl::is_single_utf8_char;
@@ -219,6 +222,15 @@ interrupting_identity_expression(combdsl::quoted_expression argument) {
     return interrupting_identity()(std::move(argument));
 }
 
+[[nodiscard]] combdsl::quoted_expression
+repeated_identity_expression(std::size_t reductions) {
+    auto expression = quote(x);
+    for (std::size_t index = 0; index < reductions; ++index) {
+        expression = quote(I)(expression);
+    }
+    return expression;
+}
+
 static_assert(std::is_same_v<decltype(I(std::declval<int&>())), int&>);
 static_assert(std::is_same_v<decltype(parse("x")),
                              combdsl::quoted_expression>);
@@ -244,6 +256,24 @@ static_assert(
     !combdsl::detail::is_raw_string_operand_v<volatile char (&)[5]>);
 static_assert(!combdsl::detail::is_raw_string_operand_v<volatile char*&>);
 static_assert(!combdsl::detail::is_raw_string_operand_v<char* volatile&>);
+using eval_without_progress_signature = void (*)(
+    combdsl::quoted_expression,
+    std::ostream&,
+    std::istream&,
+    bool);
+static_assert(std::is_same_v<
+              decltype(static_cast<eval_without_progress_signature>(&eval)),
+              eval_without_progress_signature>);
+using single_step_run_without_progress_signature = void (*)(
+    combdsl::quoted_expression,
+    std::ostream&,
+    std::istream&,
+    bool);
+static_assert(std::is_same_v<
+              decltype(static_cast<
+                       single_step_run_without_progress_signature>(
+                  &single_step_run)),
+              single_step_run_without_progress_signature>);
 
 std::size_t test_failures = 0;
 std::size_t tests_run = 0;
@@ -2213,6 +2243,150 @@ int main() {
          single_step(quoted_move_only_basis(x), true), "K<move-only>x");
     test("second default step leaves contracted move-only basis",
          single_step(single_step(quoted_move_only_basis(x))), "<move-only>");
+    test("progress reporter waits for 100 reductions",
+         [] {
+             std::vector<evaluation_progress> reports;
+             evaluation_progress_callback callback =
+                 [&reports](evaluation_progress const& progress) {
+                     reports.push_back(progress);
+                 };
+             combdsl::detail::evaluation_progress_reporter reporter(
+                 callback);
+             for (std::size_t step = 0; step < 99; ++step) {
+                 reporter.completed_reduction();
+             }
+             std::cout << reports.size();
+         },
+         "0");
+    test("progress reporter describes its first message",
+         [] {
+             std::vector<evaluation_progress> reports;
+             evaluation_progress_callback callback =
+                 [&reports](evaluation_progress const& progress) {
+                     reports.push_back(progress);
+                 };
+             combdsl::detail::evaluation_progress_reporter reporter(
+                 callback);
+             for (std::size_t step = 0; step < 100; ++step) {
+                 reporter.completed_reduction();
+             }
+             if (reports.empty()) {
+                 std::cout << "missing";
+                 return;
+             }
+             auto const& progress = reports.front();
+             std::cout << reports.size() << '/'
+                       << progress.sequence << '/'
+                       << progress.reductions << '/'
+                       << progress.steps_per_message << '/'
+                       << progress.next_steps_per_message;
+         },
+         "1/1/100/100/100");
+    test("progress reporter advances to 1000-step messages",
+         [] {
+             std::vector<evaluation_progress> reports;
+             evaluation_progress_callback callback =
+                 [&reports](evaluation_progress const& progress) {
+                     reports.push_back(progress);
+                 };
+             combdsl::detail::evaluation_progress_reporter reporter(
+                 callback);
+             for (std::size_t step = 0; step < 2000; ++step) {
+                 reporter.completed_reduction();
+             }
+             if (reports.size() < 11) {
+                 std::cout << reports.size();
+                 return;
+             }
+             auto const& transition = reports[9];
+             auto const& progress = reports[10];
+             std::cout << reports.size() << '/'
+                       << transition.sequence << '/'
+                       << transition.reductions << '/'
+                       << transition.steps_per_message << '/'
+                       << transition.next_steps_per_message << '/'
+                       << progress.sequence << '/'
+                       << progress.reductions << '/'
+                       << progress.steps_per_message << '/'
+                       << progress.next_steps_per_message;
+         },
+         "11/10/1000/100/1000/11/2000/1000/1000");
+    test("progress reporter advances to 10000-step messages",
+         [] {
+             std::vector<evaluation_progress> reports;
+             evaluation_progress_callback callback =
+                 [&reports](evaluation_progress const& progress) {
+                     reports.push_back(progress);
+                 };
+             combdsl::detail::evaluation_progress_reporter reporter(
+                 callback);
+             for (std::size_t step = 0; step < 11000; ++step) {
+                 reporter.completed_reduction();
+             }
+             if (reports.empty()) {
+                 std::cout << "missing";
+                 return;
+             }
+             auto const& progress = reports.back();
+             std::cout << reports.size() << '/'
+                       << progress.sequence << '/'
+                       << progress.reductions << '/'
+                       << progress.steps_per_message << '/'
+                       << progress.next_steps_per_message;
+         },
+         "20/20/11000/1000/10000");
+    test("eval reports completed reductions",
+         [] {
+             std::vector<evaluation_progress> reports;
+             std::istringstream input;
+             std::ostringstream output;
+             eval(
+                 repeated_identity_expression(100),
+                 output,
+                 input,
+                 false,
+                 [&reports](evaluation_progress const& progress) {
+                     reports.push_back(progress);
+                 });
+             if (reports.empty()) {
+                 std::cout << "missing/" << output.str();
+                 return;
+             }
+             std::cout << reports.size() << '/'
+                       << reports.front().reductions << '/'
+                       << output.str();
+         },
+         "1/100/x\n");
+    test("single step run reports completed reductions",
+         [] {
+             std::vector<evaluation_progress> reports;
+             std::istringstream input;
+             std::ostringstream output;
+             single_step_run(
+                 repeated_identity_expression(100),
+                 output,
+                 input,
+                 false,
+                 [&reports](evaluation_progress const& progress) {
+                     reports.push_back(progress);
+                 });
+             auto const text = output.str();
+             if (reports.empty()) {
+                 std::cout << "missing/" << text;
+                 return;
+             }
+             std::size_t lines = 0;
+             for (char value : text) {
+                 if (value == '\n') {
+                     ++lines;
+                 }
+             }
+             std::cout << reports.size() << '/'
+                       << reports.front().reductions << '/'
+                       << lines << '/'
+                       << (text.ends_with("x\n") ? "x" : "wrong");
+         },
+         "1/100/100/x");
     test("eval prints only reduced expression",
          [&] { eval(quoted_ski_x); },
          "x\n");

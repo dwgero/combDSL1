@@ -679,9 +679,11 @@ loads below the cutoff report
 cutoff displays only the `Too many errors` status after its diagnostics.
 Basis Step and Colorize may remain on when neither stepping mode is active;
 ordinary evaluation ignores both settings. Cancelling an evaluation appends
-`[cancelled]` beneath its starting expression. The Help button summarizes the
-stepping, definition, saving, and loading options in a keyboard-accessible
-dialog.
+`[cancelled]` beneath its starting expression. If automatic evaluation stops
+reporting progress, the watchdog appends
+`[timed out after more than nnn steps]`, where `nnn` is the last reported
+accumulated reduction count. The Help button summarizes the stepping,
+definition, saving, and loading options in a keyboard-accessible dialog.
 
 For another CMake project, link the interface target after adding this project:
 

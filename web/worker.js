@@ -151,15 +151,22 @@ self.addEventListener("message", async event => {
                 }
                 self.postMessage(response);
             } else {
+                self.postMessage({
+                    type: "eval-started",
+                    id: message.id,
+                });
                 const result = message.singleStep
                     ? (message.colorize
                         ? module.colorStepRun(
                             String(message.source),
-                            Boolean(message.basisStep))
+                            Boolean(message.basisStep),
+                            message.id)
                         : module.singleStepRun(
                             String(message.source),
-                            Boolean(message.basisStep)))
-                    : module.parseEval(String(message.source));
+                            Boolean(message.basisStep),
+                            message.id))
+                    : module.parseEval(
+                        String(message.source), message.id);
                 const response = {
                     type: "result",
                     id: message.id,

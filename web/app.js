@@ -20,6 +20,8 @@
 "use strict";
 
 (() => {
+    const evaluationWatchdog =
+        globalThis.combdslEvaluationWatchdog;
     const form = document.querySelector("#evaluation-form");
     const source = document.querySelector("#source");
     const singleStep = document.querySelector("#single-step");
@@ -127,6 +129,39 @@
 
     window.addEventListener("pageshow", focusSourceAfterNextPaint);
 
+    const clearEvaluationWatchdog = request => {
+        if (request?.evaluationWatchdogTimer !== undefined) {
+            clearTimeout(request.evaluationWatchdogTimer);
+            request.evaluationWatchdogTimer = undefined;
+        }
+        if (request !== undefined) {
+            request.evaluationWatchdogToken =
+                (request.evaluationWatchdogToken ?? 0) + 1;
+        }
+    };
+
+    const armEvaluationWatchdog = (request, waitMs) => {
+        clearEvaluationWatchdog(request);
+        if (request.keyStep) {
+            return;
+        }
+
+        const expectedWorker = request.evaluationWorker;
+        const expectedGeneration = request.evaluationGeneration;
+        const token = request.evaluationWatchdogToken;
+        const maximumTimerDelay = 2_147_483_647;
+        request.evaluationWatchdogTimer = setTimeout(() => {
+            if (activeRequest !== request ||
+                worker !== expectedWorker ||
+                generation !== expectedGeneration ||
+                request.evaluationWatchdogToken !== token) {
+                return;
+            }
+            request.evaluationWatchdogTimer = undefined;
+            timeoutAndRestart(request);
+        }, Math.min(waitMs, maximumTimerDelay));
+    };
+
     const createOutputEntry = () => {
         if (output.childNodes.length !== 0) {
             output.append("\n\n");
@@ -220,6 +255,15 @@
                 worker !== evaluationWorker) {
                 return;
             }
+            if (!request.keyStep) {
+                request.evaluationWorker = evaluationWorker;
+                request.evaluationGeneration = generation;
+                request.evaluationStarted = false;
+                request.evaluationProgress =
+                    evaluationWatchdog.createProgressState();
+                armEvaluationWatchdog(
+                    request, evaluationWatchdog.initialWaitMs);
+            }
             evaluationWorker.postMessage({
                 type: "evaluate",
                 id: request.id,
@@ -300,6 +344,7 @@
     };
 
     const startWorker = (setListToRestore = "") => {
+        clearEvaluationWatchdog(activeRequest);
         dismissReplacementDialog();
         const currentGeneration = ++generation;
         let terminationExpected = false;
@@ -330,6 +375,32 @@
             }
 
             const message = event.data;
+            if (message.type === "eval-started" &&
+                message.id === activeRequest?.id &&
+                !activeRequest.keyStep &&
+                !activeRequest.evaluationStarted) {
+                const request = activeRequest;
+                request.evaluationStarted = true;
+                request.evaluationProgress =
+                    evaluationWatchdog.createProgressState();
+                armEvaluationWatchdog(
+                    request, evaluationWatchdog.initialWaitMs);
+                return;
+            }
+
+            if (message.type === "eval-progress" &&
+                message.id === activeRequest?.id &&
+                !activeRequest.keyStep &&
+                activeRequest.evaluationStarted) {
+                const request = activeRequest;
+                const waitMs = evaluationWatchdog.acceptProgress(
+                    request.evaluationProgress, message);
+                if (waitMs !== undefined) {
+                    armEvaluationWatchdog(request, waitMs);
+                }
+                return;
+            }
+
             if (message.type === "ready") {
                 if (setListToRestore !== "") {
                     restoreRequestId = ++nextRequestId;
@@ -487,6 +558,11 @@
             if (message.type === "result" &&
                 message.id === activeRequest?.id) {
                 const completedRequest = activeRequest;
+                if (message.result.recoverWorker) {
+                    cancelAndRestart(completedRequest);
+                    return;
+                }
+                clearEvaluationWatchdog(completedRequest);
                 activeRequest = undefined;
                 status.textContent = "Ready";
                 if (message.result.success) {
@@ -511,6 +587,10 @@
 
             if (message.type === "fatal") {
                 const failedRequest = activeRequest;
+                if (failedRequest !== undefined) {
+                    cancelAndRestart(failedRequest);
+                    return;
+                }
                 dismissReplacementDialog();
                 activeRequest = undefined;
                 loadRequest = undefined;
@@ -536,6 +616,10 @@
             }
             event.preventDefault();
             const failedRequest = activeRequest;
+            if (failedRequest !== undefined) {
+                cancelAndRestart(failedRequest);
+                return;
+            }
             dismissReplacementDialog();
             activeRequest = undefined;
             loadRequest = undefined;
@@ -549,6 +633,29 @@
             }
             updateControls();
         });
+    };
+
+    const restartEvaluation = (request, message) => {
+        if (activeRequest !== request) {
+            return;
+        }
+
+        clearEvaluationWatchdog(request);
+        terminateWorker();
+        completeEvaluationOutput(request, message);
+        startWorker(savedSetList);
+    };
+
+    const cancelAndRestart = request => {
+        restartEvaluation(request, "[cancelled]");
+    };
+
+    const timeoutAndRestart = request => {
+        restartEvaluation(
+            request,
+            evaluationWatchdog.timeoutMessage(
+                request.evaluationProgress),
+        );
     };
 
     form.addEventListener("submit", event => {
@@ -703,11 +810,7 @@
         if (activeRequest === undefined) {
             return;
         }
-
-        const cancelledRequest = activeRequest;
-        terminateWorker();
-        completeEvaluationOutput(cancelledRequest, "[cancelled]");
-        startWorker(savedSetList);
+        cancelAndRestart(activeRequest);
     });
 
     const configureDialog = (button, dialog) => {
@@ -789,6 +892,7 @@
     });
 
     window.addEventListener("pagehide", () => {
+        clearEvaluationWatchdog(activeRequest);
         if (saveDownloadUrl !== undefined) {
             URL.revokeObjectURL(saveDownloadUrl);
         }

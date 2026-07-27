@@ -99,7 +99,14 @@ if(COMBDSL_BUILD_BROWSER)
             RUNTIME_OUTPUT_DIRECTORY "${COMBDSL_BROWSER_OUTPUT_DIRECTORY}"
     )
 
-    foreach(asset IN ITEMS index.html app.js worker.js)
+    foreach(
+        asset
+        IN ITEMS
+            index.html
+            app.js
+            worker.js
+            evaluation_watchdog.js
+    )
         configure_file(
             "${CMAKE_CURRENT_SOURCE_DIR}/web/${asset}"
             "${COMBDSL_BROWSER_OUTPUT_DIRECTORY}/${asset}"
@@ -128,6 +135,10 @@ if(COMBDSL_BUILD_BROWSER)
             "${CMAKE_COMMAND}" -E copy_if_different
             "${COMBDSL_BROWSER_OUTPUT_DIRECTORY}/worker.js"
             "${COMBDSL_BROWSER_DOCS_DIRECTORY}/worker.js"
+        COMMAND
+            "${CMAKE_COMMAND}" -E copy_if_different
+            "${COMBDSL_BROWSER_OUTPUT_DIRECTORY}/evaluation_watchdog.js"
+            "${COMBDSL_BROWSER_DOCS_DIRECTORY}/evaluation_watchdog.js"
         COMMAND
             "${CMAKE_COMMAND}" -E copy_if_different
             "${COMBDSL_BROWSER_OUTPUT_DIRECTORY}/combdsl.js"
@@ -189,4 +200,15 @@ if(COMBDSL_BUILD_TESTS)
         NAME browser_load
         COMMAND combdsl_browser_load_tests
     )
+
+    find_program(COMBDSL_NODE_EXECUTABLE NAMES node nodejs)
+    if(COMBDSL_NODE_EXECUTABLE)
+        add_test(
+            NAME evaluation_watchdog
+            COMMAND
+                "${COMBDSL_NODE_EXECUTABLE}"
+                --test
+                "${CMAKE_CURRENT_SOURCE_DIR}/tests/evaluation_watchdog_test.mjs"
+        )
+    endif()
 endif()
