@@ -320,7 +320,7 @@ make_evaluation_progress_callback(
 }
 
 [[nodiscard]] single_step_result take_single_step(
-    bool basis_step, bool colorize) {
+    bool basis_step, bool colorize, bool look_ahead) {
     if (!stepped_expression.has_value()) {
         return {
             false, false, false, false, {},
@@ -336,17 +336,30 @@ make_evaluation_progress_callback(
                   *stepped_expression, basis_step);
         if (combdsl::detail::quoted_access::root(next) ==
             combdsl::detail::quoted_access::root(*stepped_expression)) {
+            if (colorize && !look_ahead) {
+                output.str({});
+                output.clear();
+                combdsl::detail::print_quoted_html(
+                    output, *stepped_expression);
+                output << '\n';
+            }
+            auto final_output = output.str();
             stepped_expression.reset();
-            return {true, false, true, false, {}, {}};
+            return {
+                true, false, true, false,
+                std::move(final_output), {}};
         }
 
         stepped_expression = std::move(next);
-        auto following = combdsl::single_step(
-            *stepped_expression, basis_step);
-        bool complete =
-            combdsl::detail::quoted_access::root(following) ==
-            combdsl::detail::quoted_access::root(
-                *stepped_expression);
+        bool complete = false;
+        if (look_ahead) {
+            auto following = combdsl::single_step(
+                *stepped_expression, basis_step);
+            complete =
+                combdsl::detail::quoted_access::root(following) ==
+                combdsl::detail::quoted_access::root(
+                    *stepped_expression);
+        }
         if (colorize) {
             if (complete) {
                 combdsl::detail::print_quoted_html(

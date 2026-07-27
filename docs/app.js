@@ -67,6 +67,10 @@
     let basisStepEnabled = false;
     let keyStepEnabled = false;
     let colorizeEnabled = false;
+    let outputScrollScheduled = false;
+    const blobDownloadsSupported =
+        typeof URL.createObjectURL === "function" &&
+        typeof URL.revokeObjectURL === "function";
 
     const errorMessage = error =>
         error instanceof Error ? error.message : String(error);
@@ -91,6 +95,12 @@
         load.disabled = !ready || busy;
         loadFile.disabled = !ready || busy;
         source.readOnly = busy;
+        output.setAttribute(
+            "aria-live",
+            evaluating && activeRequest.singleStep &&
+                !activeRequest.keyStep
+                ? "off"
+                : "polite");
     };
 
     const updateModeButtons = () => {
@@ -109,7 +119,14 @@
         : text;
 
     const scrollToNewestOutput = () => {
-        output.scrollTop = output.scrollHeight;
+        if (outputScrollScheduled) {
+            return;
+        }
+        outputScrollScheduled = true;
+        requestAnimationFrame(() => {
+            outputScrollScheduled = false;
+            output.scrollTop = output.scrollHeight;
+        });
     };
 
     const afterNextPaint = callback => {
@@ -239,6 +256,39 @@
         scrollToNewestOutput();
     };
 
+    const streamSingleStepOutput = (
+        request,
+        text,
+        html,
+    ) => {
+        const content = outputText(String(text));
+        if (content === "") {
+            return;
+        }
+        if (html) {
+            completeEvaluationOutput(
+                request, content, "output", true);
+            return;
+        }
+
+        if (request.outputEntry === undefined) {
+            request.outputEntry =
+                beginEvaluationOutput(request.source);
+        }
+        if (request.streamedPlainOutput === undefined) {
+            const result = document.createElement("span");
+            result.dataset.kind = "output";
+            request.streamedPlainOutput =
+                document.createTextNode(content);
+            result.append(request.streamedPlainOutput);
+            request.outputEntry.append("\n", result);
+        } else {
+            request.streamedPlainOutput.appendData(
+                `\n${content}`);
+        }
+        scrollToNewestOutput();
+    };
+
     const updateEvaluationProgress = (
         request,
         reductions,
@@ -275,15 +325,19 @@
 
     const updateSavedSetList = setList => {
         savedSetList = String(setList);
-        if (saveDownloadUrl !== undefined) {
+        if (saveDownloadUrl !== undefined &&
+            blobDownloadsSupported) {
             const previousUrl = saveDownloadUrl;
             // WebKit may still be reading a recently downloaded Blob URL.
             setTimeout(() => URL.revokeObjectURL(previousUrl), 60000);
         }
-        saveDownloadUrl = URL.createObjectURL(new Blob(
-            [savedSetList],
-            {type: "text/plain;charset=utf-8"},
-        ));
+        saveDownloadUrl = blobDownloadsSupported
+            ? URL.createObjectURL(new Blob(
+                [savedSetList],
+                {type: "text/plain;charset=utf-8"},
+            ))
+            : "data:text/plain;charset=utf-8," +
+                encodeURIComponent(savedSetList);
         updateControls();
     };
 
@@ -576,6 +630,17 @@
                 return;
             }
 
+            if (message.type === "single-step-output" &&
+                message.id === activeRequest?.id &&
+                activeRequest.singleStep &&
+                !activeRequest.keyStep) {
+                streamSingleStepOutput(
+                    activeRequest,
+                    message.output,
+                    Boolean(message.html));
+                return;
+            }
+
             if (message.type === "step-result" &&
                 message.id === activeRequest?.id &&
                 activeRequest.keyStep) {
@@ -638,8 +703,7 @@
                             completedRequest,
                             message.result.output,
                             "output",
-                            completedRequest.singleStep &&
-                                completedRequest.colorize);
+                            Boolean(message.html));
                     }
                     clearCompletedSource(completedRequest);
                 } else {
@@ -968,7 +1032,8 @@
 
     window.addEventListener("pagehide", () => {
         clearEvaluationWatchdog(activeRequest);
-        if (saveDownloadUrl !== undefined) {
+        if (saveDownloadUrl !== undefined &&
+            blobDownloadsSupported) {
             URL.revokeObjectURL(saveDownloadUrl);
         }
     }, {once: true});

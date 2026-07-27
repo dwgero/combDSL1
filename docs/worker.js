@@ -34,9 +34,107 @@ let busy = false;
 let steppingRequestId;
 let steppingBasisStep = false;
 let steppingColorize = false;
+let steppingAutomatically = false;
+let steppingReductions = 0;
+let steppingProgressSequence = 0;
+let steppingLastProgressAt = 0;
+let automaticStepTimer;
+const automaticStepIntervalMs = 16;
 
 const errorMessage = error =>
     error instanceof Error ? error.message : String(error);
+
+const resetStepping = () => {
+    if (automaticStepTimer !== undefined) {
+        clearTimeout(automaticStepTimer);
+        automaticStepTimer = undefined;
+    }
+    steppingRequestId = undefined;
+    steppingBasisStep = false;
+    steppingColorize = false;
+    steppingAutomatically = false;
+    steppingReductions = 0;
+    steppingProgressSequence = 0;
+    steppingLastProgressAt = 0;
+};
+
+const evaluationResult = (
+    result,
+    reductions = 0,
+    output = result.output,
+) => ({
+    success: Boolean(result.success),
+    definition: Boolean(result.definition),
+    recoverWorker: false,
+    output: String(output ?? ""),
+    error: String(result.error ?? ""),
+    reductions,
+});
+
+const scheduleAutomaticStep = (module, requestId) => {
+    automaticStepTimer = setTimeout(() => {
+        automaticStepTimer = undefined;
+        if (!steppingAutomatically ||
+            steppingRequestId !== requestId) {
+            return;
+        }
+
+        busy = true;
+        try {
+            const result = module.takeSingleStep(
+                steppingBasisStep, steppingColorize, false);
+            if (result.success &&
+                String(result.output) !== "") {
+                self.postMessage({
+                    type: "single-step-output",
+                    id: requestId,
+                    output: String(result.output),
+                    html: steppingColorize,
+                });
+            }
+
+            if (result.success && result.reduced) {
+                ++steppingReductions;
+                const now = performance.now();
+                if (now - steppingLastProgressAt >= 100) {
+                    steppingLastProgressAt = now;
+                    self.postMessage({
+                        type: "eval-progress",
+                        id: requestId,
+                        sequence: ++steppingProgressSequence,
+                        reductions: steppingReductions,
+                    });
+                }
+            }
+
+            if (!result.success || !result.reduced ||
+                result.complete) {
+                const reductions = steppingReductions;
+                const response = {
+                    type: "result",
+                    id: requestId,
+                    html: false,
+                    result: evaluationResult(
+                        result, reductions, ""),
+                };
+                resetStepping();
+                self.postMessage(response);
+                return;
+            }
+
+            scheduleAutomaticStep(module, requestId);
+        } catch (error) {
+            resetStepping();
+            self.postMessage({
+                type: "fatal",
+                id: requestId,
+                error: errorMessage(error),
+            });
+        } finally {
+            busy = false;
+        }
+    }, automaticStepIntervalMs);
+};
 
 try {
     importScripts(assetUrl("combdsl.js"));
@@ -144,6 +242,7 @@ self.addEventListener("message", async event => {
                         ? "result"
                         : "step-ready",
                     id: message.id,
+                    html: false,
                     result,
                 };
                 if (result.success && result.definition) {
@@ -155,21 +254,44 @@ self.addEventListener("message", async event => {
                     type: "eval-started",
                     id: message.id,
                 });
-                const result = message.singleStep
-                    ? (message.colorize
-                        ? module.colorStepRun(
-                            String(message.source),
-                            Boolean(message.basisStep),
-                            message.id)
-                        : module.singleStepRun(
-                            String(message.source),
-                            Boolean(message.basisStep),
-                            message.id))
-                    : module.parseEval(
-                        String(message.source), message.id);
+                if (message.singleStep) {
+                    const result = module.beginSingleStep(
+                        String(message.source));
+                    if (result.success && !result.complete) {
+                        steppingRequestId = message.id;
+                        steppingBasisStep =
+                            Boolean(message.basisStep);
+                        steppingColorize =
+                            Boolean(message.colorize);
+                        steppingAutomatically = true;
+                        steppingReductions = 0;
+                        steppingProgressSequence = 0;
+                        steppingLastProgressAt =
+                            performance.now();
+                        scheduleAutomaticStep(
+                            module, message.id);
+                        return;
+                    }
+
+                    const response = {
+                        type: "result",
+                        id: message.id,
+                        html: false,
+                        result: evaluationResult(result),
+                    };
+                    if (result.success && result.definition) {
+                        response.setList = module.setList();
+                    }
+                    self.postMessage(response);
+                    return;
+                }
+
+                const result = module.parseEval(
+                    String(message.source), message.id);
                 const response = {
                     type: "result",
                     id: message.id,
+                    html: false,
                     result,
                 };
                 if (result.success && result.definition) {
@@ -195,11 +317,9 @@ self.addEventListener("message", async event => {
         try {
             const module = await modulePromise;
             const result = module.takeSingleStep(
-                steppingBasisStep, steppingColorize);
+                steppingBasisStep, steppingColorize, true);
             if (!result.success || !result.reduced || result.complete) {
-                steppingRequestId = undefined;
-                steppingBasisStep = false;
-                steppingColorize = false;
+                resetStepping();
             }
             self.postMessage({
                 type: "step-result",
@@ -207,9 +327,7 @@ self.addEventListener("message", async event => {
                 result,
             });
         } catch (error) {
-            steppingRequestId = undefined;
-            steppingBasisStep = false;
-            steppingColorize = false;
+            resetStepping();
             self.postMessage({
                 type: "fatal",
                 id: message.id,

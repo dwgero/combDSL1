@@ -212,5 +212,12 @@ if(COMBDSL_BUILD_TESTS)
                 --test
                 "${CMAKE_CURRENT_SOURCE_DIR}/tests/evaluation_watchdog_test.mjs"
         )
+        add_test(
+            NAME worker_single_step
+            COMMAND
+                "${COMBDSL_NODE_EXECUTABLE}"
+                --test
+                "${CMAKE_CURRENT_SOURCE_DIR}/tests/worker_single_step_test.mjs"
+        )
     endif()
 endif()
