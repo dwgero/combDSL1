@@ -52,6 +52,23 @@ globalThis.combdslEvaluationWatchdog = (() => {
         return exact - exact % stepDisplayInterval;
     };
 
+    const finalDisplayedStepCount = reductions =>
+        displayedStepCount(reductions) === 0
+            ? 0
+            : exactStepCount(reductions);
+
+    const stepCountMessage = (reductions, final) => {
+        const count = final
+            ? finalDisplayedStepCount(reductions)
+            : displayedStepCount(reductions);
+        if (count === 0) {
+            return "";
+        }
+        return final
+            ? `[${count} total steps]`
+            : `[${count} steps so far]`;
+    };
+
     const acceptProgress = (state, message) => {
         if (state === null || typeof state !== "object" ||
             message === null || typeof message !== "object") {
@@ -81,6 +98,8 @@ globalThis.combdslEvaluationWatchdog = (() => {
         acceptProgress,
         exactStepCount,
         displayedStepCount,
+        finalDisplayedStepCount,
+        stepCountMessage,
         timeoutMessage,
     });
 })();

@@ -286,9 +286,13 @@ Quoted application nodes are immutable and shared, so an `S` reduction can
 reuse the same quoted operand even when it owns a move-only value.
 
 `eval` repeatedly applies this reduction technique and prints the resulting
-expression as one line when no eligible reduction remains. It does not print
-intermediate expressions or a status label during an uninterrupted
-evaluation, and its output defaults to `std::cout`:
+expression as one line when no eligible reduction remains. A partially
+applied `K`, such as `K(Ix)`, is treated as opaque, so its stored argument is
+not reduced before `K` receives the argument that determines whether the
+stored value is needed. The single-step functions still allow that stored
+argument to be explored explicitly. `eval` does not print intermediate
+expressions or a status label during an uninterrupted evaluation, and its
+output defaults to `std::cout`:
 
 ```cpp
 eval(quote(S)(K)(I)(x)); // prints: x

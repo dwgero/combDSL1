@@ -295,10 +295,13 @@
         exact = false,
     ) => {
         const completedMilestone = exact
-            ? evaluationWatchdog.exactStepCount(reductions)
+            ? evaluationWatchdog.finalDisplayedStepCount(reductions)
             : evaluationWatchdog.displayedStepCount(reductions);
         const displayedMilestone = request.displayedSteps;
-        if (completedMilestone <= displayedMilestone) {
+        if (completedMilestone === 0 ||
+            completedMilestone < displayedMilestone ||
+            (!exact &&
+                completedMilestone === displayedMilestone)) {
             return;
         }
 
@@ -313,7 +316,8 @@
         }
         request.displayedSteps = completedMilestone;
         request.progressEntry.textContent =
-            `${completedMilestone} steps`;
+            evaluationWatchdog.stepCountMessage(
+                reductions, exact);
         scrollToNewestOutput();
     };
 

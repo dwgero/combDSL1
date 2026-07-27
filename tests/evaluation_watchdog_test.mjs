@@ -90,6 +90,56 @@ test("preserves an exact valid final reduction count", () => {
     }
 });
 
+test("only displays a final count after reaching one thousand steps", () => {
+    const expected = new Map([
+        [1, 0],
+        [999, 0],
+        [1000, 1000],
+        [1001, 1001],
+        [2537, 2537],
+    ]);
+
+    for (const [reductions, displayed] of expected) {
+        assert.equal(
+            watchdog.finalDisplayedStepCount(reductions),
+            displayed);
+    }
+
+    for (const invalid of [
+        0,
+        -1,
+        1.5,
+        Number.NaN,
+        Number.POSITIVE_INFINITY,
+        Number.MAX_SAFE_INTEGER + 1,
+        "1000",
+        null,
+        undefined,
+    ]) {
+        assert.equal(
+            watchdog.finalDisplayedStepCount(invalid), 0);
+    }
+});
+
+test("formats running and final step counts", () => {
+    const expected = [
+        [1, false, ""],
+        [999, false, ""],
+        [1000, false, "[1000 steps so far]"],
+        [2537, false, "[2000 steps so far]"],
+        [1, true, ""],
+        [999, true, ""],
+        [1000, true, "[1000 total steps]"],
+        [2537, true, "[2537 total steps]"],
+    ];
+
+    for (const [reductions, final, message] of expected) {
+        assert.equal(
+            watchdog.stepCountMessage(reductions, final),
+            message);
+    }
+});
+
 test("creates empty progress state", () => {
     const state = watchdog.createProgressState();
 

@@ -2527,6 +2527,7 @@ namespace detail {
 struct reduction_options {
     bool basis_step = false;
     bool reduce_recursive_y = true;
+    bool reduce_partial_k_argument = true;
 };
 
 struct reduction_trace {
@@ -2647,10 +2648,24 @@ struct pending_sk_reduction {
     quoted_expression after;
 };
 
+[[nodiscard]] inline bool
+is_partially_applied_k(quoted_expression const& expression) {
+    auto const& root = quoted_access::root(expression);
+    if (root->kind() != quoted_node_kind::application) {
+        return false;
+    }
+
+    auto const& application =
+        static_cast<quoted_application_node const&>(*root);
+    return quoted_access::root(application.function())->kind() ==
+           quoted_node_kind::constant;
+}
+
 [[nodiscard]] inline std::optional<pending_sk_reduction>
 reduce_pending_sk_applications(
     quoted_expression const& expression,
-    std::size_t& replacements) {
+    std::size_t& replacements,
+    bool reduce_partial_k_argument) {
     struct traversal_frame {
         quoted_expression expression;
         bool children_visited = false;
@@ -2690,6 +2705,11 @@ reduce_pending_sk_applications(
         auto const& application =
             static_cast<quoted_application_node const&>(*root);
         if (!frame.children_visited) {
+            if (!reduce_partial_k_argument &&
+                is_partially_applied_k(frame.expression)) {
+                results.emplace_back(std::nullopt);
+                continue;
+            }
             frame.children_visited = true;
             traversal.push_back(std::move(frame));
             traversal.push_back({application.argument()});
@@ -2960,9 +2980,11 @@ reduce_at_head(
                     reversed_arguments[index]));
             }
 
-            constexpr reduction_options basis_reduction{
+            reduction_options const basis_reduction{
                 .basis_step = false,
                 .reduce_recursive_y = false,
+                .reduce_partial_k_argument =
+                    options.reduce_partial_k_argument,
             };
             while (auto reduced =
                        reduce_next_redex(result, basis_reduction)) {
@@ -2988,7 +3010,9 @@ reduce_next_redex(quoted_expression const& expression,
                   reduction_trace* trace) {
     std::size_t pending_replacements = 0;
     if (auto pending = reduce_pending_sk_applications(
-            expression, pending_replacements)) {
+            expression,
+            pending_replacements,
+            options.reduce_partial_k_argument)) {
         if (trace != nullptr) {
             trace->before = pending->before;
             trace->after = pending->after;
@@ -3039,14 +3063,17 @@ reduce_next_redex(quoted_expression const& expression,
 
         auto const& root = quoted_access::root(current);
         if (root->kind() == quoted_node_kind::application) {
-            auto const& application =
-                static_cast<quoted_application_node const&>(*root);
-            path.push_back({
-                application.function(),
-                application.argument(),
-            });
-            current = application.function();
-            continue;
+            if (options.reduce_partial_k_argument ||
+                !is_partially_applied_k(current)) {
+                auto const& application =
+                    static_cast<quoted_application_node const&>(*root);
+                path.push_back({
+                    application.function(),
+                    application.argument(),
+                });
+                current = application.function();
+                continue;
+            }
         }
 
         bool found_argument = false;
@@ -3241,7 +3268,15 @@ inline void eval(
             expression_was_printed = true;
         }
 
-        auto next = single_step(expression, basis_step);
+        auto next = expression;
+        if (auto reduced = detail::reduce_next_redex(
+                expression,
+                detail::reduction_options{
+                    .basis_step = basis_step,
+                    .reduce_partial_k_argument = false,
+                })) {
+            next = std::move(*reduced);
+        }
         auto const no_reduction =
             detail::quoted_access::root(next) ==
             detail::quoted_access::root(expression);

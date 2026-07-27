@@ -2462,6 +2462,15 @@ int main() {
     test("eval reduces inside head normal form",
          [&] { eval(quote(x)(quote(I)(y))); },
          "xy\n");
+    test("eval leaves a partial K argument unreduced",
+         [&] { eval(quote(K)(quote(I)(u))); },
+         "K(Iu)\n");
+    test("eval leaves a nested partial K argument unreduced",
+         [&] { eval(quote(x)(quote(K)(quote(I)(u)))); },
+         "x(K(Iu))\n");
+    test("eval stops when BKM(BKM) produces a partial K",
+         [&] { eval(parse("BKM(BKM)")); },
+         "K(M(BKM))\n");
     test("eval reduces nested S K I left to right",
          [&] {
              eval(quote(x)(quote(I)(u))(quote(K)(v)(w))(
