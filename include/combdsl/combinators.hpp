@@ -4327,9 +4327,15 @@ private:
 
     [[nodiscard]] quoted_expression parse_expression() {
         std::optional<quoted_expression> result;
+        bool previous_atom_requires_token_separator = false;
         skip_whitespace();
 
         while (!at_end() && current() != ')') {
+            reject_spaced_unregistered_lowercase_name(
+                result.has_value(),
+                previous_atom_requires_token_separator);
+            auto const atom_requires_token_separator =
+                current_atom_requires_token_separator();
             auto atom = parse_atom();
             if (result.has_value()) {
                 auto application = (*result)(std::move(atom));
@@ -4337,6 +4343,8 @@ private:
             } else {
                 result = std::move(atom);
             }
+            previous_atom_requires_token_separator =
+                atom_requires_token_separator;
             skip_whitespace();
         }
 
@@ -4500,6 +4508,87 @@ private:
         return name.size() > 1 &&
                token.size() > name.size() &&
                token.starts_with(name);
+    }
+
+    void reject_spaced_unregistered_lowercase_name(
+        bool has_previous_atom,
+        bool previous_atom_requires_token_separator) const {
+        auto const name = current_basis_token();
+        if (name.size() < 2 ||
+            !is_lowercase_name(name) ||
+            !is_basis_token_start() ||
+            registered_bases_.contains(name) ||
+            is_recursive_function_name(name)) {
+            return;
+        }
+
+        auto const separated_from_previous =
+            has_previous_atom &&
+            !previous_atom_requires_token_separator &&
+            position_ != 0 &&
+            is_whitespace(source_[position_ - 1]);
+        if (separated_from_previous ||
+            is_separated_from_next_atom(name.size())) {
+            fail("unknown operand");
+        }
+    }
+
+    [[nodiscard]] bool current_atom_requires_token_separator()
+        const noexcept {
+        if (current() == '\\') {
+            return true;
+        }
+
+        auto const name = current_basis_token();
+        return name.size() > 1 &&
+               (registered_bases_.contains(name) ||
+                is_recursive_function_name(name));
+    }
+
+    [[nodiscard]] static bool is_lowercase_name(
+        std::string_view name) noexcept {
+        return std::all_of(
+            name.begin(), name.end(), [](char character) {
+                return character >= 'a' && character <= 'z';
+            });
+    }
+
+    [[nodiscard]] bool is_basis_token_start() const noexcept {
+        if (position_ == 0 ||
+            is_basis_token_delimiter(position_ - 1)) {
+            return true;
+        }
+
+        return position_ >= 2 &&
+               source_[position_ - 2] == '\\' &&
+               (source_[position_ - 1] == '\\' ||
+                source_[position_ - 1] == '"');
+    }
+
+    [[nodiscard]] bool is_recursive_function_name(
+        std::string_view name) const noexcept {
+        if (!recursive_function_) {
+            return false;
+        }
+
+        auto const recursive_name =
+            quoted_access::root(*recursive_function_)->atomic_name();
+        return recursive_name == name;
+    }
+
+    [[nodiscard]] bool is_separated_from_next_atom(
+        std::size_t name_size) const noexcept {
+        auto next = position_ + name_size;
+        if (next == source_.size() ||
+            !is_whitespace(source_[next])) {
+            return false;
+        }
+
+        while (next < source_.size() &&
+               is_whitespace(source_[next])) {
+            ++next;
+        }
+        return next < source_.size() && source_[next] != ')';
     }
 
     [[nodiscard]] std::optional<quoted_expression>

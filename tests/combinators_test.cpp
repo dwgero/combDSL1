@@ -481,7 +481,6 @@ int main() {
         return 42;
     }));
     static_cast<void>(basis("Scope", 1, I));
-    static_cast<void>(basis("foo", 1, I));
     static_cast<void>(basis("J", 1, I));
     static_cast<void>(basis("Jlong", 1, K));
     static_cast<void>(basis("Sfoo", 1, I));
@@ -835,6 +834,32 @@ int main() {
     test("parse right nested operand", parse("x(yz)"), "x(yz)");
     test("parse grouped operand", parse("S ( K I ) x"), "S(KI)x");
     test("parse redundant groups", parse("((SK)I)x"), "SKIx");
+    test_parse_failure(
+        "spaced unknown lowercase basis",
+        "x foo y", 2, "unknown operand");
+    test_parse_failure(
+        "unknown lowercase basis before spaced argument",
+        "x(foo y)", 2, "unknown operand");
+    test_parse_failure(
+        "unknown lowercase basis after spaced argument",
+        "x(y foo)", 4, "unknown operand");
+    test("parentheses preserve an unspaced compact symbol run",
+         parse("x(foo)y"), "x(foo)y");
+    test("outer whitespace remains padding",
+         parse(" \tfoo \n"), "foo");
+    test("parenthetical whitespace remains padding",
+         parse("x( foo )y"), "x(foo)y");
+    test("compact symbols after a single-character basis remain valid",
+         parse("Cxyz w"), "Cxyzw");
+    static_cast<void>(basis("foo", 1, I));
+    test("registered lowercase basis wins between spaces",
+         parse("x foo y"), "x foo y");
+    test("registered lowercase basis wins before a spaced argument",
+         parse("x(foo y)"), "x(foo y)");
+    test("registered lowercase basis wins after a spaced argument",
+         parse("x(y foo)"), "x(y foo)");
+    test("registered lowercase basis wins inside parentheses",
+         parse("x(foo)y"), "x foo y");
     test("show exposes a named basis definition",
          parse("show M"), "SII");
     test("show exposes a registered lowercase basis definition",

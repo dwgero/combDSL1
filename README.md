@@ -351,7 +351,8 @@ parse(source); // x word y mid\dle z
 ### Parsing expressions
 
 `parse` turns text into a `quoted_expression`. Application is
-left-associative, parentheses group expressions, and whitespace is ignored:
+left-associative, parentheses group expressions, and whitespace separates
+adjacent tokens:
 
 ```cpp
 auto expression = parse(" S K (I) x "); // SKIx
@@ -500,9 +501,19 @@ registered by `basis(...)` parses the same way, so `Mx` means `M` applied to
 `x`. Multi-character registered names use exact complete-token lookup.
 Whitespace, parentheses, and escaped-word openers delimit those tokens, so
 `Cstar x` means `Cstar` applied to `x`, while `Cstarx` is an unknown operand;
-it does not fall back to `C` followed by five symbols. Every remaining
-lowercase ASCII letter (`a` through `z`) becomes a single-character symbol, so
-compact primitive and symbol expressions such as `SKIx` remain valid.
+it does not fall back to `C` followed by five symbols.
+
+Whitespace also distinguishes an intended lowercase basis name from compact
+symbols. An unregistered run of two or more lowercase letters is an unknown
+operand when whitespace separates it from another operand in the same
+expression or parenthesized group. Consequently, `x foo y`, `x(foo y)`, and
+`x(y foo)` are errors unless `foo` is registered. In `x(foo)y`, an exact
+registered `foo` still wins; otherwise the run becomes the three symbols `f`,
+`o`, and `o`. Leading or trailing whitespace used only as padding does not
+make a run a basis name. Neither does whitespace required after a preceding
+multi-character basis or word operand. Everywhere else, each lowercase ASCII
+letter (`a` through `z`) becomes a single-character symbol, so compact
+primitive and symbol expressions such as `SKIx` remain valid.
 
 In escaped parser input, the two characters `\"` open or close one raw word,
 and `\\` represents one backslash. This input:
