@@ -1103,8 +1103,8 @@
 
     source.addEventListener("input", resizeSourceEditor);
     sourceBox.addEventListener("click", event => {
-        if (event.target === sourceBox) {
-            source.focus({preventScroll: true});
+        if (event.target !== source) {
+            focusSource();
         }
     });
     window.addEventListener("resize", resizeSourceEditor);
