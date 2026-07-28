@@ -95,7 +95,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             font-weight: 650;
         }
 
-        textarea,
+        .source-box,
         pre {
             box-sizing: border-box;
             width: 100%;
@@ -108,10 +108,49 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             white-space: pre-wrap;
         }
 
-        textarea {
+        .source-box {
+            display: flex;
+            flex-direction: column;
+            height: 7rem;
             min-height: 7rem;
+            max-height: min(50vh, 24rem);
             padding: 0.8rem;
             resize: vertical;
+            overflow: auto;
+            overscroll-behavior: contain;
+            cursor: text;
+        }
+
+        .source-box:focus-within {
+            outline: auto;
+            outline-offset: 1px;
+        }
+
+        #source-history {
+            flex: 0 0 auto;
+            margin-top: auto;
+            white-space: pre-wrap;
+            overflow-wrap: anywhere;
+        }
+
+        #source {
+            flex: 0 0 auto;
+            box-sizing: border-box;
+            display: block;
+            width: 100%;
+            min-height: 1.25rem;
+            margin: 0;
+            padding: 0;
+            border: 0;
+            outline: 0;
+            resize: none;
+            overflow: hidden;
+            background: transparent;
+            color: inherit;
+            font: inherit;
+            line-height: inherit;
+            white-space: pre-wrap;
+            overflow-wrap: anywhere;
         }
 
         .controls {
@@ -319,8 +358,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             color: #c33;
         }
     </style>
-    <script src="./evaluation_watchdog.js?v=1.8.0" defer></script>
-    <script src="./app.js?v=1.8.0" defer></script>
+    <script src="./evaluation_watchdog.js?v=1.8.4" defer></script>
+    <script src="./input_history.js?v=1.8.4" defer></script>
+    <script src="./app.js?v=1.8.4" defer></script>
 </head>
 <body>
     <main aria-labelledby="studio-title">
@@ -331,9 +371,17 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
         </section>
 
         <form id="evaluation-form">
-            <label for="source">Combinator Expression or Command</label>
-            <textarea id="source" name="source" spellcheck="false"
-                autocapitalize="off" wrap="soft" autofocus></textarea>
+            <label id="source-label" for="source">
+                Combinator Expression or Command
+            </label>
+            <div id="source-box" class="source-box" role="group"
+                aria-labelledby="source-label">
+                <div id="source-history" role="log"
+                    aria-live="off"></div>
+                <textarea id="source" name="source" rows="1"
+                    spellcheck="false" autocapitalize="off"
+                    wrap="soft" autofocus></textarea>
+            </div>
             <div class="controls">
                 <button id="single-step" type="button"
                     aria-pressed="false" disabled>Single Step</button>
@@ -529,7 +577,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             data-dialog-initial-focus>About</h2>
         <div class="license-text">
             <!-- Keep this version and the app.js cache key in sync. -->
-            <p>Combinator Studio, version 1.8.0<br>
+            <p>Combinator Studio, version 1.8.4<br>
                 Part of the C++ Combinator DSL<br>
                 Copyright (C) 2026  David W. Gero</p>
             <p>This program is free software: you can redistribute it and/or modify

@@ -108,6 +108,7 @@ if(COMBDSL_BUILD_BROWSER)
             app.js
             worker.js
             evaluation_watchdog.js
+            input_history.js
     )
         configure_file(
             "${CMAKE_CURRENT_SOURCE_DIR}/web/${asset}"
@@ -141,6 +142,10 @@ if(COMBDSL_BUILD_BROWSER)
             "${CMAKE_COMMAND}" -E copy_if_different
             "${COMBDSL_BROWSER_OUTPUT_DIRECTORY}/evaluation_watchdog.js"
             "${COMBDSL_BROWSER_DOCS_DIRECTORY}/evaluation_watchdog.js"
+        COMMAND
+            "${CMAKE_COMMAND}" -E copy_if_different
+            "${COMBDSL_BROWSER_OUTPUT_DIRECTORY}/input_history.js"
+            "${COMBDSL_BROWSER_DOCS_DIRECTORY}/input_history.js"
         COMMAND
             "${CMAKE_COMMAND}" -E copy_if_different
             "${COMBDSL_BROWSER_OUTPUT_DIRECTORY}/combdsl.js"
@@ -318,6 +323,13 @@ if(COMBDSL_BUILD_TESTS)
                 "${COMBDSL_NODE_EXECUTABLE}"
                 --test
                 "${CMAKE_CURRENT_SOURCE_DIR}/tests/evaluation_watchdog_test.mjs"
+        )
+        add_test(
+            NAME input_history
+            COMMAND
+                "${COMBDSL_NODE_EXECUTABLE}"
+                --test
+                "${CMAKE_CURRENT_SOURCE_DIR}/tests/input_history_test.mjs"
         )
         add_test(
             NAME worker_single_step

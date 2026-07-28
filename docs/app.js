@@ -22,7 +22,11 @@
 (() => {
     const evaluationWatchdog =
         globalThis.combdslEvaluationWatchdog;
+    const inputHistory =
+        globalThis.combdslInputHistory.create();
     const form = document.querySelector("#evaluation-form");
+    const sourceBox = document.querySelector("#source-box");
+    const sourceHistory = document.querySelector("#source-history");
     const source = document.querySelector("#source");
     const singleStep = document.querySelector("#single-step");
     const basisStep = document.querySelector("#basis-step");
@@ -68,6 +72,7 @@
     let keyStepEnabled = false;
     let colorizeEnabled = false;
     let outputScrollScheduled = false;
+    let sourceScrollScheduled = false;
     const blobDownloadsSupported =
         typeof URL.createObjectURL === "function" &&
         typeof URL.revokeObjectURL === "function";
@@ -127,6 +132,36 @@
             outputScrollScheduled = false;
             output.scrollTop = output.scrollHeight;
         });
+    };
+
+    const scrollToNewestSource = () => {
+        if (sourceScrollScheduled) {
+            return;
+        }
+        sourceScrollScheduled = true;
+        requestAnimationFrame(() => {
+            sourceScrollScheduled = false;
+            sourceBox.scrollTop = sourceBox.scrollHeight;
+        });
+    };
+
+    const resizeSourceEditor = () => {
+        source.style.height = "0";
+        source.style.height = `${source.scrollHeight}px`;
+        scrollToNewestSource();
+    };
+
+    const appendSourceHistory = (
+        sourceText,
+        outcome = "",
+    ) => {
+        const entry = inputHistory.record(
+            sourceText, outcome);
+        const historyEntry =
+            document.createElement("div");
+        historyEntry.textContent = entry;
+        sourceHistory.append(historyEntry);
+        scrollToNewestSource();
     };
 
     const afterNextPaint = callback => {
@@ -321,9 +356,11 @@
         scrollToNewestOutput();
     };
 
-    const clearCompletedSource = request => {
+    const completeSuccessfulSource = request => {
+        appendSourceHistory(request.source);
         if (source.value === request.source) {
             source.value = "";
+            resizeSourceEditor();
         }
     };
 
@@ -663,7 +700,7 @@
                         "output",
                         request.colorize);
                     if (message.result.complete) {
-                        clearCompletedSource(request);
+                        completeSuccessfulSource(request);
                         activeRequest = undefined;
                         status.textContent = "Normal form reached";
                     } else {
@@ -673,7 +710,7 @@
                         focusSourceAfterNextPaint();
                     }
                 } else {
-                    clearCompletedSource(request);
+                    completeSuccessfulSource(request);
                     activeRequest = undefined;
                     status.textContent = "Normal form reached";
                 }
@@ -709,7 +746,7 @@
                             "output",
                             Boolean(message.html));
                     }
-                    clearCompletedSource(completedRequest);
+                    completeSuccessfulSource(completedRequest);
                 } else {
                     completeEvaluationOutput(
                         completedRequest, message.result.error, "error");
@@ -768,19 +805,26 @@
         });
     };
 
-    const restartEvaluation = (request, message) => {
+    const restartEvaluation = (
+        request,
+        message,
+        historyOutcome,
+    ) => {
         if (activeRequest !== request) {
             return;
         }
 
         clearEvaluationWatchdog(request);
         terminateWorker();
+        appendSourceHistory(
+            request.source, historyOutcome);
         completeEvaluationOutput(request, message);
         startWorker(savedSetList);
     };
 
     const cancelAndRestart = request => {
-        restartEvaluation(request, "[cancelled]");
+        restartEvaluation(
+            request, "[cancelled]", "cancelled");
     };
 
     const timeoutAndRestart = request => {
@@ -788,6 +832,7 @@
             request,
             evaluationWatchdog.timeoutMessage(
                 request.evaluationProgress),
+            "timed out",
         );
     };
 
@@ -1027,6 +1072,7 @@
             return;
         }
 
+        appendSourceHistory(request.source, "cancelled");
         completeEvaluationOutput(request, "[cancelled]");
         activeRequest = undefined;
         status.textContent = "Ready";
@@ -1055,6 +1101,14 @@
         }
     });
 
+    source.addEventListener("input", resizeSourceEditor);
+    sourceBox.addEventListener("click", event => {
+        if (event.target === sourceBox) {
+            source.focus({preventScroll: true});
+        }
+    });
+    window.addEventListener("resize", resizeSourceEditor);
+
     document.addEventListener("keydown", event => {
         const request = activeRequest;
         if (event.defaultPrevented || event.isComposing || event.repeat ||
@@ -1079,6 +1133,7 @@
     emailElement.innerHTML = `<a href="mailto:${user}@${domain}">${user}@${domain}</a>`;
 
     updateModeButtons();
+    resizeSourceEditor();
 
     if (window.location.protocol === "file:") {
         showStartupError(

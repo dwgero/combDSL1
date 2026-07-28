@@ -724,7 +724,11 @@ name before the step and its stored contents after the step, both red; all
 arguments remain uncolored. After the final colorized reduction, the normal
 form is printed without color at the left margin. The browser prints the
 submitted starting expression immediately, then appends the output beneath it.
-A successfully registered
+The Combinator Expression box is a scrollable history with the current editable
+input at the bottom. Successful commands and expressions that reach normal form
+remain visible in submission order. Cancelled and timed-out expressions are
+retained with ` [cancelled]` and ` [timed out]` appended, respectively. Parse
+errors are not added to the history. A successfully registered
 `set` command leaves only that submitted definition line, with no output
 beneath it. The Save button downloads all successfully registered user
 definitions and redefinitions as `set_list.cmb`, with explicit arities and
