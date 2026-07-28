@@ -435,6 +435,9 @@ the definition command is silent under `parse_eval`, `read_parse_eval`, and
 `parse_and_step` or `parse_and_key_step`, and malformed definitions are not
 registered.
 
+The names `set`, `define`, `show`, `single`, `key`, `basis`, and `colorize`
+are reserved words and cannot be used as names by either `set` or `define`.
+
 Occurrences of the defined name in the combinator expression are recursive
 references. If any remain after the argument symbols are abstracted, `define`
 abstracts the recursive name, optimizes the result, and stores it under `Y`:

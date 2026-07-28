@@ -4477,6 +4477,18 @@ private:
     [[nodiscard]] basis_label validated_definition_basis_name(
         std::string_view name,
         std::size_t name_position) const {
+        if (name == "set" ||
+            name == "define" ||
+            name == "show" ||
+            name == "single" ||
+            name == "key" ||
+            name == "basis" ||
+            name == "colorize") {
+            auto message = std::string(name);
+            message += " is a reserved word";
+            throw parse_error(name_position, message);
+        }
+
         try {
             return basis_label(name);
         } catch (std::length_error const& error) {

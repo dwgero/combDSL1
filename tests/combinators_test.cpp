@@ -1656,6 +1656,25 @@ int main() {
     test_parse_failure(
         "show rejects a trailing close parenthesis", "show M)", 5,
         "M) is not a defined name");
+    constexpr std::string_view reserved_definition_names[] = {
+        "set", "define", "show", "single", "key", "basis", "colorize"};
+    for (auto const name : reserved_definition_names) {
+        auto const detail =
+            std::string(name) + " is a reserved word";
+        auto const set_source =
+            std::string("set ") + std::string(name) + " = I";
+        auto const set_title =
+            std::string("set rejects reserved word ") +
+            std::string(name);
+        test_parse_failure(set_title, set_source, 4, detail);
+
+        auto const define_source =
+            std::string("define ") + std::string(name) + " x = x";
+        auto const define_title =
+            std::string("define rejects reserved word ") +
+            std::string(name);
+        test_parse_failure(define_title, define_source, 7, detail);
+    }
     test_parse_failure("set requires a basis name", "set = I", 4);
     test_parse_failure("set requires an equals sign", "set NoEq I", 9);
     test_parse_failure("set requires an expression", "set Empty = \t", 13);
