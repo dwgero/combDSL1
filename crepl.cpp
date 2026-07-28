@@ -37,6 +37,13 @@
 
 namespace {
 
+constexpr std::string_view crepl_version = "1.7.4";
+
+void print_crepl_banner(std::ostream& output) {
+    output << "Combinator Read-Eval-Print Loop, version "
+           << crepl_version;
+}
+
 [[nodiscard]] bool is_command_whitespace(char value) noexcept {
     return value == ' ' || value == '\t' || value == '\n' ||
            value == '\r' || value == '\f' || value == '\v';
@@ -59,6 +66,27 @@ struct mode_command {
     mode_command_kind kind;
     bool enabled;
 };
+
+[[nodiscard]] bool is_exact_command(
+    std::string_view source,
+    std::string_view keyword) noexcept {
+    std::size_t position = 0;
+    while (position < source.size() &&
+           is_command_whitespace(source[position])) {
+        ++position;
+    }
+
+    if (!source.substr(position).starts_with(keyword)) {
+        return false;
+    }
+    position += keyword.size();
+
+    while (position < source.size() &&
+           is_command_whitespace(source[position])) {
+        ++position;
+    }
+    return position == source.size();
+}
 
 [[nodiscard]] std::optional<mode_command>
 parse_mode_command(std::string_view source) {
@@ -121,6 +149,79 @@ parse_mode_command(std::string_view source) {
     }
     throw combdsl::parse_error(
         option_position, "expected 'on' or 'off'");
+}
+
+void write_wrapped_paragraph(
+    std::ostream& output,
+    std::string_view paragraph,
+    std::size_t maximum_line_length = 80) {
+    std::size_t position = 0;
+    std::size_t line_length = 0;
+
+    while (position < paragraph.size()) {
+        while (position < paragraph.size() &&
+               is_command_whitespace(paragraph[position])) {
+            ++position;
+        }
+        if (position == paragraph.size()) {
+            break;
+        }
+
+        auto const word_start = position;
+        while (position < paragraph.size() &&
+               !is_command_whitespace(paragraph[position])) {
+            ++position;
+        }
+        auto const word =
+            paragraph.substr(word_start, position - word_start);
+
+        if (line_length != 0 &&
+            line_length + 1 + word.size() > maximum_line_length) {
+            output.put('\n');
+            line_length = 0;
+        }
+        if (line_length != 0) {
+            output.put(' ');
+            ++line_length;
+        }
+        output.write(
+            word.data(),
+            static_cast<std::streamsize>(word.size()));
+        line_length += word.size();
+    }
+    output.put('\n');
+}
+
+void print_about(std::ostream& output) {
+    // Keep this text in sync with web/index.html's About dialog.
+    constexpr std::string_view free_software =
+        "This program is free software: you can redistribute it and/or "
+        "modify it under the terms of the GNU Affero General Public "
+        "License as published by the Free Software Foundation, either "
+        "version 3 of the License, or (at your option) any later version.";
+    constexpr std::string_view warranty =
+        "This program is distributed in the hope that it will be useful, "
+        "but WITHOUT ANY WARRANTY; without even the implied warranty of "
+        "MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU "
+        "Affero General Public License for more details.";
+    constexpr std::string_view links =
+        "A copy of the GNU Affero General Public License, Version 3, is "
+        "available at "
+        "<https://www.gnu.org/licenses/agpl-3.0.html#license-text>. "
+        "The source for this program is available at "
+        "<https://github.com/dwgero/combDSL1>. "
+        "My hidden email is <airings-pinker.3e@icloud.com>";
+
+    print_crepl_banner(output);
+    output << '\n'
+           << "Part of the C++ Combinator DSL\n"
+           << "Copyright (C) 2026 David W. Gero\n\n";
+    write_wrapped_paragraph(output, free_software);
+    output.put('\n');
+    write_wrapped_paragraph(output, warranty);
+    output.put('\n');
+    write_wrapped_paragraph(output, links);
+    output.flush();
 }
 
 [[nodiscard]] bool same_expression(
@@ -349,28 +450,42 @@ private:
 
 } // namespace
 
-int main() {
+int main(int argc, char* argv[]) {
+    if (argc == 2 &&
+        std::string_view(argv[1]) == "--version") {
+        print_about(std::cout);
+        return 0;
+    }
+
     auto const interactive_output = standard_output_is_terminal();
     auto const interactive_input = standard_input_is_terminal();
     auto active_stepping_mode = stepping_mode::none;
     bool basis_step_mode = false;
     bool colorize_mode = false;
     if (interactive_output) {
-        std::cout << "Combinator Read-Eval-Print\n";
+        print_crepl_banner(std::cout);
+        std::cout << '\n';
     }
 
     std::string source;
     while (std::cin) {
         if (interactive_output) {
-            std::cout << "crep> " << std::flush;
+            std::cout << '>' << std::flush;
         }
 
         if (!std::getline(std::cin, source) ||
-            source == "q" || source == "Q") {
+            source == "q" ||
+            source == "Q" ||
+            is_exact_command(source, "quit") ||
+            is_exact_command(source, "exit")) {
             break;
         }
 
         try {
+            if (is_exact_command(source, "about")) {
+                print_about(std::cout);
+                continue;
+            }
             if (auto const command =
                     parse_mode_command(source)) {
                 if (command->kind == mode_command_kind::basis) {

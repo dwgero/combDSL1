@@ -4483,7 +4483,10 @@ private:
             name == "single" ||
             name == "key" ||
             name == "basis" ||
-            name == "colorize") {
+            name == "colorize" ||
+            name == "about" ||
+            name == "quit" ||
+            name == "exit") {
             auto message = std::string(name);
             message += " is a reserved word";
             throw parse_error(name_position, message);

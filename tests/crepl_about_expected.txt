@@ -1,0 +1,17 @@
+Combinator Read-Eval-Print Loop, version 1.7.4
+Part of the C++ Combinator DSL
+Copyright (C) 2026 David W. Gero
+
+This program is free software: you can redistribute it and/or modify it under
+the terms of the GNU Affero General Public License as published by the Free
+Software Foundation, either version 3 of the License, or (at your option) any
+later version.
+
+This program is distributed in the hope that it will be useful, but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE. See the GNU Affero General Public License for more details.
+
+A copy of the GNU Affero General Public License, Version 3, is available at
+<https://www.gnu.org/licenses/agpl-3.0.html#license-text>. The source for this
+program is available at <https://github.com/dwgero/combDSL1>. My hidden email is
+<airings-pinker.3e@icloud.com>

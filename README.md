@@ -435,8 +435,9 @@ the definition command is silent under `parse_eval`, `read_parse_eval`, and
 `parse_and_step` or `parse_and_key_step`, and malformed definitions are not
 registered.
 
-The names `set`, `define`, `show`, `single`, `key`, `basis`, and `colorize`
-are reserved words and cannot be used as names by either `set` or `define`.
+The names `set`, `define`, `show`, `single`, `key`, `basis`, `colorize`,
+`about`, `quit`, and `exit` are reserved words and cannot be used as names by
+either `set` or `define`.
 
 Occurrences of the defined name in the combinator expression are recursive
 references. If any remain after the argument symbols are abstracted, `define`
@@ -517,26 +518,32 @@ expression produces no output, while malformed or empty lines throw
 
 The `crepl` executable applies `input_escape` to each line before passing it to
 `parse_eval`, so ordinary quoted words and backslashes can be entered directly.
-When standard output is a terminal, long evaluations display the accumulated
-step count every 1,000 reductions by overwriting one status line; the line is
-cleared before evaluation output is printed. Redirected output contains no
-progress status. Enter `single step` or `single step on` to print every
-subsequent reduction, and enter `single step off` to return to printing only
-the final result. Enter `key step` or `key step on` to display the starting
-expression and wait for Enter before each reduction; `key step off` disables
-that mode. When standard input is redirected from a file or pipe, all three
-Key Step commands are silently ignored. Enabling either stepping mode disables
-the other, while turning off an inactive mode leaves the active mode unchanged.
-Omitting `on` or `off` enables the selected mode. `basis step`, `basis step on`,
-and `basis step off` independently control whether named-basis expansion is
-shown as a separate reduction in either stepping mode; ordinary evaluation
-ignores this setting.
+When standard output is a terminal, it first prints
+`Combinator Read-Eval-Print Loop, version 1.7.4`. Long evaluations then display
+the accumulated step count every 1,000 reductions by overwriting one status
+line; the line is cleared before evaluation output is printed. Its interactive
+prompt is `>`. Redirected output contains no progress status. Enter
+`single step` or `single step on` to print every subsequent reduction, and
+enter `single step off` to return to printing only the final result. Enter
+`key step` or `key step on` to display the starting expression and wait for
+Enter before each reduction; `key step off` disables that mode. When standard
+input is redirected from a file or pipe, all three Key Step commands are
+silently ignored. Enabling either stepping mode disables the other, while
+turning off an inactive mode leaves the active mode unchanged. Omitting `on`
+or `off` enables the selected mode. `basis step`, `basis step on`, and
+`basis step off` independently control whether named-basis expansion is shown
+as a separate reduction in either stepping mode; ordinary evaluation ignores
+this setting.
 Enter `colorize`, `colorize on`, or `colorize off` to independently control
 ANSI argument highlighting while either stepping mode is active. Colorized
 stepping uses `color_step_ansi` and prints the final normal form without color
 at the left margin; ordinary evaluation ignores this setting.
-The mode commands themselves produce no output. Enter exactly `q` or `Q` at
-the prompt to exit.
+The mode commands themselves produce no output. Enter `about` to print CREPL's
+About text, based on the browser UI's About box, without its heading and
+wrapped to 80-character lines; its first line is the CREPL banner. Enter
+exactly `q` or `Q` at the prompt to exit, or enter `quit` or `exit` with
+optional surrounding whitespace. Running `crepl --version` prints the same
+About text and exits successfully without starting the interactive loop.
 
 `S`, `K`, `I`, and `Y` are reserved combinators. A single-character name
 registered by `basis(...)` parses the same way, so `Mx` means `M` applied to

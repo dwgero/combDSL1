@@ -1657,7 +1657,8 @@ int main() {
         "show rejects a trailing close parenthesis", "show M)", 5,
         "M) is not a defined name");
     constexpr std::string_view reserved_definition_names[] = {
-        "set", "define", "show", "single", "key", "basis", "colorize"};
+        "set", "define", "show", "single", "key", "basis", "colorize",
+        "about", "quit", "exit"};
     for (auto const name : reserved_definition_names) {
         auto const detail =
             std::string(name) + " is a reserved word";

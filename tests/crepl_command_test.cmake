@@ -14,14 +14,29 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-execute_process(
-    COMMAND "${CREPL_EXECUTABLE}"
-    INPUT_FILE "${CREPL_INPUT_FILE}"
-    OUTPUT_VARIABLE actual_output
-    ERROR_VARIABLE actual_error
-    RESULT_VARIABLE result
-    TIMEOUT 10
-)
+set(crepl_command "${CREPL_EXECUTABLE}")
+if(DEFINED CREPL_ARGUMENTS)
+    list(APPEND crepl_command ${CREPL_ARGUMENTS})
+endif()
+
+if(DEFINED CREPL_INPUT_FILE)
+    execute_process(
+        COMMAND ${crepl_command}
+        INPUT_FILE "${CREPL_INPUT_FILE}"
+        OUTPUT_VARIABLE actual_output
+        ERROR_VARIABLE actual_error
+        RESULT_VARIABLE result
+        TIMEOUT 10
+    )
+else()
+    execute_process(
+        COMMAND ${crepl_command}
+        OUTPUT_VARIABLE actual_output
+        ERROR_VARIABLE actual_error
+        RESULT_VARIABLE result
+        TIMEOUT 10
+    )
+endif()
 
 if(NOT result EQUAL 0)
     message(FATAL_ERROR
@@ -40,4 +55,18 @@ endif()
 
 if(NOT actual_error STREQUAL "")
     message(FATAL_ERROR "unexpected crepl stderr:\n${actual_error}")
+endif()
+
+if(DEFINED CREPL_MAX_LINE_LENGTH)
+    string(REPLACE "\n" ";" output_lines "${actual_output}")
+    set(line_number 0)
+    foreach(line IN LISTS output_lines)
+        math(EXPR line_number "${line_number} + 1")
+        string(LENGTH "${line}" line_length)
+        if(line_length GREATER CREPL_MAX_LINE_LENGTH)
+            message(FATAL_ERROR
+                "crepl output line ${line_number} has ${line_length} "
+                "characters; maximum is ${CREPL_MAX_LINE_LENGTH}")
+        endif()
+    endforeach()
 endif()
