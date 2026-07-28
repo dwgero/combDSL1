@@ -1,4 +1,4 @@
-Combinator Read-Eval-Print Loop, version 1.7.10
+Combinator Read-Eval-Print Loop, version 1.8.0
 Part of the C++ Combinator DSL
 Copyright (C) 2026 David W. Gero
 
