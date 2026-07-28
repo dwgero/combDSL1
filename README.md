@@ -436,8 +436,8 @@ the definition command is silent under `parse_eval`, `read_parse_eval`, and
 registered.
 
 The names `set`, `define`, `show`, `single`, `key`, `basis`, `colorize`,
-`about`, `quit`, and `exit` are reserved words and cannot be used as names by
-either `set` or `define`.
+`about`, `birds`, `quit`, and `exit` are reserved words and cannot be used as
+names by either `set` or `define`.
 
 Occurrences of the defined name in the combinator expression are recursive
 references. If any remain after the argument symbols are abstracted, `define`
@@ -519,7 +519,7 @@ expression produces no output, while malformed or empty lines throw
 The `crepl` executable applies `input_escape` to each line before passing it to
 `parse_eval`, so ordinary quoted words and backslashes can be entered directly.
 When standard output is a terminal, it first prints
-`Combinator Read-Eval-Print Loop, version 1.7.4`. Long evaluations then display
+`Combinator Read-Eval-Print Loop, version 1.7.5`. Long evaluations then display
 the accumulated step count every 1,000 reductions by overwriting one status
 line; the line is cleared before evaluation output is printed. Its interactive
 prompt is `>`. Redirected output contains no progress status. Enter
@@ -538,12 +538,15 @@ Enter `colorize`, `colorize on`, or `colorize off` to independently control
 ANSI argument highlighting while either stepping mode is active. Colorized
 stepping uses `color_step_ansi` and prints the final normal form without color
 at the left margin; ordinary evaluation ignores this setting.
-The mode commands themselves produce no output. Enter `about` to print CREPL's
-About text, based on the browser UI's About box, without its heading and
-wrapped to 80-character lines; its first line is the CREPL banner. Enter
-exactly `q` or `Q` at the prompt to exit, or enter `quit` or `exit` with
-optional surrounding whitespace. Running `crepl --version` prints the same
-About text and exits successfully without starting the interactive loop.
+The mode commands themselves produce no output. Enter `birds` to list every
+bird and reduction rule from the browser UI's Bird Info table. The list uses
+three columns when their calculated widths fit in 80 characters and otherwise
+uses two. Enter `about` to print CREPL's About text, based on the browser UI's
+About box, without its heading and wrapped to 80-character lines; its first
+line is the CREPL banner. Enter exactly `q` or `Q` at the prompt to exit, or
+enter `quit` or `exit` with optional surrounding whitespace. Running
+`crepl --version` prints the same About text and exits successfully without
+starting the interactive loop.
 
 `S`, `K`, `I`, and `Y` are reserved combinators. A single-character name
 registered by `basis(...)` parses the same way, so `Mx` means `M` applied to

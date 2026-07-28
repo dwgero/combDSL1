@@ -1658,7 +1658,7 @@ int main() {
         "M) is not a defined name");
     constexpr std::string_view reserved_definition_names[] = {
         "set", "define", "show", "single", "key", "basis", "colorize",
-        "about", "quit", "exit"};
+        "about", "birds", "quit", "exit"};
     for (auto const name : reserved_definition_names) {
         auto const detail =
             std::string(name) + " is a reserved word";

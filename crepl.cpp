@@ -19,6 +19,7 @@
 #include <combdsl/combinators.hpp>
 #include <combdsl/color_step_ansi.hpp>
 
+#include <array>
 #include <cstdio>
 #include <cstddef>
 #include <iostream>
@@ -37,7 +38,7 @@
 
 namespace {
 
-constexpr std::string_view crepl_version = "1.7.4";
+constexpr std::string_view crepl_version = "1.7.5";
 
 void print_crepl_banner(std::ostream& output) {
     output << "Combinator Read-Eval-Print Loop, version "
@@ -221,6 +222,126 @@ void print_about(std::ostream& output) {
     write_wrapped_paragraph(output, warranty);
     output.put('\n');
     write_wrapped_paragraph(output, links);
+    output.flush();
+}
+
+void print_birds(std::ostream& output) {
+    // Keep these entries in sync with web/index.html's Bird Info table.
+    struct bird_entry {
+        std::string_view name;
+        std::string_view reduction;
+    };
+    constexpr std::array bird_entries{
+        bird_entry{"Albatross", "Axy = x(yx)"},
+        bird_entry{"Bluebird", "Bxyz = x(yz)"},
+        bird_entry{"Cardinal", "Cxyz = xzy"},
+        bird_entry{"Dove", "Dxyzw = xy(zw)"},
+        bird_entry{"Identity", "Ix = x"},
+        bird_entry{"Kestrel", "Kxy = x"},
+        bird_entry{"Lark", "Lxy = x(yy)"},
+        bird_entry{"Mockingbird", "Mx = xx"},
+        bird_entry{"Nightingale", "Nxy = xyx"},
+        bird_entry{"Owl", "Oxy = y(xy)"},
+        bird_entry{"Peacock", "Pxyz = y(xz)"},
+        bird_entry{"Robin", "Rxyz = yzx"},
+        bird_entry{"Sage", "Yx = x(Yx)"},
+        bird_entry{"Starling", "Sxyz = xz(yz)"},
+        bird_entry{"Thrush", "Txy = yx"},
+        bird_entry{"Vireo", "Vxyz = zxy"},
+        bird_entry{"Warbler", "Wxy = xyy"},
+        bird_entry{"Zazu", "Zxy = x(xy)"}};
+    constexpr std::size_t maximum_line_length = 80;
+    constexpr std::size_t column_gap = 2;
+
+    struct column_layout {
+        std::size_t column_count;
+        std::size_t row_count;
+        std::array<std::size_t, 3> name_widths{};
+        std::array<std::size_t, 3> reduction_widths{};
+        std::array<std::size_t, 3> widths{};
+        std::size_t line_length = 0;
+    };
+
+    auto const make_layout =
+        [&](std::size_t column_count) {
+            column_layout result{
+                column_count,
+                (bird_entries.size() + column_count - 1) /
+                    column_count};
+            for (std::size_t column = 0;
+                 column < column_count;
+                 ++column) {
+                for (std::size_t row = 0;
+                     row < result.row_count;
+                     ++row) {
+                    auto const index =
+                        row + column * result.row_count;
+                    if (index >= bird_entries.size()) {
+                        continue;
+                    }
+                    if (bird_entries[index].name.size() >
+                        result.name_widths[column]) {
+                        result.name_widths[column] =
+                            bird_entries[index].name.size();
+                    }
+                    if (bird_entries[index].reduction.size() >
+                        result.reduction_widths[column]) {
+                        result.reduction_widths[column] =
+                            bird_entries[index].reduction.size();
+                    }
+                }
+                result.widths[column] =
+                    result.name_widths[column] + 1 +
+                    result.reduction_widths[column];
+                result.line_length += result.widths[column];
+            }
+            result.line_length +=
+                column_gap * (column_count - 1);
+            return result;
+        };
+
+    auto layout = make_layout(3);
+    if (layout.line_length > maximum_line_length) {
+        layout = make_layout(2);
+    }
+
+    for (std::size_t row = 0; row < layout.row_count; ++row) {
+        for (std::size_t column = 0;
+             column < layout.column_count;
+             ++column) {
+            auto const index = row + column * layout.row_count;
+            if (index >= bird_entries.size()) {
+                break;
+            }
+
+            auto const& entry = bird_entries[index];
+            output << entry.name;
+            auto const name_padding =
+                layout.name_widths[column] -
+                entry.name.size() + 1;
+            for (std::size_t space = 0;
+                 space < name_padding;
+                 ++space) {
+                output.put(' ');
+            }
+            output << entry.reduction;
+            auto const next_index =
+                row + (column + 1) * layout.row_count;
+            if (column + 1 < layout.column_count &&
+                next_index < bird_entries.size()) {
+                auto const padding =
+                    layout.reduction_widths[column] -
+                    entry.reduction.size() +
+                    column_gap;
+                for (std::size_t space = 0;
+                     space < padding;
+                     ++space) {
+                    output.put(' ');
+                }
+            }
+        }
+        output.put('\n');
+    }
     output.flush();
 }
 
@@ -484,6 +605,10 @@ int main(int argc, char* argv[]) {
         try {
             if (is_exact_command(source, "about")) {
                 print_about(std::cout);
+                continue;
+            }
+            if (is_exact_command(source, "birds")) {
+                print_birds(std::cout);
                 continue;
             }
             if (auto const command =

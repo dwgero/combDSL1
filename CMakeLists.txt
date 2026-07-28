@@ -256,6 +256,17 @@ if(COMBDSL_BUILD_TESTS)
                 "${CMAKE_CURRENT_SOURCE_DIR}/tests/crepl_command_test.cmake"
         )
         add_test(
+            NAME crepl_birds
+            COMMAND
+                "${CMAKE_COMMAND}"
+                "-DCREPL_EXECUTABLE=$<TARGET_FILE:crepl>"
+                "-DCREPL_INPUT_FILE=${CMAKE_CURRENT_SOURCE_DIR}/tests/crepl_birds_input.cmb"
+                "-DCREPL_EXPECTED_FILE=${CMAKE_CURRENT_SOURCE_DIR}/tests/crepl_birds_expected.txt"
+                "-DCREPL_MAX_LINE_LENGTH=80"
+                -P
+                "${CMAKE_CURRENT_SOURCE_DIR}/tests/crepl_command_test.cmake"
+        )
+        add_test(
             NAME crepl_version
             COMMAND
                 "${CMAKE_COMMAND}"

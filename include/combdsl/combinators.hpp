@@ -4485,6 +4485,7 @@ private:
             name == "basis" ||
             name == "colorize" ||
             name == "about" ||
+            name == "birds" ||
             name == "quit" ||
             name == "exit") {
             auto message = std::string(name);

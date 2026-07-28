@@ -1,0 +1,6 @@
+Albatross Axy = x(yx)     Lark        Lxy = x(yy)   Sage     Yx = x(Yx)
+Bluebird  Bxyz = x(yz)    Mockingbird Mx = xx       Starling Sxyz = xz(yz)
+Cardinal  Cxyz = xzy      Nightingale Nxy = xyx     Thrush   Txy = yx
+Dove      Dxyzw = xy(zw)  Owl         Oxy = y(xy)   Vireo    Vxyz = zxy
+Identity  Ix = x          Peacock     Pxyz = y(xz)  Warbler  Wxy = xyy
+Kestrel   Kxy = x         Robin       Rxyz = yzx    Zazu     Zxy = x(xy)
