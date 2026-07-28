@@ -3004,6 +3004,17 @@ reduce_at_head(
         auto const& basis = static_cast<quoted_basis_node_base const&>(
             *quoted_access::root(head));
         if (reversed_arguments.size() >= basis.arity()) {
+            if (options.basis_step && trace != nullptr) {
+                trace->before = append_arguments(
+                    make_quoted_colored_argument(
+                        head, argument_color::red),
+                    0);
+                return finish_trace(append_arguments(
+                    make_quoted_colored_argument(
+                        basis.body(), argument_color::red),
+                    0));
+            }
+
             prepare_trace(basis.arity());
             if (options.basis_step || basis.arity() == 0) {
                 return finish_trace(

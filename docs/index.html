@@ -319,8 +319,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             color: #c33;
         }
     </style>
-    <script src="./evaluation_watchdog.js?v=1.7.9" defer></script>
-    <script src="./app.js?v=1.7.9" defer></script>
+    <script src="./evaluation_watchdog.js?v=1.7.10" defer></script>
+    <script src="./app.js?v=1.7.10" defer></script>
 </head>
 <body>
     <main aria-labelledby="studio-title">
@@ -423,8 +423,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
                 <span class="wob">blue</span>,
                 <span class="woo">dark orange</span>, and
                 <span class="wop">Munsell purple</span>, and carries those
-                highlights into the reduced result. After the final reduction,
-                the normal form is displayed without color at the left margin.
+                highlights into the reduced result. When Basis Step is on, a
+                basis expansion instead highlights only the basis name before
+                the step and its stored contents after the step, both in red;
+                all arguments remain uncolored. After the final reduction, the
+                normal form is displayed without color at the left margin.
                 Colorize may remain on when neither stepping mode is active;
                 ordinary evaluation ignores it.
             </dd>
@@ -526,7 +529,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             data-dialog-initial-focus>About</h2>
         <div class="license-text">
             <!-- Keep this version and the app.js cache key in sync. -->
-            <p>Combinator Studio, version 1.7.9<br>
+            <p>Combinator Studio, version 1.7.10<br>
                 Part of the C++ Combinator DSL<br>
                 Copyright (C) 2026  David W. Gero</p>
             <p>This program is free software: you can redistribute it and/or modify

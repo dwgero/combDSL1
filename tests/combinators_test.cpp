@@ -3167,14 +3167,28 @@ int main() {
              "\n->" +
              red_argument("I") +
              "x\nreturned: Ix");
-    test("color step forwards basis step",
+    test("color step colors only a basis expansion",
          [&] {
-             static_cast<void>(color_step_html(quote(M)(x), true));
+             auto result =
+                 color_step_html(quote(M)(x)(y), true);
+             std::cout << "returned: ";
+             result();
          },
-         std::string{"  M"} +
-             red_argument("x") +
-             "\n->SII" +
-             red_argument("x") +
+         std::string{"  "} +
+             red_argument("M") +
+             "xy\n->" +
+             red_argument("SII") +
+             "xy\nreturned: SIIxy");
+    test("color step colors a zero-arity basis expansion",
+         [&] {
+             static_cast<void>(
+                 color_step_html(
+                     quote(zero_arity_basis), true));
+         },
+         std::string{"  "} +
+             red_argument("Qzero") +
+             "\n->" +
+             red_argument("K") +
              "\n");
     test("terminal color step carries S argument colors through reduction",
          [&] {
@@ -3298,16 +3312,16 @@ int main() {
              "\n->" +
              terminal_red_argument("x") +
              "\nreturned: x");
-    test("terminal color step forwards basis step",
+    test("terminal color step colors only a basis expansion",
          [&] {
              static_cast<void>(
-                 color_step_ansi(quote(M)(x), true));
+                 color_step_ansi(quote(M)(x)(y), true));
          },
-         std::string{"  M"} +
-             terminal_red_argument("x") +
-             "\n->SII" +
-             terminal_red_argument("x") +
-             "\n");
+         std::string{"  "} +
+             terminal_red_argument("M") +
+             "xy\n->" +
+             terminal_red_argument("SII") +
+             "xy\n");
     test("single step run resumes after SIGINT",
          [&] {
              std::istringstream input("\n");

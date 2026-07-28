@@ -261,20 +261,23 @@ test("display-only Colorize results remain plain text", async () => {
     assert.equal(harness.timers.size, 0);
 });
 
-test("Key Step keeps completion look-ahead", async () => {
+test("colorized Basis Key Step keeps completion look-ahead", async () => {
+    const markedOutput =
+        "  <span class=\"wor\">M</span>xy\n" +
+        "-><span class=\"wor\">SII</span>xy\n";
     const module = {
         setList: () => "",
         beginSingleStep: () => incompleteStepStart,
         takeSingleStep: (basisStep, colorize, lookAhead) => {
-            assert.equal(basisStep, false);
-            assert.equal(colorize, false);
+            assert.equal(basisStep, true);
+            assert.equal(colorize, true);
             assert.equal(lookAhead, true);
             return {
                 success: true,
                 reduced: true,
                 complete: true,
                 definition: false,
-                output: "x\n",
+                output: markedOutput,
                 error: "",
             };
         },
@@ -284,11 +287,11 @@ test("Key Step keeps completion look-ahead", async () => {
     await harness.send({
         type: "evaluate",
         id: 10,
-        source: "Ix",
+        source: "Mxy",
         singleStep: false,
-        basisStep: false,
+        basisStep: true,
         keyStep: true,
-        colorize: false,
+        colorize: true,
     });
     await harness.send({type: "step", id: 10});
 
@@ -297,4 +300,7 @@ test("Key Step keeps completion look-ahead", async () => {
             .map(message => message.type),
         ["step-ready", "step-result"],
     );
+    const result = harness.messages.find(
+        message => message.type === "step-result");
+    assert.equal(result.result.output, markedOutput);
 });

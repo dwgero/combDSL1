@@ -45,7 +45,7 @@
 
 namespace {
 
-constexpr std::string_view crepl_version = "1.7.9";
+constexpr std::string_view crepl_version = "1.7.10";
 
 void print_crepl_banner(std::ostream& output) {
     output << "Combinator Read-Eval-Print Loop, version "
@@ -309,10 +309,13 @@ void print_help_full(std::ostream& output) {
         "When \"single step\" or \"key step\" is active, it highlights the first, "
         "second, third, fourth, and fifth arguments of each reduction in "
         "red, tunic green, blue, dark orange, and Munsell purple, and "
-        "carries those highlights into the reduced result. After the "
-        "final reduction step, the normal form is displayed without color "
-        "at the left margin. Colorize may remain on when neither stepping "
-        "mode is active; ordinary evaluation ignores it.");
+        "carries those highlights into the reduced result. When \"basis "
+        "step\" is on, a basis expansion instead highlights only the basis "
+        "name before the step and its stored contents after the step, both "
+        "in red; all arguments remain uncolored. After the final reduction "
+        "step, the normal form is displayed without color at the left "
+        "margin. Colorize may remain on when neither stepping mode is "
+        "active; ordinary evaluation ignores it.");
 
     output << "Adding Combinators\n\n"
            << "set <name> = <combinator_expression>\n";

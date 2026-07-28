@@ -244,6 +244,10 @@ additional basis arguments remain uncolored. The wrappers follow their
 arguments into the after expression, so an argument keeps its color when it is
 moved or duplicated and disappears when it is discarded. Colors are
 recomputed for each call, including when the selected redex is nested.
+With `basis_step` enabled, a named-basis expansion is the exception: only the
+basis name before the step and its stored contents after the step are colored,
+both red. Required and trailing arguments, along with surrounding expression
+context, remain uncolored.
 
 The emitted fragment expects these styles in its containing HTML document:
 
@@ -519,7 +523,7 @@ expression produces no output, while malformed or empty lines throw
 The `crepl` executable applies `input_escape` to each line before passing it to
 `parse_eval`, so ordinary quoted words and backslashes can be entered directly.
 When standard output is a terminal, it first prints
-`Combinator Read-Eval-Print Loop, version 1.7.9`. Long evaluations then display
+`Combinator Read-Eval-Print Loop, version 1.7.10`. Long evaluations then display
 the accumulated step count every 1,000 reductions by overwriting one status
 line; the line is cleared before evaluation output is printed. Its interactive
 prompt is `>`. Redirected output contains no progress status. Enter
@@ -538,17 +542,21 @@ mode; ordinary evaluation ignores this setting.
 Enter `colorize`, `colorize on`, or `colorize off` to independently control
 ANSI argument highlighting while either stepping mode is active. Colorized
 stepping uses `color_step_ansi` and prints the final normal form without color
-at the left margin; ordinary evaluation ignores this setting.
+at the left margin. When Basis Step is on, a basis expansion colors only the
+basis name before the step and its stored contents after the step, both red;
+all arguments remain uncolored. Ordinary evaluation ignores this setting.
 The mode commands themselves produce no output. Enter `help` or `help brief`
-to display the command summary; enter `help full` to append the text from the
-browser UI's Help box. Enter `birds` to list every bird and reduction rule from
-the browser UI's Bird Info table. The list uses three columns when their
+to display the command summary; enter `help full` to display detailed help
+based on the browser UI's Help box. Enter `birds` to list every bird and
+reduction rule from the browser UI's Bird Info table. The list uses three
+columns when their
 calculated widths fit in 80 characters and otherwise uses two. Enter `about`
 to print CREPL's About text, based on the browser UI's About box, without its
 heading and wrapped to 80-character lines; its first line is the CREPL banner.
-Enter exactly `q` or `Q` at the prompt to exit, or enter `quit` or `exit` with
-optional surrounding whitespace. Running `crepl --version` prints the same
-About text and exits successfully without starting the interactive loop.
+Enter `quit` or `exit` with optional surrounding whitespace to end CREPL.
+Lowercase `q` is evaluated as a symbol, while uppercase `Q` is a parse error.
+Running `crepl --version` prints the same About text and exits successfully
+without starting the interactive loop.
 
 `S`, `K`, `I`, and `Y` are reserved combinators. A single-character name
 registered by `basis(...)` parses the same way, so `Mx` means `M` applied to
@@ -711,9 +719,12 @@ definition as a separate step. With Basis Step off, `Mx` goes directly to
 active, the Colorize button uses `color_step_html` to highlight the first, second,
 third, fourth, and fifth arguments of each reduction in red, tunic green, blue,
 dark orange, and Munsell purple and carries those highlights into the reduced
-result. After the final colorized reduction, the normal form is printed without
-color at the left margin. The browser prints the submitted starting expression
-immediately, then appends the output beneath it. A successfully registered
+result. With Basis Step on, a basis expansion instead colors only the basis
+name before the step and its stored contents after the step, both red; all
+arguments remain uncolored. After the final colorized reduction, the normal
+form is printed without color at the left margin. The browser prints the
+submitted starting expression immediately, then appends the output beneath it.
+A successfully registered
 `set` command leaves only that submitted definition line, with no output
 beneath it. The Save button downloads all successfully registered user
 definitions and redefinitions as `set_list.cmb`, with explicit arities and

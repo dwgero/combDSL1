@@ -20,9 +20,11 @@ colorize [on | off]
 When "single step" or "key step" is active, it highlights the first, second,
 third, fourth, and fifth arguments of each reduction in red, tunic green, blue,
 dark orange, and Munsell purple, and carries those highlights into the reduced
-result. After the final reduction step, the normal form is displayed without
-color at the left margin. Colorize may remain on when neither stepping mode is
-active; ordinary evaluation ignores it.
+result. When "basis step" is on, a basis expansion instead highlights only the
+basis name before the step and its stored contents after the step, both in red;
+all arguments remain uncolored. After the final reduction step, the normal form
+is displayed without color at the left margin. Colorize may remain on when
+neither stepping mode is active; ordinary evaluation ignores it.
 
 Adding Combinators
 
