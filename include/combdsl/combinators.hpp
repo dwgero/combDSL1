@@ -4127,8 +4127,12 @@ private:
             throw std::logic_error(
                 "combdsl::registered parser basis is not a basis");
         }
-        return static_cast<quoted_basis_node_base const&>(*root)
-            .body();
+        auto const& basis =
+            static_cast<quoted_basis_node_base const&>(*root);
+        std::ostringstream output;
+        output << "arity:" << basis.arity() << ' ';
+        basis.body().print_to(output);
+        return quote(std::move(output).str());
     }
 
     [[nodiscard]] quoted_expression parse_define_definition() {
@@ -4486,6 +4490,7 @@ private:
             name == "colorize" ||
             name == "about" ||
             name == "birds" ||
+            name == "help" ||
             name == "quit" ||
             name == "exit") {
             auto message = std::string(name);

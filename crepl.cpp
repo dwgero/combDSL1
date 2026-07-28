@@ -1,5 +1,6 @@
 /*
- * C++ combinator DSL
+ * Combinator Read-Eval-Print Loop
+ * Part of C++ Combinator DSL
  * Copyright (C) 2026  David W. Gero
  *
  * This program is free software: you can redistribute it and/or modify
@@ -20,6 +21,8 @@
 #include <combdsl/color_step_ansi.hpp>
 
 #include <array>
+#include <cerrno>
+#include <csignal>
 #include <cstdio>
 #include <cstddef>
 #include <iostream>
@@ -31,14 +34,18 @@
 #include <utility>
 
 #if defined(_WIN32)
+#include <conio.h>
 #include <io.h>
 #elif defined(__unix__) || defined(__APPLE__)
+#include <poll.h>
+#include <signal.h>
+#include <termios.h>
 #include <unistd.h>
 #endif
 
 namespace {
 
-constexpr std::string_view crepl_version = "1.7.5";
+constexpr std::string_view crepl_version = "1.7.9";
 
 void print_crepl_banner(std::ostream& output) {
     output << "Combinator Read-Eval-Print Loop, version "
@@ -66,6 +73,11 @@ enum class mode_command_kind {
 struct mode_command {
     mode_command_kind kind;
     bool enabled;
+};
+
+enum class help_detail {
+    brief,
+    full
 };
 
 [[nodiscard]] bool is_exact_command(
@@ -152,6 +164,51 @@ parse_mode_command(std::string_view source) {
         option_position, "expected 'on' or 'off'");
 }
 
+[[nodiscard]] std::optional<help_detail>
+parse_help_command(std::string_view source) {
+    std::size_t position = 0;
+    auto skip_whitespace = [&] {
+        while (position < source.size() &&
+               is_command_whitespace(source[position])) {
+            ++position;
+        }
+    };
+    auto next_word = [&]() {
+        skip_whitespace();
+        auto const start = position;
+        while (position < source.size() &&
+               !is_command_whitespace(source[position])) {
+            ++position;
+        }
+        return std::pair{
+            source.substr(start, position - start), start};
+    };
+
+    if (next_word().first != "help") {
+        return std::nullopt;
+    }
+
+    skip_whitespace();
+    if (position == source.size()) {
+        return help_detail::brief;
+    }
+
+    auto const [option, option_position] = next_word();
+    skip_whitespace();
+    if (position != source.size()) {
+        throw combdsl::parse_error(
+            position, "unexpected input after help option");
+    }
+    if (option == "brief") {
+        return help_detail::brief;
+    }
+    if (option == "full") {
+        return help_detail::full;
+    }
+    throw combdsl::parse_error(
+        option_position, "expected 'brief' or 'full'");
+}
+
 void write_wrapped_paragraph(
     std::ostream& output,
     std::string_view paragraph,
@@ -191,6 +248,132 @@ void write_wrapped_paragraph(
         line_length += word.size();
     }
     output.put('\n');
+}
+
+void print_help_brief(std::ostream& output) {
+    output <<
+        "Commands:\n"
+        "about                                 | display copyright and redistribution information\n"
+        "basis step [on | off]                 | names are converted to their stored expressions as a step\n"
+        "birds                                 | display the pre-defined bird combinators\n"
+        "colorize [on | off]                   | add colors to arguments while stepping\n"
+        "define <name> <xyz...> = <expression> | compute and store a series of combinators such that\n"
+        "                                      | <name> <xyz...> reduces to <expression>\n"
+        "exit                                  | end the program\n"
+        "help [brief | full]                   | display help information\n"
+        "key step [on | off]                   | after each step, wait for a keypress to continue\n"
+        "quit                                  | end the program\n"
+        "set <name> = [number] <expression>    | store <expression> as <name> with arity <number> or 0\n"
+        "show <name>                           | display the arity and stored expression of <name>\n"
+        "single step [on | off]                | display each step of the reduction without pause\n";
+    output.flush();
+}
+
+void print_help_topic(
+    std::ostream& output,
+    std::string_view title,
+    std::string_view text) {
+    output << title << "\n";
+    write_wrapped_paragraph(output, text);
+    output.put('\n');
+}
+
+void print_help_full(std::ostream& output) {
+    // Keep this text in sync with web/index.html's Help dialog.
+    output << "Stepping Options\n\n";
+    print_help_topic(
+        output,
+        "single step [on | off]",
+        "Runs automatically and displays every reduction step until "
+        "normal form is reached.");
+    print_help_topic(
+        output,
+        "key step [on | off]",
+        "Pauses after initial expression scanning. Press any ordinary "
+        "key for exactly one reduction step. Pressing the letter Q or q "
+        "exits the reduction immediately.");
+    print_help_topic(
+        output,
+        "basis step [on | off]",
+        "Changes how \"single step\" and \"key step\" handle named bases "
+        "defined by compound combinators. All the bird combinators (see the "
+        "\"birds\" command) except S, K, I, and Y are named bases. Basis step "
+        "\"off\" contracts a saturated named basis directly (for example, Mx "
+        "becomes xx). Basis step \"on\" exposes its underlying definition as "
+        "a separate reduction step (so Mx becomes SIIx). It may remain "
+        "on when neither stepping mode is active; ordinary evaluation "
+        "ignores it.");
+    print_help_topic(
+        output,
+        "colorize [on | off]",
+        "When \"single step\" or \"key step\" is active, it highlights the first, "
+        "second, third, fourth, and fifth arguments of each reduction in "
+        "red, tunic green, blue, dark orange, and Munsell purple, and "
+        "carries those highlights into the reduced result. After the "
+        "final reduction step, the normal form is displayed without color "
+        "at the left margin. Colorize may remain on when neither stepping "
+        "mode is active; ordinary evaluation ignores it.");
+
+    output << "Adding Combinators\n\n"
+           << "set <name> = <combinator_expression>\n";
+    write_wrapped_paragraph(
+        output,
+        "In the first form, the expression always reduces immediately.");
+    output << '\n'
+           << "set <name> = <arity> <combinator_expression>\n";
+    write_wrapped_paragraph(
+        output,
+        "In the second form, arity is a number specifying the minimal "
+        "number of arguments required for the expression to reduce.");
+    output << '\n'
+           << "define <name> <symbol_list> = <combinator_expression>\n";
+    write_wrapped_paragraph(
+        output,
+        "The \"define\" form requires one or more symbols (lower case "
+        "letters) after the name, infers the arity from their count, and "
+        "computes a series of combinators that will reproduce the "
+        "combinator_expression. For a one-character name, the space "
+        "before the symbols may be omitted. For example, to add the "
+        "Eagle bird:");
+    output << "define Exyzwv = xy(zwv)\n\n";
+    write_wrapped_paragraph(
+        output,
+        "User-defined combinator names created by \"set\" or \"define\" "
+        "may be redefined. Pre-defined bird combinator names are immutable "
+        "and cannot be redefined.");
+    output << '\n'
+           << "show <name>\n";
+    write_wrapped_paragraph(
+        output,
+        "The show command displays the arity and combinators stored for "
+        "name. For example, \"show E\" for the Eagle bird would display "
+        "\"arity:5 BDD\".");
+
+    output << "\nOther Commands\n\n"
+           << "birds\n";
+    write_wrapped_paragraph(
+        output,
+        "Displays the list of pre-defined bird combinators, defined in the "
+        "system by their capitalized first letter, and what they reduce to.");
+    output << '\n'
+           << "about\n";
+    write_wrapped_paragraph(
+        output,
+        "Displays copyright and redistribution information.");
+    output << '\n'
+           << "help [brief | full]\n";
+    write_wrapped_paragraph(
+        output,
+        "Displays help information.  The \"brief\" form gives a list of "
+        "the commands with short explanations.");
+    output << '\n'
+           << "exit\n"
+           << "quit\n";
+    write_wrapped_paragraph(
+        output,
+        "Ends the program normally.");
+
+    output.flush();
 }
 
 void print_about(std::ostream& output) {
@@ -369,6 +552,289 @@ void write_step_output(
     output.flush();
 }
 
+enum class keypress_action {
+    step,
+    quit,
+    end
+};
+
+bool ignore_empty_line_after_key_quit = false;
+
+#if defined(__unix__) || defined(__APPLE__)
+volatile std::sig_atomic_t keypress_interrupted = 0;
+
+void keypress_sigint_handler(int) noexcept {
+    keypress_interrupted = 1;
+}
+
+class scoped_keypress_sigint_handler {
+public:
+    scoped_keypress_sigint_handler() noexcept {
+        keypress_interrupted = 0;
+        struct sigaction action {};
+        action.sa_handler = keypress_sigint_handler;
+        static_cast<void>(sigemptyset(&action.sa_mask));
+        action.sa_flags = 0;
+        installed_ =
+            ::sigaction(SIGINT, &action, &previous_) == 0;
+    }
+
+    scoped_keypress_sigint_handler(
+        scoped_keypress_sigint_handler const&) = delete;
+    scoped_keypress_sigint_handler& operator=(
+        scoped_keypress_sigint_handler const&) = delete;
+
+    ~scoped_keypress_sigint_handler() {
+        if (installed_) {
+            static_cast<void>(
+                ::sigaction(SIGINT, &previous_, nullptr));
+        }
+    }
+
+    [[nodiscard]] bool installed() const noexcept {
+        return installed_;
+    }
+
+    [[nodiscard]] bool interrupted() const noexcept {
+        return keypress_interrupted != 0;
+    }
+
+private:
+    struct sigaction previous_ {};
+    bool installed_ = false;
+};
+#endif
+
+class terminal_keypress_reader {
+public:
+    terminal_keypress_reader() noexcept {
+#if defined(__unix__) || defined(__APPLE__)
+        while (::tcgetattr(
+                   STDIN_FILENO, &saved_attributes_) != 0) {
+            if (errno != EINTR) {
+                return;
+            }
+        }
+
+        auto keypress_attributes = saved_attributes_;
+        keypress_attributes.c_lflag &=
+            static_cast<tcflag_t>(~(ICANON | ECHO));
+        keypress_attributes.c_cc[VMIN] = 0;
+        keypress_attributes.c_cc[VTIME] = 1;
+        while (::tcsetattr(
+                   STDIN_FILENO,
+                   TCSANOW,
+                   &keypress_attributes) != 0) {
+            if (errno != EINTR) {
+                return;
+            }
+        }
+        restore_attributes_ = true;
+#endif
+    }
+
+    terminal_keypress_reader(
+        terminal_keypress_reader const&) = delete;
+    terminal_keypress_reader& operator=(
+        terminal_keypress_reader const&) = delete;
+
+    ~terminal_keypress_reader() {
+#if defined(__unix__) || defined(__APPLE__)
+        if (!restore_attributes_) {
+            return;
+        }
+        while (::tcsetattr(
+                   STDIN_FILENO,
+                   TCSANOW,
+                   &saved_attributes_) != 0) {
+            if (errno != EINTR) {
+                break;
+            }
+        }
+#endif
+    }
+
+    [[nodiscard]] keypress_action read() noexcept {
+#if defined(_WIN32)
+        auto const key = ::_getch();
+        if (key == EOF) {
+            return keypress_action::end;
+        }
+        if (key == 0x03) {
+            return keypress_action::end;
+        }
+        if (key == 0 || key == 0xe0) {
+            if (::_getch() == EOF) {
+                return keypress_action::end;
+            }
+            return keypress_action::step;
+        }
+        if (key == 'q' || key == 'Q') {
+            return keypress_action::quit;
+        }
+        return keypress_action::step;
+#elif defined(__unix__) || defined(__APPLE__)
+        if (!restore_attributes_) {
+            return keypress_action::end;
+        }
+        auto const first = read_byte();
+        if (!first) {
+            return keypress_action::end;
+        }
+        if (*first == 'q' || *first == 'Q') {
+            return keypress_action::quit;
+        }
+
+        if (*first == 0x1b) {
+            consume_escape_sequence();
+        } else {
+            consume_utf8_continuations(*first);
+        }
+        return keypress_action::step;
+#else
+        char key = '\0';
+        if (!std::cin.get(key)) {
+            return keypress_action::end;
+        }
+        return key == 'q' || key == 'Q'
+                   ? keypress_action::quit
+                   : keypress_action::step;
+#endif
+    }
+
+private:
+#if defined(__unix__) || defined(__APPLE__)
+    [[nodiscard]] static std::optional<unsigned char>
+    read_byte() noexcept {
+        unsigned char value = 0;
+        for (;;) {
+            if (keypress_interrupted != 0) {
+                return std::nullopt;
+            }
+            auto const count =
+                ::read(STDIN_FILENO, &value, sizeof value);
+            if (count == 1) {
+                return value;
+            }
+            if (count == 0 || errno == EINTR) {
+                continue;
+            }
+            return std::nullopt;
+        }
+    }
+
+    [[nodiscard]] static bool input_available(
+        int timeout_milliseconds) noexcept {
+        pollfd descriptor{STDIN_FILENO, POLLIN, 0};
+        auto const result =
+            ::poll(&descriptor, 1, timeout_milliseconds);
+        return result == 1 &&
+               (descriptor.revents & POLLIN) != 0;
+    }
+
+    static void consume_utf8_continuations(
+        unsigned char first) noexcept {
+        std::size_t remaining =
+            first >= 0xc2 && first <= 0xdf
+                ? 1
+                : first >= 0xe0 && first <= 0xef
+                    ? 2
+                    : first >= 0xf0 && first <= 0xf4
+                        ? 3
+                        : 0;
+        while (remaining != 0 && input_available(10)) {
+            if (!read_byte()) {
+                return;
+            }
+            --remaining;
+        }
+    }
+
+    static void consume_escape_sequence() noexcept {
+        if (!input_available(10)) {
+            return;
+        }
+
+        auto const introducer = read_byte();
+        if (!introducer) {
+            return;
+        }
+        if (*introducer != '[' && *introducer != 'O') {
+            consume_utf8_continuations(*introducer);
+            return;
+        }
+
+        while (input_available(10)) {
+            auto const next = read_byte();
+            if (!next ||
+                (*next >= 0x40 && *next <= 0x7e)) {
+                return;
+            }
+        }
+    }
+
+    termios saved_attributes_{};
+    bool restore_attributes_ = false;
+#endif
+};
+
+[[nodiscard]] keypress_action read_terminal_keypress() noexcept {
+#if defined(__unix__) || defined(__APPLE__)
+    scoped_keypress_sigint_handler sigint_handler;
+    if (!sigint_handler.installed()) {
+        return keypress_action::end;
+    }
+    terminal_keypress_reader reader;
+    if (sigint_handler.interrupted()) {
+        return keypress_action::end;
+    }
+    auto const action = reader.read();
+    return sigint_handler.interrupted()
+               ? keypress_action::end
+               : action;
+#else
+    terminal_keypress_reader reader;
+    return reader.read();
+#endif
+}
+
+[[nodiscard]] bool terminal_key_requests_step() noexcept {
+    auto const action = read_terminal_keypress();
+    if (action == keypress_action::quit) {
+        ignore_empty_line_after_key_quit = true;
+    }
+    return action == keypress_action::step;
+}
+
+void terminal_key_step_loop(
+    combdsl::quoted_expression expression,
+    std::ostream& output,
+    bool basis_step) {
+    combdsl::detail::print_layout(
+        output,
+        "Press any key for one reduction step; press q or Q to quit.\n");
+    print_expression_line(output, expression);
+
+    for (;;) {
+        if (!terminal_key_requests_step()) {
+            return;
+        }
+
+        auto next = combdsl::single_step(expression, basis_step);
+        if (same_expression(next, expression)) {
+            return;
+        }
+
+        expression = std::move(next);
+        print_expression_line(output, expression);
+
+        auto following = combdsl::single_step(expression, basis_step);
+        if (same_expression(following, expression)) {
+            return;
+        }
+    }
+}
+
 void colorized_single_step_run(
     combdsl::quoted_expression expression,
     std::ostream& output,
@@ -410,21 +876,16 @@ void colorized_single_step_run(
 
 void colorized_key_step_loop(
     combdsl::quoted_expression expression,
-    std::istream& input,
     std::ostream& output,
     bool basis_step) {
     combdsl::detail::print_layout(
         output,
-        "Press Enter for one reduction step; type q then Enter to quit.\n");
+        "Press any key for one reduction step; press q or Q to quit.\n");
     print_expression_line(output, expression);
 
-    std::string command;
-    while (std::getline(input, command)) {
-        if (command == "q" || command == "Q") {
+    for (;;) {
+        if (!terminal_key_requests_step()) {
             return;
-        }
-        if (!command.empty()) {
-            continue;
         }
 
         std::ostringstream step_output;
@@ -464,7 +925,6 @@ void parse_and_color_step_ansi(
     if (key_step) {
         colorized_key_step_loop(
             std::move(parsed.expression),
-            input,
             output,
             basis_step);
         return;
@@ -474,6 +934,22 @@ void parse_and_color_step_ansi(
         output,
         input,
         basis_step);
+}
+
+void parse_and_terminal_key_step(
+    std::string_view source,
+    std::ostream& output,
+    bool basis_step) {
+    auto parsed = combdsl::detail::parse_input(source);
+    if (parsed.is_definition) {
+        return;
+    }
+    if (parsed.is_display_only) {
+        print_expression_line(output, parsed.expression);
+        return;
+    }
+    terminal_key_step_loop(
+        std::move(parsed.expression), output, basis_step);
 }
 
 [[nodiscard]] bool standard_output_is_terminal() noexcept {
@@ -594,10 +1070,16 @@ int main(int argc, char* argv[]) {
             std::cout << '>' << std::flush;
         }
 
-        if (!std::getline(std::cin, source) ||
-            source == "q" ||
-            source == "Q" ||
-            is_exact_command(source, "quit") ||
+        if (!std::getline(std::cin, source)) {
+            break;
+        }
+        if (ignore_empty_line_after_key_quit) {
+            ignore_empty_line_after_key_quit = false;
+            if (source.empty()) {
+                continue;
+            }
+        }
+        if (is_exact_command(source, "quit") ||
             is_exact_command(source, "exit")) {
             break;
         }
@@ -609,6 +1091,14 @@ int main(int argc, char* argv[]) {
             }
             if (is_exact_command(source, "birds")) {
                 print_birds(std::cout);
+                continue;
+            }
+            if (auto const detail = parse_help_command(source)) {
+                if (*detail == help_detail::full) {
+                    print_help_full(std::cout);
+                } else {
+                    print_help_brief(std::cout);
+                }
                 continue;
             }
             if (auto const command =
@@ -666,10 +1156,9 @@ int main(int argc, char* argv[]) {
                             basis_step_mode,
                             true);
                     } else {
-                        combdsl::parse_and_key_step(
+                        parse_and_terminal_key_step(
                             escaped_source,
                             std::cout,
-                            std::cin,
                             basis_step_mode);
                     }
                 } else {
@@ -706,10 +1195,9 @@ int main(int argc, char* argv[]) {
                         basis_step_mode,
                         true);
                 } else {
-                    combdsl::parse_and_key_step(
+                    parse_and_terminal_key_step(
                         escaped_source,
                         evaluation_output,
-                        std::cin,
                         basis_step_mode);
                 }
                 continue;

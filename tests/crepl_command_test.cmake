@@ -53,8 +53,16 @@ if(NOT actual_output STREQUAL expected_output)
         "actual:\n${actual_output}")
 endif()
 
-if(NOT actual_error STREQUAL "")
-    message(FATAL_ERROR "unexpected crepl stderr:\n${actual_error}")
+if(DEFINED CREPL_EXPECTED_ERROR_FILE)
+    file(READ "${CREPL_EXPECTED_ERROR_FILE}" expected_error)
+else()
+    set(expected_error "")
+endif()
+if(NOT actual_error STREQUAL expected_error)
+    message(FATAL_ERROR
+        "unexpected crepl stderr\n"
+        "expected:\n${expected_error}"
+        "actual:\n${actual_error}")
 endif()
 
 if(DEFINED CREPL_MAX_LINE_LENGTH)

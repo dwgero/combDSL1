@@ -189,7 +189,7 @@ int main() {
           replacement.success &&
           replacement.loaded == 1 &&
           replacement.diagnostics.empty() &&
-          shown_definition("FileReplace") == "K");
+          shown_definition("FileReplace") == "arity:1 K");
 
     auto const before_failed_replacement = combdsl::set_list();
     auto const failed_replacement = load_set_list(
@@ -197,7 +197,7 @@ int main() {
         "@\n");
     check("an error rolls back a file replacement",
           !failed_replacement.success &&
-          shown_definition("FileReplace") == "K" &&
+          shown_definition("FileReplace") == "arity:1 K" &&
           combdsl::set_list() == before_failed_replacement);
 
     auto const repeated_replacement = load_set_list(
@@ -206,7 +206,7 @@ int main() {
     check("redefinitions within a file are silent and ordered",
           repeated_replacement.success &&
           repeated_replacement.loaded == 2 &&
-          shown_definition("FileTwice") == "K");
+          shown_definition("FileTwice") == "arity:0 K");
 
     static_cast<void>(
         combdsl::parse("set FileCycle = 0 K"));
@@ -217,7 +217,7 @@ int main() {
     check("a load ending at the current definitions succeeds",
           replayed_history.success &&
           replayed_history.loaded == 2 &&
-          shown_definition("FileCycle") == "K");
+          shown_definition("FileCycle") == "arity:0 K");
     check("a load ending at the current definitions is idempotent",
           combdsl::set_list() == before_replayed_history);
 
@@ -230,7 +230,7 @@ int main() {
           predefined_error.diagnostics.front().line == 1 &&
           predefined_error.diagnostics.front().detail ==
               "M is a pre-defined basis and cannot be redefined" &&
-          shown_definition("M") == "SII" &&
+          shown_definition("M") == "arity:1 SII" &&
           combdsl::set_list() == before_predefined_error);
 
     std::cout << tests_run << " test(s) run, "

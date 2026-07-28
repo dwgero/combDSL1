@@ -976,9 +976,9 @@ int main() {
     test("registered lowercase basis wins inside parentheses",
          parse("x(foo)y"), "x foo y");
     test("show exposes a named basis definition",
-         parse("show M"), "SII");
+         parse("show M"), "arity:1 SII");
     test("show exposes a registered lowercase basis definition",
-         parse("show foo"), "I");
+         parse("show foo"), "arity:1 I");
     test("show identifies S as fundamental",
          parse("show S"), "S is a fundamental name");
     test("show identifies K as fundamental",
@@ -988,7 +988,7 @@ int main() {
     test("show identifies Y as fundamental",
          parse("show Y"), "Y is a fundamental name");
     test("show accepts parser whitespace",
-         parse(" \tshow\nM\f"), "SII");
+         parse(" \tshow\nM\f"), "arity:1 SII");
     test_parse_failure(
         "show rejects a symbol", "show x", 5,
         "x is not a defined name");
@@ -1126,11 +1126,11 @@ int main() {
     test("changed define replaces a user definition",
          parse("define DefReplace x = Kx"), "DefReplace");
     test("show exposes a replaced define body",
-         parse("show DefReplace"), "K");
+         parse("show DefReplace"), "arity:1 K");
     test("set can replace a define and its arity",
          parse("set DefReplace = 2 I"), "DefReplace");
     test("show exposes the cross-form replacement",
-         parse("show DefReplace"), "I");
+         parse("show DefReplace"), "arity:2 I");
     test("cross-form replacement uses its new arity",
          single_step(parse("DefReplace a b")), "ab");
 
@@ -1156,27 +1156,27 @@ int main() {
     test("defined Thrush reverses its arguments",
          single_step(parse("Flip a b")), "ba");
     test("show exposes one level of a defined basis",
-         parse("show Flip"), "T");
+         parse("show Flip"), "arity:2 T");
     test("define optimizes BCT to V",
          parse("define DefV x = C(Tx)"), "DefV");
     test("show exposes the optimized Vireo",
-         parse("show DefV"), "V");
+         parse("show DefV"), "arity:1 V");
     test("optimized Vireo preserves behavior",
          single_step(single_step(parse("DefV a b c"))), "cab");
     test("define optimizes BB to D",
          parse("define DefD x = BBx"), "DefD");
     test("show exposes the optimized Dove",
-         parse("show DefD"), "D");
+         parse("show DefD"), "arity:1 D");
     test("optimized Dove preserves behavior",
          single_step(single_step(parse("DefD a b c d"))), "ab(cd)");
     test("define recursively optimizes nested BCT",
          parse("define DefKV x = BCT"), "DefKV");
     test("show exposes nested Vireo optimization",
-         parse("show DefKV"), "KV");
+         parse("show DefKV"), "arity:1 KV");
     test("define recursively optimizes nested BB",
          parse("define DefKD x = BB"), "DefKD");
     test("show exposes nested Dove optimization",
-         parse("show DefKD"), "KD");
+         parse("show DefKD"), "arity:1 KD");
     test("define creates the Starling",
          parse("define DefS xyz = xz(yz)"), "DefS");
     test("basis step exposes the defined Starling",
@@ -1228,7 +1228,7 @@ int main() {
     test("compact one-letter define recognizes recursion",
          parse("define Fx = x(Fx)"), "F");
     test("compact recursive define is wrapped in Y",
-         parse("show F"), "YO");
+         parse("show F"), "arity:1 YO");
     test("two-character define names retain their spaced symbol",
          parse("define Gx y = y"), "Gx");
     test("two-character define name registers without becoming G",
@@ -1258,11 +1258,11 @@ int main() {
     test("define creates the Eagle",
          parse("define E xyzwv = xy(zwv)"), "E");
     test("show exposes the defined Eagle",
-         parse("show E"), "BDD");
+         parse("show E"), "arity:5 BDD");
     test("define recognizes a recursive name",
          parse("define Repeat x = x(Repeat x)"), "Repeat");
     test("recursive define stores a Y application",
-         parse("show Repeat"), "YO");
+         parse("show Repeat"), "arity:1 YO");
     test("set list preserves a recursive define",
          [] {
              auto definitions = set_list();
@@ -1276,26 +1276,26 @@ int main() {
     test("recursive define can reach a terminating result",
          parse("define Recur x = Kx Recur"), "Recur");
     test("show exposes recursive abstraction",
-         parse("show Recur"), "Y(CK)");
+         parse("show Recur"), "arity:1 Y(CK)");
     test("recursive basis evaluates through Y",
          single_step(parse("Recur a")), "a");
     test("recursive abstraction precedes optimization",
          parse("define RV x = C(T RV)x"), "RV");
     test("recursive abstraction optimization is wrapped in Y",
-         parse("show RV"), "YV");
+         parse("show RV"), "arity:1 YV");
     test("a quoted word matching the definition name is not recursive",
          parse(input_escape(
              "define WordRec x = \"WordRec\"")), "WordRec");
     test("show keeps the matching quoted word nonrecursive",
-         parse("show WordRec"), "K WordRec");
+         parse("show WordRec"), "arity:1 K WordRec");
     test("a single-character recursive name may be adjacent",
          parse("define X x = Xx"), "X");
     test("single-character recursive adjacency stores YI",
-         parse("show X"), "YI");
+         parse("show X"), "arity:1 YI");
     test("define accepts a nonterminating recursive body",
          parse("define Loop x = Loop x"), "Loop");
     test("show exposes the nonterminating recursive body",
-         parse("show Loop"), "YI");
+         parse("show Loop"), "arity:1 YI");
     test("single step stops at a recursive Y boundary",
          single_step(parse("Loop a")), "<deferred Y(I)>a");
     test("ordinary stepping may unfold the recursive boundary",
@@ -1310,7 +1310,7 @@ int main() {
     test("set registers a reducible body for show",
          parse("set ShRed = 0 Kxy"), "ShRed");
     test("show exposes a reducible stored body without reducing it",
-         parse("show ShRed"), "Kxy");
+         parse("show ShRed"), "arity:0 Kxy");
     test_parse_failure(
         "show rejects an applied user basis", "show ShRed z", 5,
         "ShRed z is not a defined name");
@@ -1465,7 +1465,7 @@ int main() {
          },
          "rejected");
     test("rejected C++ registration leaves the user definition",
-         parse("show LateCpp"), "I");
+         parse("show LateCpp"), "arity:0 I");
     test("rejected C++ registration preserves user save history",
          [] {
              std::cout << (set_list().find(
@@ -1658,7 +1658,7 @@ int main() {
         "M) is not a defined name");
     constexpr std::string_view reserved_definition_names[] = {
         "set", "define", "show", "single", "key", "basis", "colorize",
-        "about", "birds", "quit", "exit"};
+        "about", "birds", "help", "quit", "exit"};
     for (auto const name : reserved_definition_names) {
         auto const detail =
             std::string(name) + " is a reserved word";
@@ -1870,7 +1870,7 @@ int main() {
     test("parse eval treats bare define as symbols",
          [&] { parse_eval("define"); }, "define\n");
     test("parse eval show displays a definition without reducing it",
-         [&] { parse_eval("show ShRed"); }, "Kxy\n");
+         [&] { parse_eval("show ShRed"); }, "arity:0 Kxy\n");
     test("parse eval show identifies a fundamental name",
          [&] { parse_eval("show I"); },
          "I is a fundamental name\n");
@@ -1960,7 +1960,7 @@ int main() {
          "Ix\n"
          "x\n");
     test("parse and step show displays without stepping",
-         [&] { parse_and_step("show ShRed"); }, "Kxy\n");
+         [&] { parse_and_step("show ShRed"); }, "arity:0 Kxy\n");
     test("parse and step custom streams",
          [&] {
              std::istringstream input;
@@ -2003,7 +2003,7 @@ int main() {
              std::istringstream input;
              parse_and_key_step("show ShRed", std::cout, input);
          },
-         "Kxy\n");
+         "arity:0 Kxy\n");
     test("parse and key step forwards basis step",
          [&] {
              std::istringstream input("\n\n\n\n\n");

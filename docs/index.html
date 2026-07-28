@@ -319,8 +319,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             color: #c33;
         }
     </style>
-    <script src="./evaluation_watchdog.js?v=1.7.5" defer></script>
-    <script src="./app.js?v=1.7.5" defer></script>
+    <script src="./evaluation_watchdog.js?v=1.7.9" defer></script>
+    <script src="./app.js?v=1.7.9" defer></script>
 </head>
 <body>
     <main aria-labelledby="studio-title">
@@ -439,7 +439,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             the minimal number of arguments required for the expression
             to reduce.
             <br><br>
-            <code>define name symbols = combinator_expression</code><br>
+            <code>define name symbol_list = combinator_expression</code><br>
             The <code>define</code> form requires one or more <code>symbols</code>
             (lower case letters) after the name, infers the arity from their count,
             and computes a series of combinators that will reproduce the
@@ -453,9 +453,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             immutable and cannot be redefined.
             <br><br>
             <code>show name</code><br>
-            The <code>show</code> command displays the combinators stored
+            The <code>show</code> command displays the arity and combinators stored
             for <code>name</code>. For example, <code>show E</code> for
-            the Eagle bird would display <code>BDD</code>.
+            the Eagle bird would display <code>arity:5 BDD</code>.
         </div>
         <h2 class="help-subheading">Saving and Loading Combinators</h2>
         <div class="help-section">
@@ -526,7 +526,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             data-dialog-initial-focus>About</h2>
         <div class="license-text">
             <!-- Keep this version and the app.js cache key in sync. -->
-            <p>Combinator Studio, version 1.7.5<br>
+            <p>Combinator Studio, version 1.7.9<br>
                 Part of the C++ Combinator DSL<br>
                 Copyright (C) 2026  David W. Gero</p>
             <p>This program is free software: you can redistribute it and/or modify

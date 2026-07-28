@@ -1,0 +1,28 @@
+Commands:
+about                                 | display copyright and redistribution information
+basis step [on | off]                 | names are converted to their stored expressions as a step
+birds                                 | display the pre-defined bird combinators
+colorize [on | off]                   | add colors to arguments while stepping
+define <name> <xyz...> = <expression> | compute and store a series of combinators such that
+                                      | <name> <xyz...> reduces to <expression>
+exit                                  | end the program
+help [brief | full]                   | display help information
+key step [on | off]                   | after each step, wait for a keypress to continue
+quit                                  | end the program
+set <name> = [number] <expression>    | store <expression> as <name> with arity <number> or 0
+show <name>                           | display the arity and stored expression of <name>
+single step [on | off]                | display each step of the reduction without pause
+Commands:
+about                                 | display copyright and redistribution information
+basis step [on | off]                 | names are converted to their stored expressions as a step
+birds                                 | display the pre-defined bird combinators
+colorize [on | off]                   | add colors to arguments while stepping
+define <name> <xyz...> = <expression> | compute and store a series of combinators such that
+                                      | <name> <xyz...> reduces to <expression>
+exit                                  | end the program
+help [brief | full]                   | display help information
+key step [on | off]                   | after each step, wait for a keypress to continue
+quit                                  | end the program
+set <name> = [number] <expression>    | store <expression> as <name> with arity <number> or 0
+show <name>                           | display the arity and stored expression of <name>
+single step [on | off]                | display each step of the reduction without pause

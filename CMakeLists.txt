@@ -267,6 +267,37 @@ if(COMBDSL_BUILD_TESTS)
                 "${CMAKE_CURRENT_SOURCE_DIR}/tests/crepl_command_test.cmake"
         )
         add_test(
+            NAME crepl_help
+            COMMAND
+                "${CMAKE_COMMAND}"
+                "-DCREPL_EXECUTABLE=$<TARGET_FILE:crepl>"
+                "-DCREPL_INPUT_FILE=${CMAKE_CURRENT_SOURCE_DIR}/tests/crepl_help_input.cmb"
+                "-DCREPL_EXPECTED_FILE=${CMAKE_CURRENT_SOURCE_DIR}/tests/crepl_help_expected.txt"
+                -P
+                "${CMAKE_CURRENT_SOURCE_DIR}/tests/crepl_command_test.cmake"
+        )
+        add_test(
+            NAME crepl_help_full
+            COMMAND
+                "${CMAKE_COMMAND}"
+                "-DCREPL_EXECUTABLE=$<TARGET_FILE:crepl>"
+                "-DCREPL_INPUT_FILE=${CMAKE_CURRENT_SOURCE_DIR}/tests/crepl_help_full_input.cmb"
+                "-DCREPL_EXPECTED_FILE=${CMAKE_CURRENT_SOURCE_DIR}/tests/crepl_help_full_expected.txt"
+                -P
+                "${CMAKE_CURRENT_SOURCE_DIR}/tests/crepl_command_test.cmake"
+        )
+        add_test(
+            NAME crepl_exit_commands
+            COMMAND
+                "${CMAKE_COMMAND}"
+                "-DCREPL_EXECUTABLE=$<TARGET_FILE:crepl>"
+                "-DCREPL_INPUT_FILE=${CMAKE_CURRENT_SOURCE_DIR}/tests/crepl_exit_commands_input.cmb"
+                "-DCREPL_EXPECTED_FILE=${CMAKE_CURRENT_SOURCE_DIR}/tests/crepl_exit_commands_expected.txt"
+                "-DCREPL_EXPECTED_ERROR_FILE=${CMAKE_CURRENT_SOURCE_DIR}/tests/crepl_exit_commands_expected_error.txt"
+                -P
+                "${CMAKE_CURRENT_SOURCE_DIR}/tests/crepl_command_test.cmake"
+        )
+        add_test(
             NAME crepl_version
             COMMAND
                 "${CMAKE_COMMAND}"

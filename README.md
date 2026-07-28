@@ -436,8 +436,8 @@ the definition command is silent under `parse_eval`, `read_parse_eval`, and
 registered.
 
 The names `set`, `define`, `show`, `single`, `key`, `basis`, `colorize`,
-`about`, `birds`, `quit`, and `exit` are reserved words and cannot be used as
-names by either `set` or `define`.
+`about`, `birds`, `help`, `quit`, and `exit` are reserved words and cannot be
+used as names by either `set` or `define`.
 
 Occurrences of the defined name in the combinator expression are recursive
 references. If any remain after the argument symbols are abstracted, `define`
@@ -445,7 +445,7 @@ abstracts the recursive name, optimizes the result, and stores it under `Y`:
 
 ```cpp
 parse("define Repeat x = x(Repeat x)"); // Repeat
-parse_eval("show Repeat");              // prints: YO
+parse_eval("show Repeat");              // prints: arity:1 YO
 ```
 
 The resulting recursive transformation is
@@ -460,21 +460,21 @@ and `Y`, and every pre-defined basis registered by C++ `basis(...)`, are
 immutable; attempting to redefine one is a parse error. A later C++ basis
 registration cannot take a name that is already user-defined.
 
-At the start of a line, `show` followed by whitespace and a name displays one
-level of a named basis's stored definition without reducing it. For `S`, `K`,
-`I`, or `Y`, it reports that the name is fundamental. Anything other than a
-named basis or one of those four fundamental names is a parse error:
+At the start of a line, `show` followed by whitespace and a name displays the
+basis's arity followed by one level of its stored definition, without reducing
+it. For `S`, `K`, `I`, or `Y`, it reports that the name is fundamental.
+Anything other than a named basis or one of those four fundamental names is a
+parse error:
 
 ```cpp
-parse_eval("show M");   // prints: SII
+parse_eval("show M");   // prints: arity:1 SII
 parse_eval("show S");   // prints: S is a fundamental name
 parse_eval("show x");   // parse error: x is not a defined name
 ```
 
-`parse("show M")` returns the displayed definition as a
+`parse("show M")` returns the arity-and-definition display as a
 `quoted_expression`. `parse_eval`, `read_parse_eval`, `parse_and_step`, and
-`parse_and_key_step` print a `show` result once without evaluating or stepping
-it.
+`parse_and_key_step` print that result once without evaluating or stepping it.
 
 `set_list()` returns the chronological history of successful user definitions
 as newline-separated `set` or `define` declarations. Changed redefinitions are
@@ -519,34 +519,36 @@ expression produces no output, while malformed or empty lines throw
 The `crepl` executable applies `input_escape` to each line before passing it to
 `parse_eval`, so ordinary quoted words and backslashes can be entered directly.
 When standard output is a terminal, it first prints
-`Combinator Read-Eval-Print Loop, version 1.7.5`. Long evaluations then display
+`Combinator Read-Eval-Print Loop, version 1.7.9`. Long evaluations then display
 the accumulated step count every 1,000 reductions by overwriting one status
 line; the line is cleared before evaluation output is printed. Its interactive
 prompt is `>`. Redirected output contains no progress status. Enter
 `single step` or `single step on` to print every subsequent reduction, and
 enter `single step off` to return to printing only the final result. Enter
 `key step` or `key step on` to display the starting expression and wait for
-Enter before each reduction; `key step off` disables that mode. When standard
-input is redirected from a file or pipe, all three Key Step commands are
-silently ignored. Enabling either stepping mode disables the other, while
-turning off an inactive mode leaves the active mode unchanged. Omitting `on`
-or `off` enables the selected mode. `basis step`, `basis step on`, and
-`basis step off` independently control whether named-basis expansion is shown
-as a separate reduction in either stepping mode; ordinary evaluation ignores
-this setting.
+one keypress before each reduction. Any key advances immediately without
+requiring Enter, while `q` or `Q` ends the current reduction; `key step off`
+disables that mode. When standard input is redirected from a file or pipe, all
+three Key Step commands are silently ignored. Enabling either stepping mode
+disables the other, while turning off an inactive mode leaves the active mode
+unchanged. Omitting `on` or `off` enables the selected mode. `basis step`,
+`basis step on`, and `basis step off` independently control whether
+named-basis expansion is shown as a separate reduction in either stepping
+mode; ordinary evaluation ignores this setting.
 Enter `colorize`, `colorize on`, or `colorize off` to independently control
 ANSI argument highlighting while either stepping mode is active. Colorized
 stepping uses `color_step_ansi` and prints the final normal form without color
 at the left margin; ordinary evaluation ignores this setting.
-The mode commands themselves produce no output. Enter `birds` to list every
-bird and reduction rule from the browser UI's Bird Info table. The list uses
-three columns when their calculated widths fit in 80 characters and otherwise
-uses two. Enter `about` to print CREPL's About text, based on the browser UI's
-About box, without its heading and wrapped to 80-character lines; its first
-line is the CREPL banner. Enter exactly `q` or `Q` at the prompt to exit, or
-enter `quit` or `exit` with optional surrounding whitespace. Running
-`crepl --version` prints the same About text and exits successfully without
-starting the interactive loop.
+The mode commands themselves produce no output. Enter `help` or `help brief`
+to display the command summary; enter `help full` to append the text from the
+browser UI's Help box. Enter `birds` to list every bird and reduction rule from
+the browser UI's Bird Info table. The list uses three columns when their
+calculated widths fit in 80 characters and otherwise uses two. Enter `about`
+to print CREPL's About text, based on the browser UI's About box, without its
+heading and wrapped to 80-character lines; its first line is the CREPL banner.
+Enter exactly `q` or `Q` at the prompt to exit, or enter `quit` or `exit` with
+optional surrounding whitespace. Running `crepl --version` prints the same
+About text and exits successfully without starting the interactive loop.
 
 `S`, `K`, `I`, and `Y` are reserved combinators. A single-character name
 registered by `basis(...)` parses the same way, so `Mx` means `M` applied to

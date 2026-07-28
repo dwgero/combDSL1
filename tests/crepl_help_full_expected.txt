@@ -1,0 +1,65 @@
+Stepping Options
+
+single step [on | off]
+Runs automatically and displays every reduction step until normal form is
+reached.
+
+key step [on | off]
+Pauses after initial expression scanning. Press any ordinary key for exactly one
+reduction step. Pressing the letter Q or q exits the reduction immediately.
+
+basis step [on | off]
+Changes how "single step" and "key step" handle named bases defined by compound
+combinators. All the bird combinators (see the "birds" command) except S, K, I,
+and Y are named bases. Basis step "off" contracts a saturated named basis
+directly (for example, Mx becomes xx). Basis step "on" exposes its underlying
+definition as a separate reduction step (so Mx becomes SIIx). It may remain on
+when neither stepping mode is active; ordinary evaluation ignores it.
+
+colorize [on | off]
+When "single step" or "key step" is active, it highlights the first, second,
+third, fourth, and fifth arguments of each reduction in red, tunic green, blue,
+dark orange, and Munsell purple, and carries those highlights into the reduced
+result. After the final reduction step, the normal form is displayed without
+color at the left margin. Colorize may remain on when neither stepping mode is
+active; ordinary evaluation ignores it.
+
+Adding Combinators
+
+set <name> = <combinator_expression>
+In the first form, the expression always reduces immediately.
+
+set <name> = <arity> <combinator_expression>
+In the second form, arity is a number specifying the minimal number of arguments
+required for the expression to reduce.
+
+define <name> <symbol_list> = <combinator_expression>
+The "define" form requires one or more symbols (lower case letters) after the
+name, infers the arity from their count, and computes a series of combinators
+that will reproduce the combinator_expression. For a one-character name, the
+space before the symbols may be omitted. For example, to add the Eagle bird:
+define Exyzwv = xy(zwv)
+
+User-defined combinator names created by "set" or "define" may be redefined.
+Pre-defined bird combinator names are immutable and cannot be redefined.
+
+show <name>
+The show command displays the arity and combinators stored for name. For
+example, "show E" for the Eagle bird would display "arity:5 BDD".
+
+Other Commands
+
+birds
+Displays the list of pre-defined bird combinators, defined in the system by
+their capitalized first letter, and what they reduce to.
+
+about
+Displays copyright and redistribution information.
+
+help [brief | full]
+Displays help information. The "brief" form gives a list of the commands with
+short explanations.
+
+exit
+quit
+Ends the program normally.
