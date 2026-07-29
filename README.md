@@ -444,6 +444,17 @@ atoms and therefore uses `B` in this case. The resulting expression has arity
 `read_parse_eval`, and `parse_and_step` or `parse_and_key_step`, and malformed
 definitions are not registered.
 
+In the function-dependent case, `C(t)(qarg)` and `R(qarg)(t)` are likewise
+equivalent. Contextual `takeout` first compares whether `qarg` and `t` contain
+the next pending atom, which is `y` while taking out `z`, then `x` while taking
+out `y`, and then the recursive name while taking out `x`. If only `qarg`
+contains it, `C` is used; if only `t` contains it, `R` is used. When both or
+neither contain it, each expression receives one point for every pending atom
+it contains. `C` is used when `qarg`'s count is greater than or equal to `t`'s
+count, and `R` otherwise. An empty pending set is a zero-to-zero tie, so the
+public two-argument `takeout` and the final recursive-name pass use `C` in this
+case.
+
 Before `takeout`, saturated named bases in the expression are applied,
 including reachable saturated bases nested inside other applications.
 Undersaturated bases remain named, and preprocessing does not enter
@@ -468,8 +479,9 @@ parse_eval("show Repeat");              // prints: arity:1 YO
 The resulting recursive transformation is
 `Y(optimize(takeout(rec_func, previous_takeout_result)))`. The optimization
 pass recursively replaces `BCT` or `PTC` with `V`, `BB` with `D`, `CC` with
-`R`, `SBT` with `A`, `PM` with `L`, `WC` with `N`, `CB` with `P`, and `WB`
-with `Z`. The `CP` with `B` optimizer code is retained but commented out.
+`R`, `SBT` with `A`, `PM` with `L`, `WC` or `WR` with `N`, `CB` with `P`,
+and `WB` with `Z`. The `CP` with `B` optimizer code is retained but commented
+out.
 
 `search_for_xy_subexp(expression)` searches the unoptimized result of
 contextually taking out `y` with `x` pending, then taking out `x` with no
@@ -560,7 +572,7 @@ expression produces no output, while malformed or empty lines throw
 The `crepl` executable applies `input_escape` to each line before passing it to
 `parse_eval`, so ordinary quoted words and backslashes can be entered directly.
 When standard output is a terminal, it first prints
-`Combinator Read-Eval-Print Loop, version 1.10.2`. Long evaluations then display
+`Combinator Read-Eval-Print Loop, version 1.10.4`. Long evaluations then display
 the accumulated step count every 1,000 reductions by overwriting one status
 line; the line is cleared before evaluation output is printed. Its interactive
 prompt is `>`. Redirected output contains no progress status. Enter

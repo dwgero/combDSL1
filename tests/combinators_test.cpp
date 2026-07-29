@@ -1255,6 +1255,18 @@ int main() {
          parse("show DefNoQfun"), "arity:2 K(Bwz)");
     test("qfun-dependent Bluebird choice preserves behavior",
          single_step(parse("DefNoQfun a b")), "w(zb)");
+    test("define uses Cardinal when only qarg has pending atoms",
+         parse("define DefCContext xy = wyx"), "DefCContext");
+    test("show exposes contextual Cardinal selection",
+         parse("show DefCContext"), "arity:2 Cw");
+    test("contextual Cardinal selection preserves behavior",
+         single_step(parse("DefCContext a b")), "wba");
+    test("define uses Cardinal when pending counts tie",
+         parse("define DefCTie xy = wyz"), "DefCTie");
+    test("show exposes contextual Cardinal tie selection",
+         parse("show DefCTie"), "arity:2 K(Cwz)");
+    test("contextual Cardinal tie selection preserves behavior",
+         single_step(parse("DefCTie a b")), "wbz");
     test("define creates the Thrush from reverse application",
          parse("define Flip xy = yx"), "Flip");
     test("basis step exposes the defined Thrush",
@@ -1327,6 +1339,10 @@ int main() {
          parse("define DefKN x = WC"), "DefKN");
     test("show exposes nested Nightingale optimization",
          parse("show DefKN"), "arity:1 KN");
+    test("define recursively optimizes nested WR",
+         parse("define DefKNR x = WR"), "DefKNR");
+    test("show exposes nested Robin Nightingale optimization",
+         parse("show DefKNR"), "arity:1 KN");
     test("define optimizes CB to P",
          parse("define DefP xyz = y(xz)"), "DefP");
     test("show exposes the optimized Peacock",
@@ -1472,6 +1488,10 @@ int main() {
          "RecursiveB");
     test("show exposes recursive Bluebird abstraction",
          parse("show RecursiveB"), "arity:1 Y(Buv)");
+    test("recursive function abstraction uses Cardinal on an empty tie",
+         parse("define RecCtx x = y RecCtx z"), "RecCtx");
+    test("show exposes recursive contextual Cardinal abstraction",
+         parse("show RecCtx"), "arity:1 Y(BK(Cyz))");
     test("a quoted word matching the definition name is not recursive",
          parse(input_escape(
              "define WordRec x = \"WordRec\"")), "WordRec");
@@ -2295,6 +2315,92 @@ int main() {
          "C(Wy)z");
     test("takeout nested Cardinal recursion",
          takeout(quoted_atomic{x}, quote(y)(x)(z)(w)),
+         "C(Cyz)w");
+    const std::vector<quoted_atomic> pending_cardinal_z{
+        quoted_atomic{z}};
+    test("contextual Cardinal when only qarg contains next pending atom",
+         combdsl::detail::takeout_with_pending_atoms(
+             quoted_atomic{x},
+             quote(y)(x)(z),
+             pending_cardinal_z),
+         "Cyz");
+    test("contextual Robin when only t contains next pending atom",
+         combdsl::detail::takeout_with_pending_atoms(
+             quoted_atomic{x},
+             quote(z)(x)(y),
+             pending_cardinal_z),
+         "Ryz");
+    const std::vector<quoted_atomic> pending_cardinal_w_x_y{
+        quoted_atomic{w},
+        quoted_atomic{x},
+        quoted_atomic{y}};
+    test("next atom in qarg takes priority over its lower count",
+         combdsl::detail::takeout_with_pending_atoms(
+             quoted_atomic{z},
+             quote(w)(x)(z)(y),
+             pending_cardinal_w_x_y),
+         "C(wx)y");
+    test("next atom in t takes priority over its lower count",
+         combdsl::detail::takeout_with_pending_atoms(
+             quoted_atomic{z},
+             quote(y)(z)(quote(w)(x)),
+             pending_cardinal_w_x_y),
+         "R(wx)y");
+    test("contextual Cardinal when both contain next and counts tie",
+         combdsl::detail::takeout_with_pending_atoms(
+             quoted_atomic{x},
+             quote(z)(x)(z),
+             pending_cardinal_z),
+         "Czz");
+    const std::vector<quoted_atomic> pending_cardinal_w_z{
+        quoted_atomic{w},
+        quoted_atomic{z}};
+    test("contextual Cardinal when both contain next and qarg count wins",
+         combdsl::detail::takeout_with_pending_atoms(
+             quoted_atomic{x},
+             quote(z)(x)(quote(w)(z)),
+             pending_cardinal_w_z),
+         "Cz(wz)");
+    test("contextual Robin when both contain next and t count wins",
+         combdsl::detail::takeout_with_pending_atoms(
+             quoted_atomic{x},
+             quote(w)(z)(x)(z),
+             pending_cardinal_w_z),
+         "Rz(wz)");
+    test("contextual Cardinal when neither contains next and counts tie",
+         combdsl::detail::takeout_with_pending_atoms(
+             quoted_atomic{x},
+             quote(y)(x)(v),
+             pending_cardinal_w_z),
+         "Cyv");
+    test("contextual Cardinal when neither contains next and qarg count wins",
+         combdsl::detail::takeout_with_pending_atoms(
+             quoted_atomic{x},
+             quote(y)(x)(w),
+             pending_cardinal_w_z),
+         "Cyw");
+    test("contextual Robin when neither contains next and t count wins",
+         combdsl::detail::takeout_with_pending_atoms(
+             quoted_atomic{x},
+             quote(w)(x)(y),
+             pending_cardinal_w_z),
+         "Ryw");
+    const std::vector<quoted_atomic> pending_cardinal_x_y{
+        quoted_atomic{x},
+        quoted_atomic{y}};
+    test("pending count counts atoms rather than occurrences",
+         combdsl::detail::takeout_with_pending_atoms(
+             quoted_atomic{z},
+             quote(x)(x)(z)(x),
+             pending_cardinal_x_y),
+         "C(xx)x");
+    const std::vector<quoted_atomic> pending_cardinal_w{
+        quoted_atomic{w}};
+    test("contextual Cardinal and Robin selection propagates recursively",
+         combdsl::detail::takeout_with_pending_atoms(
+             quoted_atomic{x},
+             quote(y)(x)(z)(w),
+             pending_cardinal_w),
          "C(Cyz)w");
     test("takeout argument-dependent application uses Bluebird",
          takeout(
