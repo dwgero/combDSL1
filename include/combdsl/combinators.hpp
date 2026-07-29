@@ -19,6 +19,7 @@
 #pragma once
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <concepts>
 #include <csignal>
@@ -2564,6 +2565,7 @@ struct reduction_options {
     bool basis_step = false;
     bool reduce_recursive_y = true;
     bool reduce_partial_k_argument = true;
+    bool reduce_fixed_point = true;
 };
 
 struct reduction_trace {
@@ -2970,7 +2972,8 @@ reduce_at_head(
         }
         break;
     case quoted_node_kind::fixed_point:
-        if (reversed_arguments.size() >= 1) {
+        if (options.reduce_fixed_point &&
+            reversed_arguments.size() >= 1) {
             prepare_trace(1);
             auto const& generator = reversed_arguments[0];
             auto recursive = make_quoted_recursive_y(generator);
@@ -3110,8 +3113,26 @@ reduce_next_redex(quoted_expression const& expression,
 
         auto const& root = quoted_access::root(current);
         if (root->kind() == quoted_node_kind::application) {
-            if (options.reduce_partial_k_argument ||
-                !is_partially_applied_k(current)) {
+            auto head = current;
+            while (quoted_access::root(head)->kind() ==
+                   quoted_node_kind::application) {
+                auto const& application =
+                    static_cast<quoted_application_node const&>(
+                        *quoted_access::root(head));
+                head = application.function();
+            }
+            auto const head_kind =
+                quoted_access::root(head)->kind();
+            auto const disabled_fixed_point =
+                !options.reduce_fixed_point &&
+                head_kind == quoted_node_kind::fixed_point;
+            auto const disabled_recursive_y =
+                !options.reduce_recursive_y &&
+                head_kind == quoted_node_kind::recursive_y;
+            if (!disabled_fixed_point &&
+                !disabled_recursive_y &&
+                (options.reduce_partial_k_argument ||
+                 !is_partially_applied_k(current))) {
                 auto const& application =
                     static_cast<quoted_application_node const&>(*root);
                 path.push_back({
@@ -3136,6 +3157,274 @@ reduce_next_redex(quoted_expression const& expression,
         }
         if (!found_argument) {
             return std::nullopt;
+        }
+    }
+}
+
+[[nodiscard]] inline bool
+is_saturated_basis_at_head(
+    quoted_expression const& expression) noexcept {
+    auto head = expression;
+    std::size_t argument_count = 0;
+    while (quoted_access::root(head)->kind() ==
+           quoted_node_kind::application) {
+        auto const& application =
+            static_cast<quoted_application_node const&>(
+                *quoted_access::root(head));
+        ++argument_count;
+        head = application.function();
+    }
+
+    auto const& root = quoted_access::root(head);
+    if (root->kind() != quoted_node_kind::basis) {
+        return false;
+    }
+    auto const& basis =
+        static_cast<quoted_basis_node_base const&>(*root);
+    return argument_count >= basis.arity();
+}
+
+[[nodiscard]] inline quoted_node_kind
+quoted_head_kind(quoted_expression expression) noexcept {
+    while (quoted_access::root(expression)->kind() ==
+           quoted_node_kind::application) {
+        auto const& application =
+            static_cast<quoted_application_node const&>(
+                *quoted_access::root(expression));
+        expression = application.function();
+    }
+    return quoted_access::root(expression)->kind();
+}
+
+[[nodiscard]] inline std::string
+quoted_expression_key(quoted_expression const& expression) {
+    std::ostringstream output;
+    std::vector<std::shared_ptr<quoted_node const>> pending;
+    pending.push_back(quoted_access::root(expression));
+
+    while (!pending.empty()) {
+        auto root = std::move(pending.back());
+        pending.pop_back();
+        output << static_cast<int>(root->kind()) << ':';
+
+        auto const atomic_kind = root->atomic_kind();
+        if (atomic_kind != quoted_atomic_kind::none) {
+            auto const name = root->atomic_name();
+            output << static_cast<int>(atomic_kind) << ':'
+                   << name.size() << ':' << name << ';';
+            continue;
+        }
+
+        switch (root->kind()) {
+        case quoted_node_kind::application: {
+            auto const& application =
+                static_cast<quoted_application_node const&>(*root);
+            pending.push_back(
+                quoted_access::root(application.argument()));
+            pending.push_back(
+                quoted_access::root(application.function()));
+            break;
+        }
+        case quoted_node_kind::pending_sk:
+            pending.push_back(quoted_access::root(
+                static_cast<quoted_pending_sk_node const&>(*root)
+                    .application()));
+            break;
+        case quoted_node_kind::recursive_y:
+            pending.push_back(quoted_access::root(
+                static_cast<quoted_recursive_y_node const&>(*root)
+                    .generator()));
+            break;
+        case quoted_node_kind::basis_argument:
+            pending.push_back(quoted_access::root(
+                static_cast<quoted_basis_argument_node const&>(*root)
+                    .argument()));
+            break;
+        case quoted_node_kind::basis: {
+            auto const& basis =
+                static_cast<quoted_basis_node_base const&>(*root);
+            output << root.get() << ':' << basis.arity() << ';';
+            break;
+        }
+        case quoted_node_kind::opaque:
+        case quoted_node_kind::colored_argument:
+            output << root.get() << ';';
+            break;
+        case quoted_node_kind::rec_func:
+        case quoted_node_kind::identity:
+        case quoted_node_kind::constant:
+        case quoted_node_kind::substitution:
+        case quoted_node_kind::fixed_point:
+            break;
+        }
+    }
+
+    return std::move(output).str();
+}
+
+[[nodiscard]] inline std::optional<quoted_expression>
+reduce_saturated_basis_at_head(
+    quoted_expression expression,
+    bool& unsafe,
+    std::size_t& remaining_steps) {
+    if (remaining_steps == 0) {
+        unsafe = true;
+        return std::nullopt;
+    }
+    --remaining_steps;
+
+    std::vector<quoted_expression> arguments;
+    auto head = expression;
+    while (quoted_access::root(head)->kind() ==
+           quoted_node_kind::application) {
+        auto const& application =
+            static_cast<quoted_application_node const&>(
+                *quoted_access::root(head));
+        arguments.push_back(application.argument());
+        head = application.function();
+    }
+    std::reverse(arguments.begin(), arguments.end());
+
+    auto const& basis =
+        static_cast<quoted_basis_node_base const&>(
+            *quoted_access::root(head));
+    expression = basis.body();
+    for (std::size_t index = 0;
+         index < basis.arity();
+         ++index) {
+        expression = expression(
+            make_quoted_basis_argument(arguments[index]));
+    }
+
+    std::unordered_set<std::string> seen;
+    seen.emplace(quoted_expression_key(expression));
+
+    for (;;) {
+        auto reduced = reduce_next_redex(
+            expression,
+            reduction_options{
+                .basis_step = true,
+                .reduce_recursive_y = false,
+                .reduce_partial_k_argument = false,
+                .reduce_fixed_point = false,
+            });
+        if (!reduced) {
+            auto result = restore_basis_arguments(expression);
+            for (std::size_t index = basis.arity();
+                 index < arguments.size();
+                 ++index) {
+                result = result(arguments[index]);
+            }
+            return result;
+        }
+
+        if (remaining_steps == 0) {
+            unsafe = true;
+            return std::nullopt;
+        }
+        --remaining_steps;
+
+        expression = std::move(*reduced);
+        if (!seen.emplace(
+                quoted_expression_key(expression)).second) {
+            unsafe = true;
+            return std::nullopt;
+        }
+    }
+}
+
+[[nodiscard]] inline std::optional<quoted_expression>
+reduce_next_saturated_basis(
+    quoted_expression const& expression,
+    bool& unsafe,
+    std::size_t& remaining_steps) {
+    struct path_frame {
+        quoted_expression function;
+        quoted_expression argument;
+        bool visiting_argument = false;
+    };
+
+    std::vector<path_frame> path;
+    auto current = expression;
+
+    for (;;) {
+        if (is_saturated_basis_at_head(current)) {
+            auto reduced =
+                reduce_saturated_basis_at_head(
+                    current, unsafe, remaining_steps);
+            if (!reduced) {
+                return std::nullopt;
+            }
+            for (auto frame = path.rbegin();
+                 frame != path.rend();
+                 ++frame) {
+                *reduced = frame->visiting_argument
+                    ? make_quoted_application(
+                          frame->function,
+                          std::move(*reduced))
+                    : make_quoted_application(
+                          std::move(*reduced),
+                          frame->argument);
+            }
+            return reduced;
+        }
+
+        auto const& root = quoted_access::root(current);
+        auto const head_kind = quoted_head_kind(current);
+        auto const opaque_head =
+            head_kind == quoted_node_kind::constant ||
+            head_kind == quoted_node_kind::fixed_point ||
+            head_kind == quoted_node_kind::recursive_y;
+        if (root->kind() == quoted_node_kind::application &&
+            !opaque_head) {
+            auto const& application =
+                static_cast<quoted_application_node const&>(*root);
+            path.push_back({
+                application.function(),
+                application.argument(),
+            });
+            current = application.function();
+            continue;
+        }
+
+        bool found_argument = false;
+        while (!path.empty()) {
+            auto& frame = path.back();
+            if (!frame.visiting_argument) {
+                frame.visiting_argument = true;
+                current = frame.argument;
+                found_argument = true;
+                break;
+            }
+            path.pop_back();
+        }
+        if (!found_argument) {
+            return std::nullopt;
+        }
+    }
+}
+
+[[nodiscard]] inline quoted_expression
+reduce_saturated_bases(quoted_expression expression) {
+    constexpr std::size_t total_step_limit = 4096;
+    auto const original = expression;
+    std::size_t remaining_steps = total_step_limit;
+    std::unordered_set<std::string> seen;
+    seen.emplace(quoted_expression_key(expression));
+    for (;;) {
+        bool unsafe = false;
+        auto reduced = reduce_next_saturated_basis(
+            expression, unsafe, remaining_steps);
+        if (unsafe) {
+            return original;
+        }
+        if (!reduced) {
+            return expression;
+        }
+        expression = std::move(*reduced);
+        if (!seen.emplace(
+                quoted_expression_key(expression)).second) {
+            return original;
         }
     }
 }
@@ -4165,6 +4454,7 @@ private:
 
         auto user_source = canonical_define_definition(
             name.view(), symbols, source_.substr(body_position));
+        body = reduce_saturated_bases(std::move(body));
         for (auto symbol_position = symbols.rbegin();
              symbol_position != symbols.rend();
              ++symbol_position) {
@@ -4373,6 +4663,69 @@ private:
                is_named_basis(application->argument(), "B");
     }
 
+    [[nodiscard]] static bool is_double_cardinal(
+        quoted_expression const& expression) noexcept {
+        auto const* application = as_application(expression);
+        return application != nullptr &&
+               is_named_basis(application->function(), "C") &&
+               is_named_basis(application->argument(), "C");
+    }
+
+    [[nodiscard]] static bool is_starling_bluebird_thrush(
+        quoted_expression const& expression) noexcept {
+        auto const* outer = as_application(expression);
+        if (outer == nullptr ||
+            !is_named_basis(outer->argument(), "T")) {
+            return false;
+        }
+
+        auto const* inner = as_application(outer->function());
+        return inner != nullptr &&
+               quoted_access::root(inner->function())->kind() ==
+                   quoted_node_kind::substitution &&
+               is_named_basis(inner->argument(), "B");
+    }
+
+    [[nodiscard]] static bool is_peacock_mockingbird(
+        quoted_expression const& expression) noexcept {
+        auto const* application = as_application(expression);
+        return application != nullptr &&
+               is_named_basis(application->function(), "P") &&
+               is_named_basis(application->argument(), "M");
+    }
+
+    [[nodiscard]] static bool is_warbler_cardinal(
+        quoted_expression const& expression) noexcept {
+        auto const* application = as_application(expression);
+        return application != nullptr &&
+               is_named_basis(application->function(), "W") &&
+               is_named_basis(application->argument(), "C");
+    }
+
+    [[nodiscard]] static bool is_cardinal_bluebird(
+        quoted_expression const& expression) noexcept {
+        auto const* application = as_application(expression);
+        return application != nullptr &&
+               is_named_basis(application->function(), "C") &&
+               is_named_basis(application->argument(), "B");
+    }
+
+    [[nodiscard]] static bool is_warbler_bluebird(
+        quoted_expression const& expression) noexcept {
+        auto const* application = as_application(expression);
+        return application != nullptr &&
+               is_named_basis(application->function(), "W") &&
+               is_named_basis(application->argument(), "B");
+    }
+
+    [[nodiscard]] static bool is_cardinal_peacock(
+        quoted_expression const& expression) noexcept {
+        auto const* application = as_application(expression);
+        return application != nullptr &&
+               is_named_basis(application->function(), "C") &&
+               is_named_basis(application->argument(), "P");
+    }
+
     [[nodiscard]] quoted_expression registered_basis_expression(
         std::string_view name) const {
         auto const match = registered_bases_.find(name);
@@ -4383,8 +4736,46 @@ private:
         return match->second->expression();
     }
 
+    [[nodiscard]] std::optional<quoted_expression>
+    optimize_final_takeout_at_root(
+        quoted_expression const& expression) const {
+        if (is_bluebird_cardinal_thrush(expression)) {
+            return registered_basis_expression("V");
+        }
+        if (is_double_bluebird(expression)) {
+            return registered_basis_expression("D");
+        }
+        if (is_double_cardinal(expression)) {
+            return registered_basis_expression("R");
+        }
+        if (is_starling_bluebird_thrush(expression)) {
+            return registered_basis_expression("A");
+        }
+        if (is_peacock_mockingbird(expression)) {
+            return registered_basis_expression("L");
+        }
+        if (is_warbler_cardinal(expression)) {
+            return registered_basis_expression("N");
+        }
+        if (is_cardinal_bluebird(expression)) {
+            return registered_basis_expression("P");
+        }
+        if (is_warbler_bluebird(expression)) {
+            return registered_basis_expression("Z");
+        }
+        // if (is_cardinal_peacock(expression)) {
+        //     return registered_basis_expression("B");
+        // }
+        return std::nullopt;
+    }
+
     [[nodiscard]] quoted_expression optimize_final_takeout(
         quoted_expression expression) const {
+        if (auto optimized =
+                optimize_final_takeout_at_root(expression)) {
+            return *optimized;
+        }
+
         auto const* application = as_application(expression);
         if (application == nullptr) {
             return expression;
@@ -4402,11 +4793,9 @@ private:
                 std::move(function), std::move(argument));
         }
 
-        if (is_bluebird_cardinal_thrush(expression)) {
-            return registered_basis_expression("V");
-        }
-        if (is_double_bluebird(expression)) {
-            return registered_basis_expression("D");
+        if (auto optimized =
+                optimize_final_takeout_at_root(expression)) {
+            return *optimized;
         }
         return expression;
     }
@@ -5123,6 +5512,380 @@ takeout(quoted_atomic qa, quoted_expression qe) {
 
     throw std::logic_error(
         "combdsl::takeout has no matching case");
+}
+
+inline constexpr std::size_t search_for_xy_subexp_candidate_count =
+    129'958;
+inline constexpr std::size_t search_for_xyz_subexp_candidate_count =
+    3'137'844;
+inline constexpr std::size_t search_for_subexp_candidate_count =
+    search_for_xy_subexp_candidate_count +
+    search_for_xyz_subexp_candidate_count;
+
+struct subexpression_search_match {
+    quoted_expression source_expression;
+    quoted_expression takeout_result;
+    std::size_t examined_expression_count;
+};
+
+namespace detail {
+
+struct symbol_application_shape {
+    std::uint16_t application_bits;
+    std::uint8_t node_count;
+};
+
+[[nodiscard]] inline auto const&
+symbol_application_shapes() {
+    static auto const shapes = [] {
+        std::array<
+            std::vector<symbol_application_shape>,
+            9> result;
+        result[1].push_back({0, 1});
+
+        for (std::size_t leaf_count = 2;
+             leaf_count <= 8;
+             ++leaf_count) {
+            for (std::size_t left_leaf_count = 1;
+                 left_leaf_count < leaf_count;
+                 ++left_leaf_count) {
+                auto const right_leaf_count =
+                    leaf_count - left_leaf_count;
+                for (auto const& left :
+                     result[left_leaf_count]) {
+                    for (auto const& right :
+                         result[right_leaf_count]) {
+                        auto const right_shift =
+                            1U + left.node_count;
+                        result[leaf_count].push_back({
+                            static_cast<std::uint16_t>(
+                                1U |
+                                (static_cast<unsigned>(
+                                     left.application_bits)
+                                 << 1U) |
+                                (static_cast<unsigned>(
+                                     right.application_bits)
+                                 << right_shift)),
+                            static_cast<std::uint8_t>(
+                                1U + left.node_count +
+                                right.node_count),
+                        });
+                    }
+                }
+            }
+        }
+
+        return result;
+    }();
+    return shapes;
+}
+
+template <std::size_t SymbolCount>
+[[nodiscard]] inline quoted_expression
+make_symbol_application_tree(
+    symbol_application_shape shape,
+    std::size_t leaf_count,
+    std::size_t labeling,
+    std::array<
+        quoted_expression,
+        SymbolCount> const& symbols) {
+    static_assert(SymbolCount != 0);
+    std::array<std::uint8_t, 8> labels{};
+    for (auto position = leaf_count;
+         position > 0;
+         --position) {
+        labels[position - 1] =
+            static_cast<std::uint8_t>(
+                labeling % SymbolCount);
+        labeling /= SymbolCount;
+    }
+
+    std::size_t node_position = 0;
+    std::size_t leaf_position = 0;
+    auto build = [&](auto const& self) -> quoted_expression {
+        auto const is_application =
+            (shape.application_bits &
+             (1U << node_position)) != 0;
+        ++node_position;
+        if (!is_application) {
+            return symbols[labels[leaf_position++]];
+        }
+
+        auto function = self(self);
+        auto argument = self(self);
+        return make_quoted_application(
+            std::move(function),
+            std::move(argument));
+    };
+
+    return build(build);
+}
+
+[[nodiscard]] inline bool
+possibly_same_quoted_expression(
+    quoted_expression const& left,
+    quoted_expression const& right) {
+    auto const& left_root = quoted_access::root(left);
+    auto const& right_root = quoted_access::root(right);
+    if (left_root == right_root) {
+        return true;
+    }
+    if (left_root->kind() != right_root->kind()) {
+        return false;
+    }
+
+    auto const left_atomic = left_root->atomic_kind();
+    auto const right_atomic = right_root->atomic_kind();
+    if (left_atomic != quoted_atomic_kind::none ||
+        right_atomic != quoted_atomic_kind::none) {
+        return left_atomic != quoted_atomic_kind::none &&
+               left_atomic == right_atomic &&
+               left_root->atomic_name() ==
+                   right_root->atomic_name();
+    }
+
+    switch (left_root->kind()) {
+    case quoted_node_kind::identity:
+    case quoted_node_kind::constant:
+    case quoted_node_kind::substitution:
+    case quoted_node_kind::fixed_point:
+        return true;
+    case quoted_node_kind::application: {
+        auto const& left_application =
+            static_cast<quoted_application_node const&>(
+                *left_root);
+        auto const& right_application =
+            static_cast<quoted_application_node const&>(
+                *right_root);
+        return possibly_same_quoted_expression(
+                   left_application.function(),
+                   right_application.function()) &&
+               possibly_same_quoted_expression(
+                   left_application.argument(),
+                   right_application.argument());
+    }
+    case quoted_node_kind::pending_sk:
+        return possibly_same_quoted_expression(
+            static_cast<quoted_pending_sk_node const&>(
+                *left_root).application(),
+            static_cast<quoted_pending_sk_node const&>(
+                *right_root).application());
+    case quoted_node_kind::recursive_y:
+        return possibly_same_quoted_expression(
+            static_cast<quoted_recursive_y_node const&>(
+                *left_root).generator(),
+            static_cast<quoted_recursive_y_node const&>(
+                *right_root).generator());
+    case quoted_node_kind::basis_argument:
+        return possibly_same_quoted_expression(
+            static_cast<quoted_basis_argument_node const&>(
+                *left_root).argument(),
+            static_cast<quoted_basis_argument_node const&>(
+                *right_root).argument());
+    case quoted_node_kind::basis: {
+        auto const& left_basis =
+            static_cast<quoted_basis_node_base const&>(
+                *left_root);
+        auto const& right_basis =
+            static_cast<quoted_basis_node_base const&>(
+                *right_root);
+        return left_basis.name() == right_basis.name() &&
+               left_basis.arity() == right_basis.arity();
+    }
+    case quoted_node_kind::opaque:
+    case quoted_node_kind::rec_func:
+    case quoted_node_kind::colored_argument:
+        return false;
+    }
+    return false;
+}
+
+[[nodiscard]] inline bool
+contains_quoted_subexpression(
+    quoted_expression const& expression,
+    quoted_expression const& possible_container) {
+    std::vector<quoted_expression> pending{
+        possible_container,
+    };
+
+    while (!pending.empty()) {
+        auto current = std::move(pending.back());
+        pending.pop_back();
+        if (possibly_same_quoted_expression(
+                expression, current) &&
+            same_parser_definition_expression(
+                expression, current)) {
+            return true;
+        }
+
+        auto const& root = quoted_access::root(current);
+        switch (root->kind()) {
+        case quoted_node_kind::application: {
+            auto const& application =
+                static_cast<quoted_application_node const&>(
+                    *root);
+            pending.push_back(application.argument());
+            pending.push_back(application.function());
+            break;
+        }
+        case quoted_node_kind::pending_sk:
+            pending.push_back(
+                static_cast<quoted_pending_sk_node const&>(
+                    *root).application());
+            break;
+        case quoted_node_kind::recursive_y:
+            pending.push_back(
+                static_cast<quoted_recursive_y_node const&>(
+                    *root).generator());
+            break;
+        case quoted_node_kind::basis_argument:
+            pending.push_back(
+                static_cast<quoted_basis_argument_node const&>(
+                    *root).argument());
+            break;
+        case quoted_node_kind::colored_argument:
+            pending.push_back(
+                static_cast<quoted_colored_argument_node const&>(
+                    *root).argument());
+            break;
+        default:
+            break;
+        }
+    }
+
+    return false;
+}
+
+template <std::size_t SymbolCount, std::size_t TakeoutCount>
+[[nodiscard]] inline std::optional<subexpression_search_match>
+search_for_symbol_subexpression(
+    quoted_expression const& expression,
+    std::array<
+        quoted_expression,
+        SymbolCount> const& symbols,
+    std::array<
+        quoted_atomic,
+        TakeoutCount> const& takeout_order) {
+    static_assert(SymbolCount != 0);
+    std::size_t examined_expression_count = 0;
+    auto const& shapes = symbol_application_shapes();
+
+    for (std::size_t leaf_count = 1;
+         leaf_count <= 8;
+         ++leaf_count) {
+        std::size_t labeling_count = 1;
+        for (std::size_t index = 0;
+             index < leaf_count;
+             ++index) {
+            labeling_count *= SymbolCount;
+        }
+
+        for (auto const shape : shapes[leaf_count]) {
+            for (std::size_t labeling = 0;
+                 labeling < labeling_count;
+                 ++labeling) {
+                auto source_expression =
+                    make_symbol_application_tree(
+                        shape,
+                        leaf_count,
+                        labeling,
+                        symbols);
+                ++examined_expression_count;
+                auto result = source_expression;
+                for (auto const& atom : takeout_order) {
+                    result = takeout(
+                        atom, std::move(result));
+                }
+                if (contains_quoted_subexpression(
+                        expression, result)) {
+                    return subexpression_search_match{
+                        std::move(source_expression),
+                        std::move(result),
+                        examined_expression_count,
+                    };
+                }
+            }
+        }
+    }
+
+    return std::nullopt;
+}
+
+} // namespace detail
+
+[[nodiscard]] inline std::optional<subexpression_search_match>
+search_for_xy_subexp(quoted_expression const& expression) {
+    static std::array<quoted_expression, 2> const symbols{
+        quote(x),
+        quote(y),
+    };
+    static std::array<quoted_atomic, 2> const takeout_order{
+        quoted_atomic{y},
+        quoted_atomic{x},
+    };
+    return detail::search_for_symbol_subexpression(
+        expression, symbols, takeout_order);
+}
+
+template <class Expression>
+    requires (!std::same_as<
+              std::remove_cvref_t<Expression>,
+              quoted_expression>)
+[[nodiscard]] inline std::optional<subexpression_search_match>
+search_for_xy_subexp(Expression&& expression) {
+    return search_for_xy_subexp(
+        quote(std::forward<Expression>(expression)));
+}
+
+[[nodiscard]] inline std::optional<subexpression_search_match>
+search_for_xyz_subexp(quoted_expression const& expression) {
+    static std::array<quoted_expression, 3> const symbols{
+        quote(x),
+        quote(y),
+        quote(z),
+    };
+    static std::array<quoted_atomic, 3> const takeout_order{
+        quoted_atomic{z},
+        quoted_atomic{y},
+        quoted_atomic{x},
+    };
+    return detail::search_for_symbol_subexpression(
+        expression, symbols, takeout_order);
+}
+
+template <class Expression>
+    requires (!std::same_as<
+              std::remove_cvref_t<Expression>,
+              quoted_expression>)
+[[nodiscard]] inline std::optional<subexpression_search_match>
+search_for_xyz_subexp(Expression&& expression) {
+    return search_for_xyz_subexp(
+        quote(std::forward<Expression>(expression)));
+}
+
+[[nodiscard]] inline std::optional<subexpression_search_match>
+search_for_subexp(quoted_expression const& expression) {
+    if (auto result =
+            search_for_xy_subexp(expression)) {
+        return result;
+    }
+
+    auto result = search_for_xyz_subexp(expression);
+    if (result) {
+        result->examined_expression_count +=
+            search_for_xy_subexp_candidate_count;
+    }
+    return result;
+}
+
+template <class Expression>
+    requires (!std::same_as<
+              std::remove_cvref_t<Expression>,
+              quoted_expression>)
+[[nodiscard]] inline std::optional<subexpression_search_match>
+search_for_subexp(Expression&& expression) {
+    return search_for_subexp(
+        quote(std::forward<Expression>(expression)));
 }
 
 } // namespace combdsl

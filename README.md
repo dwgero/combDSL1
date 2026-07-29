@@ -439,6 +439,14 @@ the definition command is silent under `parse_eval`, `read_parse_eval`, and
 `parse_and_step` or `parse_and_key_step`, and malformed definitions are not
 registered.
 
+Before `takeout`, saturated named bases in the expression are applied,
+including reachable saturated bases nested inside other applications.
+Undersaturated bases remain named, and preprocessing does not enter
+`K`-protected arguments or `Y` recursion boundaries. For example,
+`define foo xyz = C(CB)xyz` first reduces the body to `x(yz)`, so the stored
+expression is `B`. If this preprocessing repeats an expression or exceeds its
+reduction limit, `define` safely abstracts the original body instead.
+
 The names `set`, `define`, `show`, `single`, `key`, `basis`, `colorize`,
 `about`, `birds`, `help`, `quit`, and `exit` are reserved words and cannot be
 used as names by either `set` or `define`.
@@ -454,7 +462,29 @@ parse_eval("show Repeat");              // prints: arity:1 YO
 
 The resulting recursive transformation is
 `Y(optimize(takeout(rec_func, previous_takeout_result)))`. The optimization
-pass recursively replaces `BCT` with `V` and `BB` with `D`.
+pass recursively replaces `BCT` with `V`, `BB` with `D`, `CC` with `R`,
+`SBT` with `A`, `PM` with `L`, `WC` with `N`, `CB` with `P`, and `WB` with
+`Z`. The `CP` with `B` optimizer code is retained but commented out.
+
+`search_for_xy_subexp(expression)` searches the unoptimized result of
+`takeout(x, takeout(y, source))` over all 129,958 application trees containing
+from one through eight `x` or `y` operands.
+`search_for_xyz_subexp(expression)` similarly searches
+`takeout(x, takeout(y, takeout(z, source)))` over all 3,137,844 application
+trees containing from one through eight `x`, `y`, or `z` operands. Both
+functions look for `expression` at the root, at the head, or in any application
+subexpression and stop at the first match. A match contains
+`source_expression`, `takeout_result`, and `examined_expression_count`; an
+empty result means every candidate was examined.
+`search_for_subexp(expression)` tries the 129,958-candidate `xy` search first
+and, only if that fails, tries the 3,137,844-candidate `xyz` search. Its
+`examined_expression_count` is cumulative across both searches. For example:
+
+```cpp
+auto first = search_for_subexp(parse("SBT"));       // source: x(yx)
+auto fallback = search_for_subexp(parse("C(BBB)T")); // source: x(zy)
+auto none = search_for_subexp(parse("C(CB)"));      // std::nullopt
+```
 
 Names created with `set` or `define` may be redefined. A changed definition
 replaces the user-defined basis for future parsing; expressions parsed earlier
@@ -523,7 +553,7 @@ expression produces no output, while malformed or empty lines throw
 The `crepl` executable applies `input_escape` to each line before passing it to
 `parse_eval`, so ordinary quoted words and backslashes can be entered directly.
 When standard output is a terminal, it first prints
-`Combinator Read-Eval-Print Loop, version 1.9.0`. Long evaluations then display
+`Combinator Read-Eval-Print Loop, version 1.9.12`. Long evaluations then display
 the accumulated step count every 1,000 reductions by overwriting one status
 line; the line is cleared before evaluation output is printed. Its interactive
 prompt is `>`. Redirected output contains no progress status. Enter

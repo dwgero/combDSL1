@@ -241,6 +241,21 @@ static_assert(std::is_same_v<decltype(parse("x")),
 static_assert(std::is_same_v<
               decltype(takeout(quoted_atomic{x}, quote(x))),
               combdsl::quoted_expression>);
+static_assert(
+    combdsl::search_for_xy_subexp_candidate_count == 129'958);
+static_assert(std::is_same_v<
+              decltype(combdsl::search_for_xy_subexp(S(B)(T))),
+              std::optional<combdsl::subexpression_search_match>>);
+static_assert(
+    combdsl::search_for_xyz_subexp_candidate_count == 3'137'844);
+static_assert(std::is_same_v<
+              decltype(combdsl::search_for_xyz_subexp(B(K)(K))),
+              std::optional<combdsl::subexpression_search_match>>);
+static_assert(
+    combdsl::search_for_subexp_candidate_count == 3'267'802);
+static_assert(std::is_same_v<
+              decltype(combdsl::search_for_subexp(S(B)(T))),
+              std::optional<combdsl::subexpression_search_match>>);
 static_assert(is_single_utf8_char(
     std::string_view("\xF0\x9F\x98\x80", 4)));
 static_assert(!is_single_utf8_char(
@@ -1142,6 +1157,85 @@ int main() {
          single_step(parse("Def3 a b c"), true), "Iabc");
     test("define basis contracts when saturated",
          single_step(parse("Def3 a b c")), "abc");
+    test("define preprocessing applies saturated bases",
+         combdsl::detail::reduce_saturated_bases(
+             parse("C(CB)xyz")),
+         "x(yz)");
+    test("define preprocessing applies nested saturated bases",
+         combdsl::detail::reduce_saturated_bases(
+             parse("u(C(CB)xyz)")),
+         "u(x(yz))");
+    test("define preprocessing preserves undersaturated bases",
+         combdsl::detail::reduce_saturated_bases(
+             parse("C(CB)x")),
+         "C(CB)x");
+    test("define preprocesses bases before takeout",
+         parse("define PrepB xyz = C(CB)xyz"), "PrepB");
+    test("show exposes preprocessed Bluebird definition",
+         parse("show PrepB"), "arity:3 B");
+    test("preprocessed Bluebird preserves behavior",
+         single_step(parse("PrepB a b c")), "a(bc)");
+    test("set creates a user basis for define preprocessing",
+         parse("set PrepAlias = 1 K"), "PrepAlias");
+    test("define preprocessing applies a user basis",
+         parse("define PrepK x = PrepAlias x"), "PrepK");
+    test("show exposes the applied user basis",
+         parse("show PrepK"), "arity:1 K");
+    test("applied user basis preserves behavior",
+         single_step(parse("PrepK a")), "Ka");
+    test("define preprocessing leaves a user basis undersaturated",
+         parse("define PrepKeep x = PrepAlias"), "PrepKeep");
+    test("show preserves the undersaturated user basis",
+         parse("show PrepKeep"), "arity:1 K PrepAlias");
+    test("undersaturated user basis remains named",
+         single_step(parse("PrepKeep a")), "PrepAlias");
+    test("set creates a zero-arity preprocessing basis",
+         parse("set PrepZero = 0 I"), "PrepZero");
+    test("define preprocessing applies a zero-arity basis",
+         parse("define PrepI x = PrepZero x"), "PrepI");
+    test("show exposes the applied zero-arity basis",
+         parse("show PrepI"), "arity:1 I");
+    test("applied zero-arity basis preserves behavior",
+         single_step(parse("PrepI a")), "a");
+    test("define preprocessing leaves primitives unchanged",
+         combdsl::detail::reduce_saturated_bases(
+             parse("Sxyz")),
+         "Sxyz");
+    test("define preprocessing preserves a partial K argument",
+         combdsl::detail::reduce_saturated_bases(
+             parse("K(Ma)")),
+         "K(Ma)");
+    test("define preprocessing preserves a discarded K argument",
+         combdsl::detail::reduce_saturated_bases(
+             parse("Kx(Ma)")),
+         "Kx(Ma)");
+    test("define preprocessing does not enter a Y generator",
+         combdsl::detail::reduce_saturated_bases(
+             parse("Y(Ma)")),
+         "Y(Ma)");
+    test("set creates a zero-arity Y preprocessing boundary",
+         parse("set PrepY = 0 Y(Ma)"), "PrepY");
+    test("define preprocessing expands but does not enter Y",
+         combdsl::detail::reduce_saturated_bases(
+             parse("PrepY")),
+         "Y(Ma)");
+    test("set creates a preprocessing snapshot",
+         parse("set CycleSnap = 1 K"), "CycleSnap");
+    test("set creates a same-name zero-arity snapshot",
+         parse("set CycleSnap = 0 CycleSnap"), "CycleSnap");
+    test("define preprocessing distinguishes same-name snapshots",
+         single_step(
+             combdsl::detail::reduce_saturated_bases(
+                 parse("CycleSnap"))(a)),
+         "Ka");
+    test("define preprocessing stops at a repeating basis redex",
+         combdsl::detail::reduce_saturated_bases(
+             parse("MM")),
+         "MM");
+    test("define accepts a repeating saturated body",
+         parse("define PrepOmega x = MM"), "PrepOmega");
+    test("show preserves the repeating saturated body",
+         parse("show PrepOmega"), "arity:1 K(MM)");
     test("define abstracts symbols from right to left",
          parse("define DefE xyz = exp"), "DefE");
     test("basis step exposes right-to-left abstraction",
@@ -1177,6 +1271,80 @@ int main() {
          parse("define DefKD x = BB"), "DefKD");
     test("show exposes nested Dove optimization",
          parse("show DefKD"), "arity:1 KD");
+    test("define optimizes CC to R",
+         parse("define DefR xyz = yzx"), "DefR");
+    test("show exposes the optimized Robin",
+         parse("show DefR"), "arity:3 R");
+    test("optimized Robin preserves behavior",
+         single_step(single_step(parse("DefR a b c"))), "bca");
+    test("define recursively optimizes nested CC",
+         parse("define DefKR x = CC"), "DefKR");
+    test("show exposes nested Robin optimization",
+         parse("show DefKR"), "arity:1 KR");
+    test("define optimizes SBT to A",
+         parse("define DefA xy = x(yx)"), "DefA");
+    test("show exposes the optimized Albatross",
+         parse("show DefA"), "arity:2 A");
+    test("optimized Albatross preserves behavior",
+         single_step(single_step(parse("DefA a b"))), "a(ba)");
+    test("define recursively optimizes nested SBT",
+         parse("define DefKA x = SBT"), "DefKA");
+    test("show exposes nested Albatross optimization",
+         parse("show DefKA"), "arity:1 KA");
+    test("define chains CB and PM optimizations to L",
+         parse("define DefL xy = x(yy)"), "DefL");
+    test("show exposes the optimized Lark",
+         parse("show DefL"), "arity:2 L");
+    test("optimized Lark preserves behavior",
+         single_step(single_step(parse("DefL a b"))), "a(bb)");
+    test("define recursively optimizes nested PM",
+         parse("define DefKL x = PM"), "DefKL");
+    test("show exposes nested Lark optimization",
+         parse("show DefKL"), "arity:1 KL");
+    test("define optimizes WC to N",
+         parse("define DefN xy = xyx"), "DefN");
+    test("show exposes the optimized Nightingale",
+         parse("show DefN"), "arity:2 N");
+    test("optimized Nightingale preserves behavior",
+         single_step(single_step(parse("DefN a b"))), "aba");
+    test("define recursively optimizes nested WC",
+         parse("define DefKN x = WC"), "DefKN");
+    test("show exposes nested Nightingale optimization",
+         parse("show DefKN"), "arity:1 KN");
+    test("define optimizes CB to P",
+         parse("define DefP xyz = y(xz)"), "DefP");
+    test("show exposes the optimized Peacock",
+         parse("show DefP"), "arity:3 P");
+    test("optimized Peacock preserves behavior",
+         single_step(single_step(parse("DefP a b c"))), "b(ac)");
+    test("define recursively optimizes nested CB",
+         parse("define DefKP x = CB"), "DefKP");
+    test("show exposes nested Peacock optimization",
+         parse("show DefKP"), "arity:1 KP");
+    test("define optimizes WB to Z",
+         parse("define DefZ xy = x(xy)"), "DefZ");
+    test("show exposes the optimized Zazu",
+         parse("show DefZ"), "arity:2 Z");
+    test("optimized Zazu preserves behavior",
+         single_step(single_step(parse("DefZ a b"))), "a(ab)");
+    test("define recursively optimizes nested WB",
+         parse("define DefKZ x = WB"), "DefKZ");
+    test("show exposes nested Zazu optimization",
+         parse("show DefKZ"), "arity:1 KZ");
+    test("define preprocessing creates the Bluebird",
+         parse("define DefB xyz = Pyxz"), "DefB");
+    test("show exposes the preprocessed Bluebird",
+         parse("show DefB"), "arity:3 B");
+    test("preprocessed Bluebird preserves behavior",
+         single_step(parse("DefB a b c")), "a(bc)");
+    test("define leaves nested CP unoptimized",
+         parse("define DefKB x = CP"), "DefKB");
+    test("show exposes nested unoptimized CP",
+         parse("show DefKB"), "arity:1 K(CP)");
+    test("define stops after optimizing CB to P",
+         parse("define DefChainB x = C(CB)x"), "DefChainB");
+    test("show exposes the resulting CP",
+         parse("show DefChainB"), "arity:1 CP");
     test("define creates the Starling",
          parse("define DefS xyz = xz(yz)"), "DefS");
     test("basis step exposes the defined Starling",
@@ -2179,6 +2347,197 @@ int main() {
              quote(y)(x)(quote(z)(x))(
                  quote(w)(x)(quote(v)(x)))),
          "S(Syz)(Swv)");
+    test("xy subexpression search enumerates 129,958 candidates",
+         [] {
+             std::size_t count = 0;
+             std::size_t labeling_count = 2;
+             auto const& shapes =
+                 combdsl::detail::symbol_application_shapes();
+             for (std::size_t leaf_count = 1;
+                  leaf_count <= 8;
+                  ++leaf_count) {
+                 count += shapes[leaf_count].size() *
+                          labeling_count;
+                 labeling_count *= 2;
+             }
+             std::cout << count;
+         },
+         "129958");
+    test("xyz subexpression search enumerates 3,137,844 candidates",
+         [] {
+             std::size_t count = 0;
+             std::size_t labeling_count = 3;
+             auto const& shapes =
+                 combdsl::detail::symbol_application_shapes();
+             for (std::size_t leaf_count = 1;
+                  leaf_count <= 8;
+                  ++leaf_count) {
+                 count += shapes[leaf_count].size() *
+                          labeling_count;
+                 labeling_count *= 3;
+             }
+             std::cout << count;
+         },
+         "3137844");
+    test("subexpression search uses all Catalan tree shapes",
+         [] {
+             auto const& shapes =
+                 combdsl::detail::symbol_application_shapes();
+             for (std::size_t leaf_count = 1;
+                  leaf_count <= 8;
+                  ++leaf_count) {
+                 if (leaf_count != 1) {
+                     std::cout << ' ';
+                 }
+                 std::cout << shapes[leaf_count].size();
+             }
+         },
+         "1 1 2 5 14 42 132 429");
+    const auto xy_subexpression_match =
+        combdsl::search_for_xy_subexp(S(B)(T));
+    test("xy subexpression search finds a raw takeout result",
+         [&] {
+             if (xy_subexpression_match) {
+                 xy_subexpression_match->source_expression();
+             } else {
+                 std::cout << "not found";
+             }
+         },
+         "x(yx)");
+    test("xy subexpression search returns unoptimized takeout",
+         [&] {
+             if (xy_subexpression_match) {
+                 xy_subexpression_match->takeout_result();
+             } else {
+                 std::cout << "not found";
+             }
+         },
+         "SBT");
+    test("xy subexpression search reports candidates examined",
+         [&] {
+             if (xy_subexpression_match) {
+                 std::cout <<
+                     xy_subexpression_match->
+                         examined_expression_count;
+             }
+         },
+         "9");
+    const auto combined_xy_subexpression_match =
+        combdsl::search_for_subexp(S(B)(T));
+    test("combined subexpression search tries xy first",
+         [&] {
+             if (combined_xy_subexpression_match) {
+                 combined_xy_subexpression_match->
+                     source_expression();
+             } else {
+                 std::cout << "not found";
+             }
+         },
+         "x(yx)");
+    test("combined xy search returns unoptimized takeout",
+         [&] {
+             if (combined_xy_subexpression_match) {
+                 combined_xy_subexpression_match->
+                     takeout_result();
+             } else {
+                 std::cout << "not found";
+             }
+         },
+         "SBT");
+    test("combined xy search reports its phase count",
+         [&] {
+             if (combined_xy_subexpression_match) {
+                 std::cout <<
+                     combined_xy_subexpression_match->
+                         examined_expression_count;
+             }
+         },
+         "9");
+    const auto combined_xyz_subexpression_match =
+        combdsl::search_for_subexp(
+            C(B(B)(B))(T));
+    test("combined subexpression search falls back to xyz",
+         [&] {
+             if (combined_xyz_subexpression_match) {
+                 combined_xyz_subexpression_match->
+                     source_expression();
+             } else {
+                 std::cout << "not found";
+             }
+         },
+         "x(zy)");
+    test("combined xyz search returns unoptimized takeout",
+         [&] {
+             if (combined_xyz_subexpression_match) {
+                 combined_xyz_subexpression_match->
+                     takeout_result();
+             } else {
+                 std::cout << "not found";
+             }
+         },
+         "C(BBB)T");
+    test("combined xyz search reports cumulative count",
+         [&] {
+             if (combined_xyz_subexpression_match) {
+                 std::cout <<
+                     combined_xyz_subexpression_match->
+                         examined_expression_count;
+             }
+         },
+         "129978");
+    const auto xyz_subexpression_match =
+        combdsl::search_for_xyz_subexp(B(C)(T));
+    test("xyz subexpression search finds a raw takeout result",
+         [&] {
+             if (xyz_subexpression_match) {
+                 xyz_subexpression_match->source_expression();
+             } else {
+                 std::cout << "not found";
+             }
+         },
+         "yxx");
+    test("xyz subexpression search returns unoptimized takeout",
+         [&] {
+             if (xyz_subexpression_match) {
+                 xyz_subexpression_match->takeout_result();
+             } else {
+                 std::cout << "not found";
+             }
+         },
+         "B(BK)(W(BCT))");
+    test("xyz subexpression search reports candidates examined",
+         [&] {
+             if (xyz_subexpression_match) {
+                 std::cout <<
+                     xyz_subexpression_match->
+                         examined_expression_count;
+             }
+         },
+         "49");
+    test("subexpression matching includes the head",
+         [] {
+             std::cout <<
+                 combdsl::detail::contains_quoted_subexpression(
+                     quote(B),
+                     quote(B)(K)(K));
+         },
+         "1");
+    test("subexpression matching includes an argument",
+         [] {
+             std::cout <<
+                 combdsl::detail::contains_quoted_subexpression(
+                     quote(K),
+                     quote(B)(K)(K));
+         },
+         "1");
+    test("subexpression matching rejects an absent expression",
+         [] {
+             std::cout <<
+                 combdsl::detail::contains_quoted_subexpression(
+                     quote(Y),
+                     quote(B)(K)(K));
+         },
+         "0");
     const auto recursive_x = combdsl::detail::make_quoted_rec_func(
         combdsl::detail::basis_label("x"));
     test("recursive function atom prints like its name",
