@@ -432,12 +432,17 @@ parse("define Gxyz = x(yz)");            // G
 parse("define Gx y = y");                // Gx
 ```
 
-This is equivalent to repeatedly calling `takeout`; for example,
-`define foo xyz = exp` stores
-`takeout(x, takeout(y, takeout(z, exp)))` with arity `3`. As with `set`,
-the definition command is silent under `parse_eval`, `read_parse_eval`, and
-`parse_and_step` or `parse_and_key_step`, and malformed definitions are not
-registered.
+`define` uses contextual `takeout` passes. In the argument-dependent case,
+`B(qfun)(t)` and `P(t)(qfun)` are equivalent. For `define foo xyz = exp`, the
+first pass takes out `z` with `x`, `y`, and recursive `foo` pending. It uses
+`P` only when its recursively produced `t` contains none of those pending
+atoms and `qfun` contains at least one of them; otherwise it uses `B`. The `y`
+pass similarly has `x` and `foo` pending, while the `x` pass has only `foo`
+pending. If the definition is recursive, the final `foo` pass has no pending
+atoms and therefore uses `B` in this case. The resulting expression has arity
+`3`. As with `set`, the definition command is silent under `parse_eval`,
+`read_parse_eval`, and `parse_and_step` or `parse_and_key_step`, and malformed
+definitions are not registered.
 
 Before `takeout`, saturated named bases in the expression are applied,
 including reachable saturated bases nested inside other applications.
@@ -462,18 +467,20 @@ parse_eval("show Repeat");              // prints: arity:1 YO
 
 The resulting recursive transformation is
 `Y(optimize(takeout(rec_func, previous_takeout_result)))`. The optimization
-pass recursively replaces `BCT` with `V`, `BB` with `D`, `CC` with `R`,
-`SBT` with `A`, `PM` with `L`, `WC` with `N`, `CB` with `P`, and `WB` with
-`Z`. The `CP` with `B` optimizer code is retained but commented out.
+pass recursively replaces `BCT` or `PTC` with `V`, `BB` with `D`, `CC` with
+`R`, `SBT` with `A`, `PM` with `L`, `WC` with `N`, `CB` with `P`, and `WB`
+with `Z`. The `CP` with `B` optimizer code is retained but commented out.
 
 `search_for_xy_subexp(expression)` searches the unoptimized result of
-`takeout(x, takeout(y, source))` over all 129,958 application trees containing
-from one through eight `x` or `y` operands.
+contextually taking out `y` with `x` pending, then taking out `x` with no
+pending atoms, over all 129,958 application trees containing from one through
+eight `x` or `y` operands.
 `search_for_xyz_subexp(expression)` similarly searches
-`takeout(x, takeout(y, takeout(z, source)))` over all 3,137,844 application
-trees containing from one through eight `x`, `y`, or `z` operands. Both
-functions look for `expression` at the root, at the head, or in any application
-subexpression and stop at the first match. A match contains
+the contextual passes `z` with `x` and `y` pending, `y` with `x` pending, then
+`x` with no pending atoms, over all 3,137,844 application trees containing
+from one through eight `x`, `y`, or `z` operands. Both functions look for
+`expression` at the root, at the head, or in any application subexpression and
+stop at the first match. A match contains
 `source_expression`, `takeout_result`, and `examined_expression_count`; an
 empty result means every candidate was examined.
 `search_for_subexp(expression)` tries the 129,958-candidate `xy` search first
@@ -482,7 +489,7 @@ and, only if that fails, tries the 3,137,844-candidate `xyz` search. Its
 
 ```cpp
 auto first = search_for_subexp(parse("SBT"));       // source: x(yx)
-auto fallback = search_for_subexp(parse("C(BBB)T")); // source: x(zy)
+auto fallback = search_for_subexp(parse("B(PT)B")); // source: x(zy)
 auto none = search_for_subexp(parse("C(CB)"));      // std::nullopt
 ```
 
@@ -553,7 +560,7 @@ expression produces no output, while malformed or empty lines throw
 The `crepl` executable applies `input_escape` to each line before passing it to
 `parse_eval`, so ordinary quoted words and backslashes can be entered directly.
 When standard output is a terminal, it first prints
-`Combinator Read-Eval-Print Loop, version 1.10.0`. Long evaluations then display
+`Combinator Read-Eval-Print Loop, version 1.10.2`. Long evaluations then display
 the accumulated step count every 1,000 reductions by overwriting one status
 line; the line is cleared before evaluation output is printed. Its interactive
 prompt is `>`. Redirected output contains no progress status. Enter

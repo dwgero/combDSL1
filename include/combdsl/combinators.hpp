@@ -31,6 +31,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <span>
 #include <sstream>
 #include <streambuf>
 #include <stdexcept>
@@ -2561,6 +2562,12 @@ takeout(quoted_atomic qa, quoted_expression qe);
 
 namespace detail {
 
+[[nodiscard]] inline quoted_expression
+takeout_with_pending_atoms(
+    quoted_atomic const& qa,
+    quoted_expression qe,
+    std::span<quoted_atomic const> pending_atoms);
+
 struct reduction_options {
     bool basis_step = false;
     bool reduce_recursive_y = true;
@@ -4455,17 +4462,27 @@ private:
         auto user_source = canonical_define_definition(
             name.view(), symbols, source_.substr(body_position));
         body = reduce_saturated_bases(std::move(body));
+        std::vector<quoted_atomic> pending_atoms;
+        pending_atoms.reserve(symbols.size() + 1);
+        pending_atoms.emplace_back(recursive_function);
+        for (auto const symbol_name : symbols) {
+            pending_atoms.emplace_back(symbol(symbol_name));
+        }
         for (auto symbol_position = symbols.rbegin();
              symbol_position != symbols.rend();
              ++symbol_position) {
-            body = takeout(
+            pending_atoms.pop_back();
+            body = takeout_with_pending_atoms(
                 quoted_atomic{symbol(*symbol_position)},
-                std::move(body));
+                std::move(body),
+                pending_atoms);
         }
         if (contains_quoted_atom(recursive_function, body)) {
-            body = takeout(
+            pending_atoms.clear();
+            body = takeout_with_pending_atoms(
                 quoted_atomic{recursive_function},
-                std::move(body));
+                std::move(body),
+                pending_atoms);
             body = quote(Y)(
                 optimize_final_takeout(std::move(body)));
         } else {
@@ -4655,6 +4672,20 @@ private:
                is_named_basis(inner->argument(), "C");
     }
 
+    [[nodiscard]] static bool is_peacock_thrush_cardinal(
+        quoted_expression const& expression) noexcept {
+        auto const* outer = as_application(expression);
+        if (outer == nullptr ||
+            !is_named_basis(outer->argument(), "C")) {
+            return false;
+        }
+
+        auto const* inner = as_application(outer->function());
+        return inner != nullptr &&
+               is_named_basis(inner->function(), "P") &&
+               is_named_basis(inner->argument(), "T");
+    }
+
     [[nodiscard]] static bool is_double_bluebird(
         quoted_expression const& expression) noexcept {
         auto const* application = as_application(expression);
@@ -4740,6 +4771,9 @@ private:
     optimize_final_takeout_at_root(
         quoted_expression const& expression) const {
         if (is_bluebird_cardinal_thrush(expression)) {
+            return registered_basis_expression("V");
+        }
+        if (is_peacock_thrush_cardinal(expression)) {
             return registered_basis_expression("V");
         }
         if (is_double_bluebird(expression)) {
@@ -5456,8 +5490,25 @@ SYMBOL(x);
 SYMBOL(y);
 SYMBOL(z);
 
+namespace detail {
+
+[[nodiscard]] inline bool contains_any_quoted_atom(
+    std::span<quoted_atomic const> atoms,
+    quoted_expression const& expression) {
+    return std::any_of(
+        atoms.begin(),
+        atoms.end(),
+        [&](quoted_atomic const& atom) {
+            return contains_quoted_atom(
+                atom.expression(), expression);
+        });
+}
+
 [[nodiscard]] inline quoted_expression
-takeout(quoted_atomic qa, quoted_expression qe) {
+takeout_impl(
+    quoted_atomic const& qa,
+    quoted_expression qe,
+    std::span<quoted_atomic const> pending_atoms) {
     if (detail::same_quoted_atom(qa.expression(), qe)) {
         return detail::make_quoted_primitive(
             detail::quoted_node_kind::identity);
@@ -5494,24 +5545,62 @@ takeout(quoted_atomic qa, quoted_expression qe) {
             return qfun;
         }
         if (qfun_is_qa && qarg_contains_qa) {
-            return quote(O)(takeout(qa, qarg));
+            return quote(O)(takeout_impl(
+                qa, qarg, pending_atoms));
         }
         if (qarg_is_qa && qfun_contains_qa) {
-            return quote(W)(takeout(qa, qfun));
+            return quote(W)(takeout_impl(
+                qa, qfun, pending_atoms));
         }
         if (qfun_contains_qa && !qarg_contains_qa) {
-            return quote(C)(takeout(qa, qfun))(qarg);
+            return quote(C)(
+                takeout_impl(
+                    qa, qfun, pending_atoms))(
+                qarg);
         }
         if (qarg_contains_qa && !qfun_contains_qa) {
-            return quote(B)(qfun)(takeout(qa, qarg));
+            auto t = takeout_impl(
+                qa, qarg, pending_atoms);
+            if (contains_any_quoted_atom(
+                    pending_atoms, qfun) &&
+                !contains_any_quoted_atom(
+                    pending_atoms, t)) {
+                return quote(P)(
+                    std::move(t))(qfun);
+            }
+            return quote(B)(
+                qfun)(std::move(t));
         }
         if (qfun_contains_qa && qarg_contains_qa) {
-            return quote(S)(takeout(qa, qfun))(takeout(qa, qarg));
+            return quote(S)(
+                takeout_impl(
+                    qa, qfun, pending_atoms))(
+                takeout_impl(
+                    qa, qarg, pending_atoms));
         }
     }
 
     throw std::logic_error(
         "combdsl::takeout has no matching case");
+}
+
+[[nodiscard]] inline quoted_expression
+takeout_with_pending_atoms(
+    quoted_atomic const& qa,
+    quoted_expression qe,
+    std::span<quoted_atomic const> pending_atoms) {
+    return takeout_impl(
+        qa, std::move(qe), pending_atoms);
+}
+
+} // namespace detail
+
+[[nodiscard]] inline quoted_expression
+takeout(quoted_atomic qa, quoted_expression qe) {
+    return detail::takeout_impl(
+        qa,
+        std::move(qe),
+        std::span<quoted_atomic const>{});
 }
 
 inline constexpr std::size_t search_for_xy_subexp_candidate_count =
@@ -5792,9 +5881,17 @@ search_for_symbol_subexpression(
                         symbols);
                 ++examined_expression_count;
                 auto result = source_expression;
-                for (auto const& atom : takeout_order) {
-                    result = takeout(
-                        atom, std::move(result));
+                for (std::size_t takeout_index = 0;
+                     takeout_index < TakeoutCount;
+                     ++takeout_index) {
+                    auto const pending_atoms =
+                        std::span<quoted_atomic const>{
+                            takeout_order}.subspan(
+                                takeout_index + 1);
+                    result = takeout_with_pending_atoms(
+                        takeout_order[takeout_index],
+                        std::move(result),
+                        pending_atoms);
                 }
                 if (contains_quoted_subexpression(
                         expression, result)) {

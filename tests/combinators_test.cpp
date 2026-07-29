@@ -1243,6 +1243,18 @@ int main() {
          "BK(BK(Cep))abc");
     test("right-to-left abstraction preserves behavior",
          single_step(parse("DefE a b c")), "eap");
+    test("define applies contextual Peacock selection",
+         parse("define DefContext xyz = xy(wz)"), "DefContext");
+    test("show exposes contextual Peacock selection",
+         parse("show DefContext"), "arity:3 B(Pw)");
+    test("contextual Peacock selection preserves behavior",
+         single_step(parse("DefContext a b c")), "ab(wc)");
+    test("define keeps Bluebird when qfun has no pending atom",
+         parse("define DefNoQfun xy = w(zy)"), "DefNoQfun");
+    test("show exposes the qfun-dependent Bluebird choice",
+         parse("show DefNoQfun"), "arity:2 K(Bwz)");
+    test("qfun-dependent Bluebird choice preserves behavior",
+         single_step(parse("DefNoQfun a b")), "w(zb)");
     test("define creates the Thrush from reverse application",
          parse("define Flip xy = yx"), "Flip");
     test("basis step exposes the defined Thrush",
@@ -1267,6 +1279,10 @@ int main() {
          parse("define DefKV x = BCT"), "DefKV");
     test("show exposes nested Vireo optimization",
          parse("show DefKV"), "arity:1 KV");
+    test("define recursively optimizes nested PTC",
+         parse("define DefKPV x = PTC"), "DefKPV");
+    test("show exposes nested Peacock Vireo optimization",
+         parse("show DefKPV"), "arity:1 KV");
     test("define recursively optimizes nested BB",
          parse("define DefKD x = BB"), "DefKD");
     test("show exposes nested Dove optimization",
@@ -1451,6 +1467,11 @@ int main() {
          parse("define RV x = C(T RV)x"), "RV");
     test("recursive abstraction optimization is wrapped in Y",
          parse("show RV"), "arity:1 YV");
+    test("recursive function abstraction chooses Bluebird",
+         parse("define RecursiveB x = u(v RecursiveB)x"),
+         "RecursiveB");
+    test("show exposes recursive Bluebird abstraction",
+         parse("show RecursiveB"), "arity:1 Y(Buv)");
     test("a quoted word matching the definition name is not recursive",
          parse(input_escape(
              "define WordRec x = \"WordRec\"")), "WordRec");
@@ -2310,6 +2331,104 @@ int main() {
              quoted_atomic{x},
              quote(y)(quote(z)(quote(w)(x)))),
          "By(Bzw)");
+    test("contextual takeout keeps Bluebird with no pending atoms",
+         combdsl::detail::takeout_with_pending_atoms(
+             quoted_atomic{x},
+             quote(y)(quote(z)(x)),
+             {}),
+         "Byz");
+    const std::vector<quoted_atomic> pending_y{
+        quoted_atomic{y}};
+    test("contextual takeout uses Peacock when only qfun is pending",
+         combdsl::detail::takeout_with_pending_atoms(
+             quoted_atomic{x},
+             quote(y)(quote(z)(x)),
+             pending_y),
+         "Pzy");
+    test("contextual takeout keeps Bluebird when qfun is not pending",
+         combdsl::detail::takeout_with_pending_atoms(
+             quoted_atomic{x},
+             quote(w)(quote(z)(x)),
+             pending_y),
+         "Bwz");
+    const std::vector<quoted_atomic> pending_y_z{
+        quoted_atomic{y},
+        quoted_atomic{z}};
+    test("contextual takeout keeps Bluebird when t is pending",
+         combdsl::detail::takeout_with_pending_atoms(
+             quoted_atomic{x},
+             quote(y)(quote(z)(x)),
+             pending_y_z),
+         "Byz");
+    const std::vector<quoted_atomic> pending_x_y{
+        quoted_atomic{x},
+        quoted_atomic{y}};
+    test("contextual takeout tests pending atoms after abstraction",
+         combdsl::detail::takeout_with_pending_atoms(
+             quoted_atomic{x},
+             quote(y)(quote(z)(x)),
+             pending_x_y),
+         "Pzy");
+    test("contextual takeout propagates Peacock selection recursively",
+         combdsl::detail::takeout_with_pending_atoms(
+             quoted_atomic{x},
+             quote(z)(quote(y)(quote(w)(x))),
+             pending_y),
+         "Bz(Pwy)");
+    const auto contextual_recursive_foo =
+        combdsl::detail::make_quoted_rec_func(
+            combdsl::detail::basis_label("foo"));
+    const std::vector<quoted_atomic> pending_foo_x_y{
+        quoted_atomic{contextual_recursive_foo},
+        quoted_atomic{x},
+        quoted_atomic{y}};
+    test("z abstraction uses Peacock when only qfun has pending atoms",
+         combdsl::detail::takeout_with_pending_atoms(
+             quoted_atomic{z},
+             quote(y)(quote(w)(z)),
+             pending_foo_x_y),
+         "Pwy");
+    test("z abstraction keeps Bluebird when t contains foo",
+         combdsl::detail::takeout_with_pending_atoms(
+             quoted_atomic{z},
+             quote(y)(contextual_recursive_foo(z)),
+             pending_foo_x_y),
+         "By foo");
+    const std::vector<quoted_atomic> pending_foo_x{
+        quoted_atomic{contextual_recursive_foo},
+        quoted_atomic{x}};
+    test("y abstraction uses Peacock when only qfun has pending atoms",
+         combdsl::detail::takeout_with_pending_atoms(
+             quoted_atomic{y},
+             quote(x)(quote(w)(y)),
+             pending_foo_x),
+         "Pwx");
+    test("y abstraction keeps Bluebird when t contains x",
+         combdsl::detail::takeout_with_pending_atoms(
+             quoted_atomic{y},
+             quote(u)(quote(x)(y)),
+             pending_foo_x),
+         "Bux");
+    const std::vector<quoted_atomic> pending_foo{
+        quoted_atomic{contextual_recursive_foo}};
+    test("x abstraction uses Peacock when only qfun has pending atoms",
+         combdsl::detail::takeout_with_pending_atoms(
+             quoted_atomic{x},
+             contextual_recursive_foo(quote(z)(x)),
+             pending_foo),
+         "Pz foo");
+    test("x abstraction keeps Bluebird when t contains foo",
+         combdsl::detail::takeout_with_pending_atoms(
+             quoted_atomic{x},
+             quote(u)(contextual_recursive_foo(x)),
+             pending_foo),
+         "Bu foo");
+    test("recursive function abstraction keeps Bluebird",
+         combdsl::detail::takeout_with_pending_atoms(
+             quoted_atomic{contextual_recursive_foo},
+             quote(y)(quote(z)(contextual_recursive_foo)),
+             {}),
+         "Byz");
     test("takeout leaves BCT unoptimized",
          takeout(quoted_atomic{x}, quote(C)(quote(T)(x))),
          "BCT");
@@ -2455,7 +2574,7 @@ int main() {
          "9");
     const auto combined_xyz_subexpression_match =
         combdsl::search_for_subexp(
-            C(B(B)(B))(T));
+            B(P(T))(B));
     test("combined subexpression search falls back to xyz",
          [&] {
              if (combined_xyz_subexpression_match) {
@@ -2475,7 +2594,7 @@ int main() {
                  std::cout << "not found";
              }
          },
-         "C(BBB)T");
+         "B(PT)B");
     test("combined xyz search reports cumulative count",
          [&] {
              if (combined_xyz_subexpression_match) {
