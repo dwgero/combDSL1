@@ -45,7 +45,7 @@
 
 namespace {
 
-constexpr std::string_view crepl_version = "1.9.12";
+constexpr std::string_view crepl_version = "1.10.0";
 
 void print_crepl_banner(std::ostream& output) {
     output << "Combinator Read-Eval-Print Loop, version "
