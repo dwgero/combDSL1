@@ -92,6 +92,7 @@ using combdsl::W;
 using combdsl::O;
 using combdsl::B;
 using combdsl::T;
+using combdsl::U;
 using combdsl::N;
 using combdsl::R;
 using combdsl::C;
@@ -959,6 +960,9 @@ int main() {
     test("T", T, "T");
     test("T(x)", T(x), "Tx");
     test("T(x)(y)", T(x)(y), "yx");
+    test("U", U, "U");
+    test("U(x)", U(x), "Ux");
+    test("U(x)(y)", U(x)(y), "y(xxy)");
     test("parse SKI", parse("SKI"), "SKI");
     test("parse SKIx", parse("SKIx"), "SKIx");
     test("parse symbols", parse("uvwxyz"), "uvwxyz");
@@ -1392,15 +1396,15 @@ int main() {
     test("whitespace-separated define symbols preserve their order",
          single_step(parse("Dws a b c"), true), "Iabc");
     test("define accepts a symbol adjacent to a one-letter name",
-         parse("define Ux = xSTK(KK)(SK)"), "U");
+         parse("define Xx = xSTK(KK)(SK)"), "X");
     test("compact one-letter define preserves its behavior",
          single_step(
-             parse("define Ux=xSTK(KK)(SK)")(w)),
+             parse("define Xx=xSTK(KK)(SK)")(w)),
          "wSTK(KK)(SK)");
     test("compact one-letter define infers its adjacent symbol",
-         parse("define Ux = x"), "U");
+         parse("define Xx = x"), "X");
     test("compact one-letter define registers its basis",
-         single_step(parse("Ua")), "a");
+         single_step(parse("Xa")), "a");
     test("compact one-letter define canonicalizes its signature",
          [] {
              auto definitions = set_list();
@@ -1410,7 +1414,7 @@ int main() {
                      ? 0
                      : line_position + 1);
          },
-         "define U x = x");
+         "define X x = x");
     test("compact define accepts a single UTF-8 character name",
          parse("define \xE2\x96\xB2x = x"), "\xE2\x96\xB2");
     test("compact UTF-8 define registers its basis",
@@ -1430,18 +1434,18 @@ int main() {
          },
          "define \xE2\x96\xA0 xyz = x(yz)");
     test("compact one-letter define recognizes recursion",
-         parse("define Ux = x(Ux)"), "U");
+         parse("define Xx = x(Xx)"), "X");
     test("compact recursive define is wrapped in Y",
-         parse("show U"), "arity:1 YO");
+         parse("show X"), "arity:1 YO");
     test("two-character define names retain their spaced symbol",
          parse("define Gx y = y"), "Gx");
     test("two-character define name registers without becoming G",
          single_step(parse("Gx a")), "a");
     test("compact define accepts multiple adjacent symbols",
-         parse("define Uxyz = x(yz)"), "U");
+         parse("define Xxyz = x(yz)"), "X");
     test("compact multiple-symbol define preserves its behavior",
          single_step(
-             parse("define Uxyz=x(yz)")(a)(b)(c)),
+             parse("define Xxyz=x(yz)")(a)(b)(c)),
          "a(bc)");
     test("an overlong compact signature is not an overlong name",
          parse("define ~abcdefghijklmno = a"), "~");
@@ -1462,6 +1466,11 @@ int main() {
     test("pre-defined Eagle is registered", parse("E"), "E");
     test("show exposes the pre-defined Eagle",
          parse("show E"), "arity:5 BDD");
+    test("pre-defined Turing is registered", parse("U"), "U");
+    test("show exposes the pre-defined Turing",
+         parse("show U"), "arity:2 BOM");
+    test("pre-defined Turing reduces",
+         single_step(parse("Uxy")), "y(xxy)");
     test("define recognizes a recursive name",
          parse("define Repeat x = x(Repeat x)"), "Repeat");
     test("recursive define stores a Y application",
@@ -1758,7 +1767,7 @@ int main() {
          single_step(parse("\\\"M\\\"x")), "Mx");
 
     constexpr std::string_view expected_registered_basis_names[] = {
-        "M", "W", "B", "O", "T", "N", "R", "C", "Q", "V", "D",
+        "M", "W", "B", "O", "T", "U", "N", "R", "C", "Q", "V", "D",
         "L", "Z", "A", "E", "F", "G", "H", "J", "Cstar", "Vstar",
         "V4", "G2", "G1", "bazTest", "Hprime", "H1",
     };
@@ -1774,6 +1783,8 @@ int main() {
          single_step(parse("Mx"), true), "SIIx");
     test("parse single-character T without a delimiter",
          parse("Tx"), "Tx");
+    test("parse compact Turing",
+         single_step(parse("Uxy")), "y(xxy)");
     test("parse single-character C without a delimiter",
          parse("Cx"), "Cx");
     test("parse separated Cstar", single_step(parse("Cstar x")),
@@ -4257,6 +4268,8 @@ int main() {
     test("Oxyw [combines (xy) after y]", (O)(x)(y)(w), "y(xy)w");
     test("T", (T), "T");
     test("Txyw [swaps x and y]", (T)(x)(y)(w), "yxw");
+    test("U", (U), "U");
+    test("Uxyw [applies y to xxy]", (U)(x)(y)(w), "y(xxy)w");
     test("N", (N), "N");
     test("Nxyw [duplicates x after y]", (N)(x)(y)(w), "xyxw");
     test("R", (R), "R");

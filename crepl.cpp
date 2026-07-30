@@ -45,7 +45,7 @@
 
 namespace {
 
-constexpr std::string_view crepl_version = "1.11.5";
+constexpr std::string_view crepl_version = "1.11.9";
 
 void print_crepl_banner(std::ostream& output) {
     output << "Combinator Read-Eval-Print Loop, version "
@@ -438,6 +438,7 @@ void print_birds(std::ostream& output) {
         bird_entry{"Sage bird", "Yx = x(Yx)"},
         bird_entry{"Starling", "Sxyz = xz(yz)"},
         bird_entry{"Thrush", "Txy = yx"},
+        bird_entry{"Turing bird", "Uxy = y(xxy)"},
         bird_entry{"Vireo", "Vxyz = zxy"},
         bird_entry{"Warbler", "Wxy = xyy"},
         bird_entry{"Zazu", "Zxy = x(xy)"}};

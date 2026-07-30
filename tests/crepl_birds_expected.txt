@@ -6,7 +6,7 @@ Eagle         Exyzwv = xy(zwv)   Robin       Rxyz = yzx
 Finch         Fxyz = zyx         Sage bird   Yx = x(Yx)
 Goldfinch     Gxyzw = xw(yz)     Starling    Sxyz = xz(yz)
 Hummingbird   Hxyz = xyzy        Thrush      Txy = yx
-Identity bird Ix = x             Vireo       Vxyz = zxy
-Jay           Jxyzw = xy(xwz)    Warbler     Wxy = xyy
-Kestrel       Kxy = x            Zazu        Zxy = x(xy)
-Lark          Lxy = x(yy)
+Identity bird Ix = x             Turing bird Uxy = y(xxy)
+Jay           Jxyzw = xy(xwz)    Vireo       Vxyz = zxy
+Kestrel       Kxy = x            Warbler     Wxy = xyy
+Lark          Lxy = x(yy)        Zazu        Zxy = x(xy)

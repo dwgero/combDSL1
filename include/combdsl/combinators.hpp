@@ -5449,6 +5449,7 @@ BASIS(W, 2, S(S)(S(K)));
 BASIS(B, 3, S(K(S))(K));
 BASIS(O, 2, S(I));
 BASIS(T, 2, S(K(S(I)))(K));
+BASIS(U, 2, B(O)(M));
 BASIS(N, 2, S(S)(K));
 BASIS(R, 3, S(K(S(S)))(S(K(K))(K)));
 BASIS(C, 3, S(S(K(B))(S))(K(K)));
