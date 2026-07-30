@@ -393,9 +393,10 @@ parse_and_key_step("K (I x) y");
 parse_eval("K (I x) y"); // prints: x
 ```
 
-At the start of a line, `set` followed by whitespace defines and registers a
-named basis. An optional decimal arity can appear after `=` and before the
-stored expression; when omitted, it defaults to `0`:
+At the start of a line, optionally preceded by whitespace, `set` followed by
+whitespace defines and registers a named basis. An optional decimal arity can
+appear after `=` and before the stored expression; when omitted, it defaults
+to `0`:
 
 ```cpp
 parse("set Double = 1 S(I)(I)");      // Double
@@ -507,10 +508,10 @@ and `Y`, and every pre-defined basis registered by C++ `basis(...)`, are
 immutable; attempting to redefine one is a parse error. A later C++ basis
 registration cannot take a name that is already user-defined.
 
-At the start of a line, `show` followed by whitespace and a name displays the
-basis's arity followed by one level of its stored definition, without reducing
-it. For `S`, `K`, `I`, or `Y`, it reports that the name is fundamental and
-also gives its arity.
+At the start of a line, optionally preceded by whitespace, `show` followed by
+whitespace and a name displays the basis's arity followed by one level of its
+stored definition, without reducing it. For `S`, `K`, `I`, or `Y`, it reports
+that the name is fundamental and also gives its arity.
 Anything other than a named basis or one of those four fundamental names is a
 parse error:
 
@@ -750,21 +751,37 @@ static files with any HTTP server and open
 python3 -m http.server 8000 --directory docs
 ```
 
-This does not use `emrun`. Loading through `file://` is not supported because
+The web page is static and does not use `emrun`.
+Loading through `file://` is not supported because
 the page starts a Web Worker and fetches `combdsl.wasm`; opening the file
 directly displays the required HTTP-server command. Cancel terminates and
 recreates the worker, so a non-normalizing expression does not freeze the page.
+
+The Combinator Expression box is a scrollable history with the current editable
+input at the bottom. Successful commands and expressions that reach normal form
+remain visible in submission order. Cancelled and timed-out expressions are
+retained with ` [cancelled]` and ` [timed out]` appended, respectively. Parse
+errors are not added to the history. A successfully registered
+`set` command leaves only that submitted definition line, with no output
+beneath it.
+
 The Single Step button switches between displaying only the evaluated result
 and displaying every reduction produced by
 `single_step_run(parse(input_escape(source)))`. Evaluations accumulate in the
-results area with a blank line between them. The Key Step button starts a
+results area with a blank line between them.
+
+The Key Step button starts a
 manual reduction session: after submitting an expression, each ordinary
 keypress performs exactly one `single_step`. The keypress that performs the
 final reduction also ends the session; Cancel ends it at any time. The Single
-Step and Key Step modes are mutually exclusive. The independent Basis Step
+Step and Key Step modes are mutually exclusive.
+
+The independent Basis Step
 button controls whether either stepping mode exposes a saturated named basis
 definition as a separate step. With Basis Step off, `Mx` goes directly to
-`xx`; with it on, the first step is `SIIx`. While either stepping mode is
+`xx`; with it on, the first step is `SIIx`.
+
+While either stepping mode is
 active, the Colorize button uses `color_step_html` to highlight the first, second,
 third, fourth, and fifth arguments of each reduction in red, tunic green, blue,
 dark orange, and Munsell purple and carries those highlights into the reduced
@@ -773,19 +790,19 @@ name before the step and its stored contents after the step, both red; all
 arguments remain uncolored. After the final colorized reduction, the normal
 form is printed without color at the left margin. The browser prints the
 submitted starting expression immediately, then appends the output beneath it.
-The Combinator Expression box is a scrollable history with the current editable
-input at the bottom. Successful commands and expressions that reach normal form
-remain visible in submission order. Cancelled and timed-out expressions are
-retained with ` [cancelled]` and ` [timed out]` appended, respectively. Parse
-errors are not added to the history. A successfully registered
-`set` command leaves only that submitted definition line, with no output
-beneath it. The Save button downloads all successfully registered user
+
+The Cancel button is active when not stepping or when Single Step is on.
+Clicking on it aborts a long-running or infinite-looping reduction.
+
+The Save button downloads all successfully registered user
 definitions and redefinitions as `set_list.cmb`, with explicit arities and
 user-facing quoting that can be entered again. If there are no user-defined
 bases, Save opens a dialog that says `Nothing to save` instead. When a command
 entered in the browser would change a user definition, a confirmation dialog
 shows `About to replace name=arity expression`; Cancel preserves the existing
-definition, while Replace is initially focused so Enter confirms it. The Load
+definition, while Replace is initially focused so Enter confirms it.
+
+The Load
 button opens a file picker filtered for `.cmb` files and recreates those
 definitions in file order by applying `parse(input_escape(record))` to each
 saved record; file redefinitions are applied silently and the expressions are
@@ -797,6 +814,7 @@ entire load is rolled back, so no definitions from that file are kept. Failed
 loads below the cutoff report
 `Errors are preventing any changes from being made`; a load aborted at the
 cutoff displays only the `Too many errors` status after its diagnostics.
+
 Basis Step and Colorize may remain on when neither stepping mode is active;
 ordinary evaluation ignores both settings. Cancelling an evaluation appends
 `[cancelled]` beneath its starting expression. During automatic evaluation,
@@ -805,9 +823,16 @@ If a heartbeat is missing for one second, the watchdog stops and replaces the
 worker, then appends
 `[timed out after more than nnn steps]`, where `nnn` is the last reported
 accumulated reduction count. Automatic worker failure uses the same timeout
-message; `[cancelled]` is reserved for user cancellation. The Help button
+message; `[cancelled]` is reserved for user cancellation.
+
+The Help button
 summarizes the stepping, definition, saving, and loading options in a
-keyboard-accessible dialog.
+scrollable dialog.
+
+The Bird Info button displays the names and reductions of all the pre-defined
+bird combinators.
+
+The About button displays information on copyright and redistribution.
 
 For another CMake project, link the interface target after adding this project:
 
