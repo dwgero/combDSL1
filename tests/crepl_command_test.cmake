@@ -1,4 +1,4 @@
-# C++ combinator DSL
+# C++ Combinator DSL
 # Copyright (C) 2026  David W. Gero
 #
 # This program is free software: you can redistribute it and/or modify
