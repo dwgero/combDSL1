@@ -122,14 +122,29 @@ struct application_expression : combinator_expression {};
 enum class printed_token : long {
     none,
     other,
+    symbol,
     left_parenthesis,
     right_parenthesis,
-    multicharacter_basis
+    multicharacter_basis,
+    compact_multicharacter_basis
 };
 
 [[nodiscard]] constexpr bool is_parenthesis(printed_token token) noexcept {
     return token == printed_token::left_parenthesis ||
            token == printed_token::right_parenthesis;
+}
+
+[[nodiscard]] constexpr bool is_multicharacter_basis(
+    printed_token token) noexcept {
+    return token == printed_token::multicharacter_basis ||
+           token == printed_token::compact_multicharacter_basis;
+}
+
+[[nodiscard]] constexpr bool ends_with_lowercase_ascii_letter(
+    std::string_view text) noexcept {
+    return !text.empty() &&
+           text.back() >= 'a' &&
+           text.back() <= 'z';
 }
 
 [[nodiscard]] inline int printed_token_index() {
@@ -183,10 +198,12 @@ inline void print_token(
     printed_token token = printed_token::other) {
     auto const previous = previous_printed_token(output);
     auto const follows_multicharacter_basis =
-        previous == printed_token::multicharacter_basis &&
-        !is_parenthesis(token);
+        is_multicharacter_basis(previous) &&
+        !is_parenthesis(token) &&
+        !(previous == printed_token::compact_multicharacter_basis &&
+          token == printed_token::symbol);
     auto const is_unseparated_multicharacter_basis =
-        token == printed_token::multicharacter_basis &&
+        is_multicharacter_basis(token) &&
         previous != printed_token::none &&
         !is_parenthesis(previous);
 
@@ -376,12 +393,13 @@ public:
 
     void print_to(std::ostream& output) const {
         auto const name = view();
-        print_token(
-            output,
-            name,
-            name.size() > 1
-                ? printed_token::multicharacter_basis
-                : printed_token::other);
+        auto const token =
+            name.size() <= 1
+                ? printed_token::other
+                : ends_with_lowercase_ascii_letter(name)
+                      ? printed_token::multicharacter_basis
+                      : printed_token::compact_multicharacter_basis;
+        print_token(output, name, token);
     }
 
     void print_as_operand_to(std::ostream& output) const {
@@ -1190,7 +1208,9 @@ public:
     void print_to(std::ostream& output) const {
         detail::print_scope scope(output);
         detail::print_token(
-            output, std::string_view(name_, length_));
+            output,
+            std::string_view(name_, length_),
+            detail::printed_token::symbol);
     }
 
     void operator()() const {
@@ -4418,6 +4438,9 @@ private:
         if (is_primitive_name(name)) {
             auto message = std::string(name);
             message += " is a fundamental name";
+            message += " with arity:";
+            message += name == "S" ? "3" :
+                       name == "K" ? "2" : "1";
             return quote(std::move(message));
         }
 
@@ -5026,8 +5049,13 @@ private:
             return std::move(*recursive_function);
         }
 
-        if (auto named_basis = parse_named_basis_token()) {
+        if (auto named_basis = parse_exact_named_basis_token()) {
             return std::move(*named_basis);
+        }
+
+        if (auto named_expression =
+                parse_unseparated_multicharacter_name()) {
+            return std::move(*named_expression);
         }
 
         if (begins_with_unseparated_recursive_function(
@@ -5138,15 +5166,54 @@ private:
     }
 
     [[nodiscard]] std::optional<quoted_expression>
-    parse_named_basis_token() {
-        auto const name = current_basis_token();
-        auto const match = registered_bases_.find(name);
-        if (match == registered_bases_.end()) {
+    parse_exact_named_basis_token() {
+        auto const token = current_basis_token();
+        if (auto const match = registered_bases_.find(token);
+            match != registered_bases_.end()) {
+            position_ += token.size();
+            return match->second->expression();
+        }
+
+        return std::nullopt;
+    }
+
+    [[nodiscard]] std::optional<quoted_expression>
+    parse_unseparated_multicharacter_name() {
+        auto const token = current_basis_token();
+        constexpr std::size_t maximum_basis_name_size = 15;
+        if (token.size() <= 2) {
             return std::nullopt;
         }
 
-        position_ += name.size();
-        return match->second->expression();
+        std::string_view recursive_name;
+        if (recursive_function_) {
+            recursive_name =
+                quoted_access::root(*recursive_function_)->atomic_name();
+        }
+
+        auto const maximum_prefix_size = std::min(
+            token.size() - 1, maximum_basis_name_size);
+        for (auto prefix_size = maximum_prefix_size;
+             prefix_size > 1;
+             --prefix_size) {
+            auto const prefix = token.substr(0, prefix_size);
+            if (ends_with_lowercase_ascii_letter(prefix)) {
+                continue;
+            }
+
+            if (recursive_function_ && prefix == recursive_name) {
+                position_ += prefix_size;
+                return *recursive_function_;
+            }
+
+            if (auto const match = registered_bases_.find(prefix);
+                match != registered_bases_.end()) {
+                position_ += prefix_size;
+                return match->second->expression();
+            }
+        }
+
+        return std::nullopt;
     }
 
     [[nodiscard]] bool begins_with_unseparated_recursive_function(

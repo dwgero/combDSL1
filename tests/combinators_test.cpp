@@ -1005,13 +1005,13 @@ int main() {
     test("show exposes a registered lowercase basis definition",
          parse("show foo"), "arity:1 I");
     test("show identifies S as fundamental",
-         parse("show S"), "S is a fundamental name");
+         parse("show S"), "S is a fundamental name with arity:3");
     test("show identifies K as fundamental",
-         parse("show K"), "K is a fundamental name");
+         parse("show K"), "K is a fundamental name with arity:2");
     test("show identifies I as fundamental",
-         parse("show I"), "I is a fundamental name");
+         parse("show I"), "I is a fundamental name with arity:1");
     test("show identifies Y as fundamental",
-         parse("show Y"), "Y is a fundamental name");
+         parse("show Y"), "Y is a fundamental name with arity:1");
     test("show accepts parser whitespace",
          parse(" \tshow\nM\f"), "arity:1 SII");
     test_parse_failure(
@@ -1162,7 +1162,7 @@ int main() {
     test("define infers arity from its symbols",
          parse("define Def3 xyz = xyz"), "Def3");
     test("define basis remains named while undersaturated",
-         single_step(parse("Def3 a b")), "Def3 ab");
+         single_step(parse("Def3 a b")), "Def3ab");
     test("basis step exposes a define basis body",
          single_step(parse("Def3 a b c"), true), "Iabc");
     test("define basis contracts when saturated",
@@ -1478,11 +1478,19 @@ int main() {
          parse("show Q1"), "arity:3 BCB");
     test("pre-defined Quixotic reduces",
          single_step(parse("Q1 x y z")), "x(zy)");
+    test("pre-defined Quixotic prints compactly before a symbol",
+         parse("Q1x"), "Q1x");
+    test("pre-defined Quixotic needs no trailing delimiter",
+         single_step(parse("Q1xyz")), "x(zy)");
     test("pre-defined Quirky is registered", parse("Q3"), "Q3");
     test("show exposes the pre-defined Quirky",
          parse("show Q3"), "arity:3 BT");
     test("pre-defined Quirky reduces",
          single_step(parse("Q3 x y z")), "z(xy)");
+    test("pre-defined Quirky prints compactly before a symbol",
+         parse("Q3x"), "Q3x");
+    test("pre-defined Quirky needs no trailing delimiter",
+         single_step(parse("Q3xyz")), "z(xy)");
     test("define recognizes a recursive name",
          parse("define Repeat x = x(Repeat x)"), "Repeat");
     test("recursive define stores a Y application",
@@ -1538,8 +1546,12 @@ int main() {
          single_step(single_step(single_step(parse("Loop a")))),
          "<deferred Y(I)>a");
     test_parse_failure(
-        "a multicharacter recursive name requires a delimiter",
+        "a lowercase-ending recursive name requires a delimiter",
         "define BadRec x = BadRecx", 18);
+    test("a recursive name ending in a digit needs no delimiter",
+         parse("define Loop1 x = Loop1x"), "Loop1");
+    test("compact recursive adjacency stores YI",
+         parse("show Loop1"), "arity:1 YI");
     test("set registers a reducible body for show",
          parse("set ShRed = 0 Kxy"), "ShRed");
     test("show exposes a reducible stored body without reducing it",
@@ -1582,7 +1594,7 @@ int main() {
     test("set accepts a binary arity",
          parse("set SetK2 = 2 K"), "SetK2");
     test("binary set basis remains named while undersaturated",
-         single_step(parse("SetK2 x")), "SetK2 x");
+         single_step(parse("SetK2 x")), "SetK2x");
     test("binary set basis contracts when saturated",
          single_step(parse("SetK2 x y")), "x");
     test("binary set basis preserves trailing arguments",
@@ -1736,8 +1748,22 @@ int main() {
          single_step(parse("A\\\\B x")), "x");
     test("basis step exposes double backslash basis definition",
          single_step(parse("A\\\\B x"), true), "Ix");
-    test_parse_failure("unseparated double backslash basis is unknown",
-                       "A\\\\Bx", 0);
+    test("basis ending uppercase needs no trailing delimiter",
+         single_step(parse("A\\\\Bx")), "x");
+    test("basis ending uppercase prints compactly before a symbol",
+         parse("A\\\\Bx"), "A\\\\Bx");
+    static_cast<void>(basis("Tail+", 1, I));
+    test("basis ending punctuation needs no trailing delimiter",
+         single_step(parse("Tail+x")), "x");
+    test("basis ending punctuation prints compactly before a symbol",
+         parse("Tail+x"), "Tail+x");
+    static_cast<void>(
+        basis("Utf\xE2\x97\x8F", 1, I));
+    test("basis ending UTF-8 needs no trailing delimiter",
+         single_step(parse("Utf\xE2\x97\x8F" "x")), "x");
+    test("basis ending UTF-8 prints compactly before a symbol",
+         parse("Utf\xE2\x97\x8F" "x"),
+         "Utf\xE2\x97\x8F" "x");
     test("parse escaped backslash inside word",
          parse("\\\"a\\\\b\\\""), "a\\b");
     test("parse UTF-8 escaped word",
@@ -1808,7 +1834,22 @@ int main() {
     test("parse separated Hprime", single_step(parse("Hprime x y")),
          "Hprime xy");
     test("parse G2 exact match", single_step(parse("G2")), "G2");
-    test("parse separated V4", single_step(parse("V4 x y z")), "V4 xyz");
+    test("parse G2 without a trailing delimiter", parse("G2x"), "G2x");
+    test("parse separated V4", single_step(parse("V4 x y z")), "V4xyz");
+    test("parse V4 without a trailing delimiter",
+         parse("V4x"), "V4x");
+    test("maximum-length digit-ending basis prints compactly",
+         parse("123456789012345x"), "123456789012345x");
+    test("maximum-length digit-ending basis needs no delimiter",
+         single_step(parse("123456789012345x")), "x");
+    static_cast<void>(basis("Long1", 1, K));
+    static_cast<void>(basis("Long12", 1, I));
+    test("longest eligible basis prefix wins",
+         single_step(parse("Long12x")), "x");
+    static_cast<void>(basis("Exact1", 1, K));
+    static_cast<void>(basis("Exact1x", 0, I));
+    test("exact longer basis wins over an eligible prefix",
+         single_step(parse("Exact1x")), "I");
     test("basis automatically registers seven-character name",
          single_step(parse("1234567 x")), "x");
     test("basis automatically registers fifteen-character name",
@@ -2120,7 +2161,7 @@ int main() {
          [&] { parse_eval("show ShRed"); }, "arity:0 Kxy\n");
     test("parse eval show identifies a fundamental name",
          [&] { parse_eval("show I"); },
-         "I is a fundamental name\n");
+         "I is a fundamental name with arity:1\n");
     test(
         "parse eval show rejects an undefined name",
         [&] {
@@ -4127,6 +4168,16 @@ int main() {
          "Cstar <deferred Y(I)>");
     test("opaque token after multi-character basis",
          quote(Cstar)(operand_named_value{}), "Cstar <operand>");
+    test("self-delimiting basis before a symbol stays compact",
+         quote(Q1)(x), "Q1x");
+    test("self-delimiting basis before a UTF-8 symbol stays compact",
+         quote(Q1)(circle), "Q1\xE2\x97\x8F");
+    test("self-delimiting basis before a primitive keeps a space",
+         quote(Q1)(K), "Q1 K");
+    test("self-delimiting basis before another basis keeps a space",
+         quote(Q1)(Q3), "Q1 Q3");
+    test("nested self-delimiting basis before a symbol stays compact",
+         x(parse("Q1y")), "x(Q1y)");
     test("single-character basis does not separate following token",
          quote(T)(x), "Tx");
     test("nested single-character basis remains compact",

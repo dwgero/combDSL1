@@ -178,10 +178,12 @@ combinator is immediately applied to every following argument. With no
 following arguments, printing the basis still prints its name as usual.
 
 Expression printing separates a multi-character basis name from adjacent
-non-parenthesis tokens. Parentheses act as boundaries and stay attached on
-either side. For `auto Alias = basis("Alias", 1, I);`, `K(Alias)()` prints
-`K Alias`; `x(Cstar(y))()` prints `x(Cstar y)`; `Cstar(y(z))()` prints
-`Cstar(yz)`; and `x(y(z))(Cstar)()` prints `x(yz)Cstar`.
+non-parenthesis tokens, except that a name ending outside lowercase ASCII
+`a` through `z` stays attached to a following symbol. Parentheses act as
+boundaries and stay attached on either side. Thus `Q1(x)()` prints `Q1x`.
+For `auto Alias = basis("Alias", 1, I);`, `K(Alias)()` prints `K Alias`;
+`x(Cstar(y))()` prints `x(Cstar y)`; `Cstar(y(z))()` prints `Cstar(yz)`;
+and `x(y(z))(Cstar)()` prints `x(yz)Cstar`.
 
 Basis names are copied into the expression and may contain up to seven
 characters. Names cannot be empty or begin with a null character; a later null
@@ -519,13 +521,14 @@ registration cannot take a name that is already user-defined.
 
 At the start of a line, `show` followed by whitespace and a name displays the
 basis's arity followed by one level of its stored definition, without reducing
-it. For `S`, `K`, `I`, or `Y`, it reports that the name is fundamental.
+it. For `S`, `K`, `I`, or `Y`, it reports that the name is fundamental and
+also gives its arity.
 Anything other than a named basis or one of those four fundamental names is a
 parse error:
 
 ```cpp
 parse_eval("show M");   // prints: arity:1 SII
-parse_eval("show S");   // prints: S is a fundamental name
+parse_eval("show S");   // prints: S is a fundamental name with arity:3
 parse_eval("show x");   // parse error: x is not a defined name
 ```
 
@@ -576,7 +579,7 @@ expression produces no output, while malformed or empty lines throw
 The `crepl` executable applies `input_escape` to each line before passing it to
 `parse_eval`, so ordinary quoted words and backslashes can be entered directly.
 When standard output is a terminal, it first prints
-`Combinator Read-Eval-Print Loop, version 1.11.13`. Long evaluations then display
+`Combinator Read-Eval-Print Loop, version 1.11.16`. Long evaluations then display
 the accumulated step count every 1,000 reductions by overwriting one status
 line; the line is cleared before evaluation output is printed. Its interactive
 prompt is `>`. Redirected output contains no progress status. Enter
@@ -614,10 +617,13 @@ without starting the interactive loop.
 
 `S`, `K`, `I`, and `Y` are reserved combinators. A single-character name
 registered by `basis(...)` parses the same way, so `Mx` means `M` applied to
-`x`. Multi-character registered names use exact complete-token lookup.
-Whitespace, parentheses, and escaped-word openers delimit those tokens, so
-`Cstar x` means `Cstar` applied to `x`, while `Cstarx` is an unknown operand;
-it does not fall back to `C` followed by five symbols.
+`x`. A multi-character registered name that does not end in a lowercase ASCII
+letter may also be followed immediately by another operand, so `Q1xyz` means
+`Q1 x y z` and prints in that same compact form. Names ending in `a` through
+`z` still require whitespace,
+parentheses, or an escaped-word opener as a delimiter. Thus `Cstar x` means
+`Cstar` applied to `x`, while `Cstarx` is an unknown operand; it does not fall
+back to `C` followed by five symbols.
 
 Whitespace also distinguishes an intended lowercase basis name from compact
 symbols. An unregistered run of two or more lowercase letters is an unknown
@@ -626,10 +632,12 @@ expression or parenthesized group. Consequently, `x foo y`, `x(foo y)`, and
 `x(y foo)` are errors unless `foo` is registered. In `x(foo)y`, an exact
 registered `foo` still wins; otherwise the run becomes the three symbols `f`,
 `o`, and `o`. Leading or trailing whitespace used only as padding does not
-make a run a basis name. Neither does whitespace required after a preceding
-multi-character basis or word operand. Everywhere else, each lowercase ASCII
-letter (`a` through `z`) becomes a single-character symbol, so compact
-primitive and symbol expressions such as `SKIx` remain valid.
+make a run a basis name. Neither does whitespace used to delimit a preceding
+multi-character basis or word operand; whitespace after a multi-character
+basis remains a token separator even when it is optional. Everywhere else,
+each lowercase ASCII letter (`a` through `z`) becomes a single-character
+symbol, so compact primitive and symbol expressions such as `SKIx` remain
+valid.
 
 In escaped parser input, the two characters `\"` open or close one raw word,
 and `\\` represents one backslash. This input:
@@ -642,10 +650,11 @@ parses and prints as `x word y mid\dle z`. Spaces, parentheses, UTF-8 bytes,
 and other ordinary bytes between the word delimiters are content rather than
 parser syntax. Outside a word, `\\` is a one-character symbolic backslash
 operand. A doubled backslash may also occur later in a registered basis name,
-where exact token lookup consumes it as part of that name. Any other
-sequence beginning with a backslash is rejected, as are empty or unterminated
-words. A word whose spelling matches a primitive or registered basis remains
-raw.
+where registered-name matching consumes it as part of that name. If that name
+ends outside `a` through `z`, an adjacent operand may follow without a
+delimiter. Any other sequence beginning with a backslash is rejected, as are
+empty or unterminated words. A word whose spelling matches a primitive or
+registered basis remains raw.
 
 Malformed or empty input throws `combdsl::parse_error`. Its `position()` is the
 zero-based byte position of the error; an error at the end of input reports the
