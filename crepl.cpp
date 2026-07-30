@@ -45,7 +45,7 @@
 
 namespace {
 
-constexpr std::string_view crepl_version = "1.12.0";
+constexpr std::string_view crepl_version = "1.12.1";
 
 void print_crepl_banner(std::ostream& output) {
     output << "Combinator Read-Eval-Print Loop, version "
@@ -380,7 +380,8 @@ void print_help_full(std::ostream& output) {
 }
 
 void print_about(std::ostream& output) {
-    // Keep this text in sync with web/index.html's About dialog.
+    // Keep the shared license and source text in sync with
+    // web/index.html's About dialog.
     constexpr std::string_view free_software =
         "This program is free software: you can redistribute it and/or "
         "modify it under the terms of the GNU Affero General Public "
@@ -396,8 +397,7 @@ void print_about(std::ostream& output) {
         "available at "
         "<https://www.gnu.org/licenses/agpl-3.0.html#license-text>. "
         "The source for this program is available at "
-        "<https://github.com/dwgero/combDSL1>. "
-        "My hidden email is <airings-pinker.3e@icloud.com>";
+        "<https://github.com/dwgero/combDSL1>.";
 
     print_crepl_banner(output);
     output << '\n'

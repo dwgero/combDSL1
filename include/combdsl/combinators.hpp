@@ -62,7 +62,7 @@ template <class Value>
 class deferred_combinator;
 
 template <class Function, class Argument>
-class substitution_function;
+class substitution_partial2;
 
 class symbolic_string_expression;
 
@@ -832,11 +832,11 @@ constexpr decltype(auto) invoke_deferred(
 }
 
 template <class Value>
-class constant_function : public application_expression {
+class constant_partial1 : public application_expression {
 public:
     template <class T>
         requires std::constructible_from<Value, T>
-    constexpr explicit constant_function(T&& value)
+    constexpr explicit constant_partial1(T&& value)
         noexcept(std::is_nothrow_constructible_v<Value, T>)
         : value_(std::forward<T>(value)) {}
 
@@ -879,12 +879,12 @@ private:
 };
 
 template <class Function, class Argument>
-class substitution_function : public application_expression {
+class substitution_partial2 : public application_expression {
 public:
     template <class F, class G>
         requires std::constructible_from<Function, F> &&
                  std::constructible_from<Argument, G>
-    constexpr substitution_function(F&& function, G&& argument)
+    constexpr substitution_partial2(F&& function, G&& argument)
         noexcept(std::is_nothrow_constructible_v<Function, F> &&
                  std::is_nothrow_constructible_v<Argument, G>)
         : function_(std::forward<F>(function)),
@@ -967,11 +967,11 @@ private:
 };
 
 template <class Function>
-class substitution_with_function : public application_expression {
+class substitution_partial1 : public application_expression {
 public:
     template <class F>
         requires std::constructible_from<Function, F>
-    constexpr explicit substitution_with_function(F&& function)
+    constexpr explicit substitution_partial1(F&& function)
         noexcept(std::is_nothrow_constructible_v<Function, F>)
         : function_(std::forward<F>(function)) {}
 
@@ -993,14 +993,14 @@ public:
         requires std::copy_constructible<Function>
     [[nodiscard]] constexpr auto operator()(Argument&& argument) const& {
         using argument_type = stored_operand_t<Argument>;
-        return substitution_function<Function, argument_type>(
+        return substitution_partial2<Function, argument_type>(
             function_, store_operand(std::forward<Argument>(argument)));
     }
 
     template <class Argument>
     [[nodiscard]] constexpr auto operator()(Argument&& argument) && {
         using argument_type = stored_operand_t<Argument>;
-        return substitution_function<Function, argument_type>(
+        return substitution_partial2<Function, argument_type>(
             std::move(function_),
             store_operand(std::forward<Argument>(argument)));
     }
@@ -1603,7 +1603,7 @@ struct constant : detail::combinator_expression {
     template <class Value>
     [[nodiscard]] constexpr auto operator()(Value&& value) const {
         using value_type = detail::stored_operand_t<Value>;
-        return detail::constant_function<value_type>(
+        return detail::constant_partial1<value_type>(
             detail::store_operand(std::forward<Value>(value)));
     }
 };
@@ -1621,7 +1621,7 @@ struct substitution : detail::combinator_expression {
     template <class Function>
     [[nodiscard]] constexpr auto operator()(Function&& function) const {
         using function_type = detail::stored_operand_t<Function>;
-        return detail::substitution_with_function<function_type>(
+        return detail::substitution_partial1<function_type>(
             detail::store_operand(std::forward<Function>(function)));
     }
 };
@@ -2304,17 +2304,17 @@ make_quoted_native(symbolic_application<Function, Argument> const& value,
 
 template <class Value>
 [[nodiscard]] quoted_expression
-make_quoted_native(constant_function<Value> const& value,
+make_quoted_native(constant_partial1<Value> const& value,
                    std::shared_ptr<void const> owner);
 
 template <class Function>
 [[nodiscard]] quoted_expression
-make_quoted_native(substitution_with_function<Function> const& value,
+make_quoted_native(substitution_partial1<Function> const& value,
                    std::shared_ptr<void const> owner);
 
 template <class Function, class Argument>
 [[nodiscard]] quoted_expression
-make_quoted_native(substitution_function<Function, Argument> const& value,
+make_quoted_native(substitution_partial2<Function, Argument> const& value,
                    std::shared_ptr<void const> owner);
 
 template <class Expression>
@@ -2392,7 +2392,7 @@ make_quoted_native(symbolic_application<Function, Argument> const& value,
 }
 
 template <class Value>
-quoted_expression make_quoted_native(constant_function<Value> const& value,
+quoted_expression make_quoted_native(constant_partial1<Value> const& value,
                                      std::shared_ptr<void const> owner) {
     return make_quoted_application(
         make_quoted_primitive(quoted_node_kind::constant),
@@ -2401,7 +2401,7 @@ quoted_expression make_quoted_native(constant_function<Value> const& value,
 
 template <class Function>
 quoted_expression
-make_quoted_native(substitution_with_function<Function> const& value,
+make_quoted_native(substitution_partial1<Function> const& value,
                    std::shared_ptr<void const> owner) {
     return make_quoted_application(
         make_quoted_primitive(quoted_node_kind::substitution),
@@ -2410,7 +2410,7 @@ make_quoted_native(substitution_with_function<Function> const& value,
 
 template <class Function, class Argument>
 quoted_expression
-make_quoted_native(substitution_function<Function, Argument> const& value,
+make_quoted_native(substitution_partial2<Function, Argument> const& value,
                    std::shared_ptr<void const> owner) {
     auto result = make_quoted_application(
         make_quoted_primitive(quoted_node_kind::substitution),
