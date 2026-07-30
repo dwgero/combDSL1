@@ -1,13 +1,16 @@
-Albatross     Axy = x(yx)        Nightingale   Nxy = xyx
-Bluebird      Bxyz = x(yz)       Owl           Oxy = y(xy)
-Cardinal      Cxyz = xzy         Queer bird    Qxyz = y(xz)
-Dove          Dxyzw = xy(zw)     Quixotic bird Q1xyz = x(zy)
-Eagle         Exyzwv = xy(zwv)   Quirky bird   Q3xyz = z(xy)
-Finch         Fxyz = zyx         Robin         Rxyz = yzx
-Goldfinch     Gxyzw = xw(yz)     Sage bird     Yx = x(Yx)
-Hummingbird   Hxyz = xyzy        Starling      Sxyz = xz(yz)
-Identity bird Ix = x             Thrush        Txy = yx
-Jay           Jxyzw = xy(xwz)    Turing bird   Uxy = y(xxy)
-Kestrel       Kxy = x            Vireo         Vxyz = zxy
-Lark          Lxy = x(yy)        Warbler       Wxy = xyy
-Mockingbird   Mx = xx            Zazu          Zxy = x(xy)
+Albatross          Axy = x(yx)        Owl               Oxy = y(xy)
+Bluebird           Bxyz = x(yz)       Queer bird        Qxyz = y(xz)
+Cardinal           Cxyz = xzy         Quixotic bird     Q1xyz = x(zy)
+Cardinal star      C*xyzw = xywz      Quirky bird       Q3xyz = z(xy)
+Cardinal star star C**xyzwv = xyzvw   Robin             Rxyz = yzx
+Dove               Dxyzw = xy(zw)     Sage bird         Yx = x(Yx)
+Eagle              Exyzwv = xy(zwv)   Starling          Sxyz = xz(yz)
+Finch              Fxyz = zyx         Thrush            Txy = yx
+Goldfinch          Gxyzw = xw(yz)     Turing bird       Uxy = y(xxy)
+Hummingbird        Hxyz = xyzy        Vireo             Vxyz = zxy
+Identity bird      Ix = x             Warbler           Wxy = xyy
+Jay                Jxyzw = xy(xwz)    Warbler star      W*xyz = xyzz
+Kestrel            Kxy = x            Warbler star star W**xyzw = xyzww
+Lark               Lxy = x(yy)        Converse warbler  W1xy = yxx
+Mockingbird        Mx = xx            Zazu              Zxy = x(xy)
+Nightingale        Nxy = xyx

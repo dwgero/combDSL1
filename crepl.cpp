@@ -45,7 +45,7 @@
 
 namespace {
 
-constexpr std::string_view crepl_version = "1.11.16";
+constexpr std::string_view crepl_version = "1.11.18";
 
 void print_crepl_banner(std::ostream& output) {
     output << "Combinator Read-Eval-Print Loop, version "
@@ -421,6 +421,8 @@ void print_birds(std::ostream& output) {
         bird_entry{"Albatross", "Axy = x(yx)"},
         bird_entry{"Bluebird", "Bxyz = x(yz)"},
         bird_entry{"Cardinal", "Cxyz = xzy"},
+        bird_entry{"Cardinal star", "C*xyzw = xywz"},
+        bird_entry{"Cardinal star star", "C**xyzwv = xyzvw"},
         bird_entry{"Dove", "Dxyzw = xy(zw)"},
         bird_entry{"Eagle", "Exyzwv = xy(zwv)"},
         bird_entry{"Finch", "Fxyz = zyx"},
@@ -443,6 +445,9 @@ void print_birds(std::ostream& output) {
         bird_entry{"Turing bird", "Uxy = y(xxy)"},
         bird_entry{"Vireo", "Vxyz = zxy"},
         bird_entry{"Warbler", "Wxy = xyy"},
+        bird_entry{"Warbler star", "W*xyz = xyzz"},
+        bird_entry{"Warbler star star", "W**xyzw = xyzww"},
+        bird_entry{"Converse warbler", "W1xy = yxx"},
         bird_entry{"Zazu", "Zxy = x(xy)"}};
     constexpr std::size_t maximum_line_length = 80;
     constexpr std::size_t column_gap = 3;

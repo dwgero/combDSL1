@@ -361,9 +361,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             color: #c33;
         }
     </style>
-    <script src="./evaluation_watchdog.js?v=1.11.16" defer></script>
-    <script src="./input_history.js?v=1.11.16" defer></script>
-    <script src="./app.js?v=1.11.16" defer></script>
+    <script src="./evaluation_watchdog.js?v=1.11.18" defer></script>
+    <script src="./input_history.js?v=1.11.18" defer></script>
+    <script src="./app.js?v=1.11.18" defer></script>
 </head>
 <body>
     <main aria-labelledby="studio-title">
@@ -555,6 +555,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
                         Albatross (A)<br>
                         Bluebird (B)<br>
                         Cardinal (C)<br>
+                        Cardinal star (C*)<br>
+                        Cardinal star star (C**)<br>
                         Dove (D)<br>
                         Eagle (E)<br>
                         Finch (F)<br>
@@ -577,12 +579,17 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
                         Turing bird (U)<br>
                         Vireo (V)<br>
                         Warbler (W)<br>
+                        Warbler star (W*)<br>
+                        Warbler star star (W**)<br>
+                        Converse warbler (W1)<br>
                         Zazu (Z)
                     </td>
                     <td>
                         <code>Axy = x(yx)</code><br>
                         <code>Bxyz = x(yz)</code><br>
                         <code>Cxyz = xzy</code><br>
+                        <code>C*xyzw = xywz</code><br>
+                        <code>C**xyzwv = xyzvw</code><br>
                         <code>Dxyzw = xy(zw)</code><br>
                         <code>Exyzwv = xy(zwv)</code><br>
                         <code>Fxyz = zyx</code><br>
@@ -605,6 +612,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
                         <code>Uxy = y(xxy)</code><br>
                         <code>Vxyz = zxy</code><br>
                         <code>Wxy = xyy</code><br>
+                        <code>W*xyz = xyzz</code><br>
+                        <code>W**xyzw = xyzww</code><br>
+                        <code>W1xy = yxx</code><br>
                         <code>Zxy = x(xy)</code>
                     </td>
                 </tr>
@@ -620,7 +630,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             data-dialog-initial-focus>About</h2>
         <div class="license-text">
             <!-- Keep this version and the app.js cache key in sync. -->
-            <p>Combinator Studio, version 1.11.16<br>
+            <p>Combinator Studio, version 1.11.18<br>
                 Part of the C++ Combinator DSL<br>
                 Copyright (C) 2026  David W. Gero</p>
             <p>This program is free software: you can redistribute it and/or modify

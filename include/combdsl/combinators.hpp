@@ -5520,12 +5520,19 @@ BASIS(U, 2, B(O)(M));
 BASIS(N, 2, S(S)(K));
 BASIS(R, 3, S(K(S(S)))(S(K(K))(K)));
 BASIS(C, 3, S(S(K(B))(S))(K(K)));
+inline const auto C_star = ::combdsl::basis("C*", 4, B(C));
+inline const auto C_star_star =
+    ::combdsl::basis("C**", 5, B(C_star));
+inline const auto W_star = ::combdsl::basis("W*", 3, B(W));
+inline const auto W_star_star =
+    ::combdsl::basis("W**", 4, B(W_star));
 BASIS(Q, 3, S(K(S(B)))(K));
 BASIS(Q1, 3, B(C)(B));
 BASIS(Q3, 3, B(T));
 BASIS(V, 3, S(S(K(S))(S(K(K))(S(K(S))(T))))(K(K)));
 BASIS(D, 4, S(K(S(K(S))))(S(K(K))));
 BASIS(L, 2, S(B)(K(M)));
+BASIS(W1, 2, C(W));
 BASIS(Z, 2, S(B)(I));
 BASIS(A, 2, S(B)(T));
 BASIS(E, 5, B(D)(D));

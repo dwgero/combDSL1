@@ -96,12 +96,17 @@ using combdsl::U;
 using combdsl::N;
 using combdsl::R;
 using combdsl::C;
+using combdsl::C_star;
+using combdsl::C_star_star;
+using combdsl::W_star;
+using combdsl::W_star_star;
 using combdsl::Q;
 using combdsl::Q1;
 using combdsl::Q3;
 using combdsl::V;
 using combdsl::D;
 using combdsl::L;
+using combdsl::W1;
 using combdsl::Z;
 using combdsl::A;
 using combdsl::E;
@@ -1473,6 +1478,42 @@ int main() {
          parse("show U"), "arity:2 BOM");
     test("pre-defined Turing reduces",
          single_step(parse("Uxy")), "y(xxy)");
+    test("pre-defined Cardinal star is registered",
+         parse("C*"), "C*");
+    test("show exposes pre-defined Cardinal star",
+         parse("show C*"), "arity:4 BC");
+    test("pre-defined Cardinal star reduces compact input",
+         single_step(parse("C*wxyz")), "wxzy");
+    test("pre-defined Cardinal star star is registered",
+         parse("C**"), "C**");
+    test("show exposes pre-defined Cardinal star star",
+         parse("show C**"), "arity:5 B C*");
+    test("Cardinal star star wins the longest compact match",
+         parse("C**x"), "C**x");
+    test("pre-defined Cardinal star star reduces compact input",
+         single_step(parse("C**vwxyz")), "vwxzy");
+    test("pre-defined Warbler star is registered",
+         parse("W*"), "W*");
+    test("show exposes pre-defined Warbler star",
+         parse("show W*"), "arity:3 BW");
+    test("pre-defined Warbler star reduces compact input",
+         single_step(parse("W*wxy")), "wxyy");
+    test("pre-defined Warbler star star is registered",
+         parse("W**"), "W**");
+    test("show exposes pre-defined Warbler star star",
+         parse("show W**"), "arity:4 B W*");
+    test("Warbler star star wins the longest compact match",
+         parse("W**x"), "W**x");
+    test("pre-defined Warbler star star reduces compact input",
+         single_step(parse("W**vwxy")), "vwxyy");
+    test("pre-defined Converse warbler is registered",
+         parse("W1"), "W1");
+    test("show exposes pre-defined Converse warbler",
+         parse("show W1"), "arity:2 CW");
+    test("pre-defined Converse warbler prints compactly before a symbol",
+         parse("W1x"), "W1x");
+    test("pre-defined Converse warbler reduces compact input",
+         single_step(parse("W1xy")), "yxx");
     test("pre-defined Quixotic is registered", parse("Q1"), "Q1");
     test("show exposes the pre-defined Quixotic",
          parse("show Q1"), "arity:3 BCB");
@@ -1805,9 +1846,10 @@ int main() {
          single_step(parse("\\\"M\\\"x")), "Mx");
 
     constexpr std::string_view expected_registered_basis_names[] = {
-        "M", "W", "B", "O", "T", "U", "N", "R", "C", "Q", "Q1", "Q3", "V", "D",
-        "L", "Z", "A", "E", "F", "G", "H", "J", "Cstar", "Vstar",
-        "V4", "G2", "G1", "bazTest", "Hprime", "H1",
+        "M", "W", "B", "O", "T", "U", "N", "R", "C", "C*", "C**",
+        "W*", "W**", "Q", "Q1", "Q3", "V", "D", "L", "W1", "Z", "A", "E",
+        "F", "G", "H", "J", "Cstar", "Vstar", "V4", "G2", "G1",
+        "bazTest", "Hprime", "H1",
     };
     for (auto const name : expected_registered_basis_names) {
         auto title = std::string("parse named basis ");
@@ -4343,6 +4385,18 @@ int main() {
     test("Rxyzw [moves x after yz (opposite of V)]", (R)(x)(y)(z)(w), "yzxw");
     test("C", (C), "C");
     test("Cxyzw [swaps y and z after x]", (C)(x)(y)(z)(w), "xzyw");
+    test("C*", (C_star), "C*");
+    test("C*wxyzv [swaps y and z after wx]",
+         (C_star)(w)(x)(y)(z)(v), "wxzyv");
+    test("C**", (C_star_star), "C**");
+    test("C**vwxyzu [swaps y and z after vwx]",
+         (C_star_star)(v)(w)(x)(y)(z)(u), "vwxzyu");
+    test("W*", (W_star), "W*");
+    test("W*wxyv [duplicates y after wxy]",
+         (W_star)(w)(x)(y)(v), "wxyyv");
+    test("W**", (W_star_star), "W**");
+    test("W**vwxyu [duplicates y after vwxy]",
+         (W_star_star)(v)(w)(x)(y)(u), "vwxyyu");
     test("Q", (Q), "Q");
     test("Qxyzw [combines (xz) after y]", (Q)(x)(y)(z)(w), "y(xz)w");
     test("Q1", (Q1), "Q1");
@@ -4357,6 +4411,9 @@ int main() {
     test("Dwxyzv [like B, but combines (yz) after wx]", (D)(w)(x)(y)(z)(v), "wx(yz)v");
     test("L", (L), "L");
     test("Lxyw [combines (yy) after x]", (L)(x)(y)(w), "x(yy)w");
+    test("W1", (W1), "W1");
+    test("W1xyw [duplicates x after y]",
+         (W1)(x)(y)(w), "yxxw");
     test("Z", (Z), "Z");
     test("Zxyw [combines (xy) after x]", (Z)(x)(y)(w), "x(xy)w");
     test("A", (A), "A");
