@@ -132,19 +132,21 @@ or printed.
 ### Named bases
 
 `M` and `T` are among the named bases provided by
-`<combdsl/combinators.hpp>`. Many of the bird combinators in Raymond Smullyan's
-book [*To Mock a Mockingbird*](https://en.wikipedia.org/wiki/To_Mock_a_Mockingbird)
-have been defined, including Bluebird (`B`),
-Cardinal (`C`), Dove (`D`), Identity (`I`), Kestrel (`K`), Lark (`L`),
-Mockingbird (`M`), Owl (`O`), Robin (`R`), Starling (`S`), Thrush (`T`),
-Vireo (`V`), and Warbler (`W`), using the capital first letter of each name.
-Cardinal star (`C*`), Cardinal star star (`C**`), Warbler star (`W*`), and
-Warbler star star (`W**`) are also pre-defined.
+`<combdsl/combinators.hpp>`. All the birds in the appendix "Who's Who Among
+the Birds" in Raymond Smullyan's book
+[*To Mock a Mockingbird*](https://en.wikipedia.org/wiki/To_Mock_a_Mockingbird)
+have been defined, including Bluebird (`B`), Cardinal (`C`), Dove (`D`),
+Eagle (`E`), Finch (`F`), Goldfinch (`G`), Hummingbird (`H`),
+Identity bird (`I`), Jay (`J`), Kestrel (`K`), Lark (`L`),
+Mockingbird (`M`), Owl (`O`), Queer bird (`Q`), Quixotic bird (`Q1`),
+Quirky bird (`Q3`), Robin (`R`), Starling (`S`), Thrush (`T`), Turing bird (`U`),
+Vireo (`V`), Warbler (`W`), and Converse warbler (`W1`), using a capital letter
+and possible subscript for each name.
 The Sage bird has been defined as `Y`, to match current conventions.
-The following additional bird combinators have also been defined: Albatross
-(`A`), Eagle (`E`), Finch (`F`), Goldfinch (`G`), Hummingbird (`H`), Jay
-(`J`), Nightingale (`N`), Queer (`Q`), Quirky (`Q3`), Quixotic (`Q1`),
-Turing (`U`), Converse warbler (`W1`), and Zazu (`Z`).
+Cardinal star (`C*`), Cardinal star star (`C**`), Warbler star (`W*`), and
+Warbler star star (`W**`) are also defined.
+The following additional bird combinators have been defined: Albatross
+(`A`),  Nightingale (`N`), and Zazu (`Z`).
 The `basis(name, arity, combinator_expression)` function assigns an atomic
 printed name to any other combinator expression without changing its behavior.
 Named callables are deferred and cached like `S`, `K`, and `I`; copies share
@@ -187,18 +189,17 @@ For `auto Alias = basis("Alias", 1, I);`, `K(Alias)()` prints `K Alias`;
 `x(Cstar(y))()` prints `x(Cstar y)`; `Cstar(y(z))()` prints `Cstar(yz)`;
 and `x(y(z))(Cstar)()` prints `x(yz)Cstar`.
 
-Basis names are copied into the expression and may contain up to seven
-characters. Names cannot be empty or begin with a null character; a later null
+Basis names are copied into the expression and may contain up to 15
+bytes. Names cannot be empty or begin with a null character; a later null
 character terminates the copied name. Because leading whitespace and
 parentheses belong to the parser grammar, names cannot begin with one of those
 characters or with a double quote. A name also cannot begin with a single
 or doubled backslash, though a doubled backslash may occur later in the name.
-A visible name longer than seven characters throws `std::length_error`; an
+A visible name longer than 15 bytes throws `std::length_error`; an
 invalid name throws `std::invalid_argument`.
 
 Every successful `basis(...)` call also registers that name with the text
-parser. The first definition registered for a name wins; later bases with the
-same name remain usable objects but do not replace the parser definition.
+parser. User-defined names may be redefined.
 Exact `S`, `K`, `I`, and `Y` names always retain their primitive meanings.
 Registrations own a deferred handle, so a local basis remains parseable after
 its original handle is destroyed without evaluating its body during
@@ -407,8 +408,8 @@ parse("set Alias = I");               // Alias; arity defaults to 0
 Whitespace before `set` and around `=` is optional, while at least one
 whitespace character must separate `set` from the name and an explicit arity
 from its expression. The declaration acts like
-`basis(name, arity, expression)`: names use the normal basis restrictions, the
-first registered definition wins, and `S`, `K`, `I`, and `Y` retain their
+`basis(name, arity, expression)`: names use the normal basis restrictions,
+and `S`, `K`, `I`, and `Y` retain their
 primitive meanings. Because a leading decimal token followed by whitespace is
 treated as the arity, parenthesize a numeric basis name when it begins the
 stored expression. `parse_eval`, `read_parse_eval`, `parse_and_step`, and
@@ -416,7 +417,8 @@ stored expression. `parse_eval`, `read_parse_eval`, `parse_and_step`, and
 stored expression, and produce no output for the declaration itself. A
 malformed declaration does not register its name.
 
-At the start of a line, `define` followed by whitespace creates a named basis
+At the start of a line, preceded by optional whitespace, `define` followed
+by whitespace creates a named basis
 by abstracting one or more lowercase symbols from a combinator expression.
 The symbols may be adjacent or separated by whitespace. Their count becomes
 the basis arity, and abstraction proceeds from the last symbol back to the
@@ -438,31 +440,14 @@ parse("define Gxyz = x(yz)");            // G
 parse("define Gx y = y");                // Gx
 ```
 
-`define` uses contextual `takeout` passes. In the argument-dependent case,
-`B(qfun)(t)` and `Q(t)(qfun)` are equivalent. For `define foo xyz = exp`, the
-first pass takes out `z` with `x`, `y`, and recursive `foo` pending. It uses
-`Q` if `qfun` contains the next pending atom and its recursively produced `t`
-does not; if only `t` contains it, `B` is used. When both or neither contain
-the next pending atom, each expression receives one point for every pending
-atom it contains. `Q` is used only when `qfun`'s count is greater than `t`'s
-count, and `B` is used on a tie or when `t`'s count is greater. The `y` pass
+Under the hood, `define` uses contextual `takeout` passes. For `define foo xyz = exp`,
+the first pass takes out `z` with `x`, `y`, and recursive `foo` pending. The `y` pass
 similarly has `x` and `foo` pending, while the `x` pass has only `foo` pending.
-If the definition is recursive, the final `foo` pass has no pending atoms and
-therefore uses `B` on the zero-to-zero tie. The resulting expression has arity
+If the definition is recursive, the final `foo` pass has no pending atoms.
+The resulting expression has arity
 `3`. As with `set`, the definition command is silent under `parse_eval`,
 `read_parse_eval`, and `parse_and_step` or `parse_and_key_step`, and malformed
 definitions are not registered.
-
-In the function-dependent case, `C(t)(qarg)` and `R(qarg)(t)` are likewise
-equivalent. Contextual `takeout` first compares whether `qarg` and `t` contain
-the next pending atom, which is `y` while taking out `z`, then `x` while taking
-out `y`, and then the recursive name while taking out `x`. If only `qarg`
-contains it, `C` is used; if only `t` contains it, `R` is used. When both or
-neither contain it, each expression receives one point for every pending atom
-it contains. `C` is used when `qarg`'s count is greater than or equal to `t`'s
-count, and `R` otherwise. An empty pending set is a zero-to-zero tie, so the
-public two-argument `takeout` and the final recursive-name pass use `C` in this
-case.
 
 Before `takeout`, saturated named bases in the expression are applied,
 including reachable saturated bases nested inside other applications.
@@ -478,7 +463,8 @@ used as names by either `set` or `define`.
 
 Occurrences of the defined name in the combinator expression are recursive
 references. If any remain after the argument symbols are abstracted, `define`
-abstracts the recursive name, optimizes the result, and stores it under `Y`:
+abstracts the recursive name, optimizes the result, and appends it to `Y`,
+producing `Y(optimized_expression)`:
 
 ```cpp
 parse("define Repeat x = x(Repeat x)"); // Repeat
@@ -581,7 +567,7 @@ expression produces no output, while malformed or empty lines throw
 The `crepl` executable applies `input_escape` to each line before passing it to
 `parse_eval`, so ordinary quoted words and backslashes can be entered directly.
 When standard output is a terminal, it first prints
-`Combinator Read-Eval-Print Loop, version 1.12.1`. Long evaluations then display
+`Combinator Read-Eval-Print Loop, version 1.12.1`. Long evaluations display
 the accumulated step count every 1,000 reductions by overwriting one status
 line; the line is cleared before evaluation output is printed. Its interactive
 prompt is `>`. Redirected output contains no progress status. Enter
@@ -604,16 +590,14 @@ at the left margin. When Basis Step is on, a basis expansion colors only the
 basis name before the step and its stored contents after the step, both red;
 all arguments remain uncolored. Ordinary evaluation ignores this setting.
 The mode commands themselves produce no output. Enter `help` or `help brief`
-to display the command summary; enter `help full` to display detailed help
-based on the browser UI's Help box. Enter `birds` to list every bird and
-reduction rule from the browser UI's Bird Info table. The list uses three
+to display the command summary; enter `help full` to display detailed help.
+Enter `birds` to list every bird and its
+reduction rule. The list uses three
 columns when their
 calculated widths fit in 80 characters and otherwise uses two. Enter `about`
-to print CREPL's About text, based on the browser UI's About box, without its
-heading and wrapped to 80-character lines; its first line is the CREPL banner.
+to print CREPL's About text wrapped to 80-character lines; its first line is
+the CREPL banner.
 Enter `quit` or `exit` with optional surrounding whitespace to end CREPL.
-Lowercase `q` is evaluated as a symbol, while uppercase `Q` is the pre-defined
-Queer combinator.
 Running `crepl --version` prints the same About text and exits successfully
 without starting the interactive loop.
 
