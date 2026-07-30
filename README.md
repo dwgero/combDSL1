@@ -483,8 +483,7 @@ The resulting recursive transformation is
 `Y(optimize(takeout(rec_func, previous_takeout_result)))`. The optimization
 pass recursively replaces `BCT` or `PTC` with `V`, `BB` with `D`, `CC` with
 `R`, `SBT` with `A`, `PM` with `L`, `WC` or `WR` with `N`, `CB` with `P`,
-and `WB` with `Z`. The `CP` with `B` optimizer code is retained but commented
-out.
+and `WB` with `Z`.
 
 `search_for_xy_subexp(expression)` searches the unoptimized result of
 contextually taking out `y` with `x` pending, then taking out `x` with no
@@ -575,7 +574,7 @@ expression produces no output, while malformed or empty lines throw
 The `crepl` executable applies `input_escape` to each line before passing it to
 `parse_eval`, so ordinary quoted words and backslashes can be entered directly.
 When standard output is a terminal, it first prints
-`Combinator Read-Eval-Print Loop, version 1.11.0`. Long evaluations then display
+`Combinator Read-Eval-Print Loop, version 1.11.1`. Long evaluations then display
 the accumulated step count every 1,000 reductions by overwriting one status
 line; the line is cleared before evaluation output is printed. Its interactive
 prompt is `>`. Redirected output contains no progress status. Enter

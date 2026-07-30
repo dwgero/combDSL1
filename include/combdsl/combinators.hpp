@@ -4757,14 +4757,6 @@ private:
                is_named_basis(application->argument(), "B");
     }
 
-    [[nodiscard]] static bool is_cardinal_peacock(
-        quoted_expression const& expression) noexcept {
-        auto const* application = as_application(expression);
-        return application != nullptr &&
-               is_named_basis(application->function(), "C") &&
-               is_named_basis(application->argument(), "P");
-    }
-
     [[nodiscard]] quoted_expression registered_basis_expression(
         std::string_view name) const {
         auto const match = registered_bases_.find(name);
@@ -4808,9 +4800,6 @@ private:
         if (is_warbler_bluebird(expression)) {
             return registered_basis_expression("Z");
         }
-        // if (is_cardinal_peacock(expression)) {
-        //     return registered_basis_expression("B");
-        // }
         return std::nullopt;
     }
 
