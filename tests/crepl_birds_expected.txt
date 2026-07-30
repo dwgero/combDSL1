@@ -1,6 +1,12 @@
-Albatross Axy = x(yx)     Lark        Lxy = x(yy)   Sage     Yx = x(Yx)
-Bluebird  Bxyz = x(yz)    Mockingbird Mx = xx       Starling Sxyz = xz(yz)
-Cardinal  Cxyz = xzy      Nightingale Nxy = xyx     Thrush   Txy = yx
-Dove      Dxyzw = xy(zw)  Owl         Oxy = y(xy)   Vireo    Vxyz = zxy
-Identity  Ix = x          Peacock     Pxyz = y(xz)  Warbler  Wxy = xyy
-Kestrel   Kxy = x         Robin       Rxyz = yzx    Zazu     Zxy = x(xy)
+Albatross     Axy = x(yx)        Mockingbird Mx = xx
+Bluebird      Bxyz = x(yz)       Nightingale Nxy = xyx
+Cardinal      Cxyz = xzy         Owl         Oxy = y(xy)
+Dove          Dxyzw = xy(zw)     Queer bird  Qxyz = y(xz)
+Eagle         Exyzwv = xy(zwv)   Robin       Rxyz = yzx
+Finch         Fxyz = zyx         Sage bird   Yx = x(Yx)
+Goldfinch     Gxyzw = xw(yz)     Starling    Sxyz = xz(yz)
+Hummingbird   Hxyz = xyzy        Thrush      Txy = yx
+Identity bird Ix = x             Vireo       Vxyz = zxy
+Jay           Jxyzw = xy(xwz)    Warbler     Wxy = xyy
+Kestrel       Kxy = x            Zazu        Zxy = x(xy)
+Lark          Lxy = x(yy)

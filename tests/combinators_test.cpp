@@ -95,12 +95,17 @@ using combdsl::T;
 using combdsl::N;
 using combdsl::R;
 using combdsl::C;
-using combdsl::P;
+using combdsl::Q;
 using combdsl::V;
 using combdsl::D;
 using combdsl::L;
 using combdsl::Z;
 using combdsl::A;
+using combdsl::E;
+using combdsl::F;
+using combdsl::G;
+using combdsl::H;
+using combdsl::J;
 
 void ensure_external_basis_registered();
 
@@ -109,15 +114,15 @@ namespace {
 const auto Cstar = basis("Cstar", 4, S(K(C)));
 const auto Vstar = basis("Vstar", 4, S(K(Cstar))(C));
 const auto V4 = basis("V4", 4, S(K(Vstar))(T));
-const auto G = basis(
-    "G",
+const auto G1 = basis(
+    "G1",
     1,
     S(S(S(S(S(I)(K(S)))(K(T)))(K(K)))(K(K(K))))(K(S(K))));
 const auto Hprime = basis(
     "Hprime",
     3,
-    S(K(W))(S(K(S(K(C))))(S(K(S(K(S(G)))))(S(S(K(B))(B))(K(T))))));
-const auto H = basis("H", 1, Y(Hprime));
+    S(K(W))(S(K(S(K(C))))(S(K(S(K(S(G1)))))(S(S(K(B))(B))(K(T))))));
+const auto H1 = basis("H1", 1, Y(Hprime));
 const auto G2 = basis("G2", 1, Vstar(V4(S)(T)(K))(K(K))(S(K)));
 const auto bazTest =
     basis("bazTest", 3, B(W)(B(B(C))(
@@ -611,7 +616,6 @@ int main() {
         return 42;
     }));
     static_cast<void>(basis("Scope", 1, I));
-    static_cast<void>(basis("J", 1, I));
     static_cast<void>(basis("Jlong", 1, K));
     static_cast<void>(basis("Sfoo", 1, I));
     static_cast<void>(basis("K", 1, I));
@@ -1243,11 +1247,11 @@ int main() {
          "BK(BK(Cep))abc");
     test("right-to-left abstraction preserves behavior",
          single_step(parse("DefE a b c")), "eap");
-    test("define applies contextual Peacock selection",
+    test("define applies contextual Queer selection",
          parse("define DefContext xyz = xy(wz)"), "DefContext");
-    test("show exposes contextual Peacock selection",
-         parse("show DefContext"), "arity:3 B(Pw)");
-    test("contextual Peacock selection preserves behavior",
+    test("show exposes contextual Queer selection",
+         parse("show DefContext"), "arity:3 B(Qw)");
+    test("contextual Queer selection preserves behavior",
          single_step(parse("DefContext a b c")), "ab(wc)");
     test("define keeps Bluebird when qfun has no pending atom",
          parse("define DefNoQfun xy = w(zy)"), "DefNoQfun");
@@ -1291,10 +1295,10 @@ int main() {
          parse("define DefKV x = BCT"), "DefKV");
     test("show exposes nested Vireo optimization",
          parse("show DefKV"), "arity:1 KV");
-    test("define recursively optimizes nested PTC",
-         parse("define DefKPV x = PTC"), "DefKPV");
-    test("show exposes nested Peacock Vireo optimization",
-         parse("show DefKPV"), "arity:1 KV");
+    test("define recursively optimizes nested QTC",
+         parse("define DefKQV x = QTC"), "DefKQV");
+    test("show exposes nested Queer Vireo optimization",
+         parse("show DefKQV"), "arity:1 KV");
     test("define recursively optimizes nested BB",
          parse("define DefKD x = BB"), "DefKD");
     test("show exposes nested Dove optimization",
@@ -1319,14 +1323,14 @@ int main() {
          parse("define DefKA x = SBT"), "DefKA");
     test("show exposes nested Albatross optimization",
          parse("show DefKA"), "arity:1 KA");
-    test("define chains CB and PM optimizations to L",
+    test("define chains CB and QM optimizations to L",
          parse("define DefL xy = x(yy)"), "DefL");
     test("show exposes the optimized Lark",
          parse("show DefL"), "arity:2 L");
     test("optimized Lark preserves behavior",
          single_step(single_step(parse("DefL a b"))), "a(bb)");
-    test("define recursively optimizes nested PM",
-         parse("define DefKL x = PM"), "DefKL");
+    test("define recursively optimizes nested QM",
+         parse("define DefKL x = QM"), "DefKL");
     test("show exposes nested Lark optimization",
          parse("show DefKL"), "arity:1 KL");
     test("define optimizes WC to N",
@@ -1343,16 +1347,16 @@ int main() {
          parse("define DefKNR x = WR"), "DefKNR");
     test("show exposes nested Robin Nightingale optimization",
          parse("show DefKNR"), "arity:1 KN");
-    test("define optimizes CB to P",
-         parse("define DefP xyz = y(xz)"), "DefP");
-    test("show exposes the optimized Peacock",
-         parse("show DefP"), "arity:3 P");
-    test("optimized Peacock preserves behavior",
-         single_step(single_step(parse("DefP a b c"))), "b(ac)");
+    test("define optimizes CB to Q",
+         parse("define DefQ xyz = y(xz)"), "DefQ");
+    test("show exposes the optimized Queer",
+         parse("show DefQ"), "arity:3 Q");
+    test("optimized Queer preserves behavior",
+         single_step(single_step(parse("DefQ a b c"))), "b(ac)");
     test("define recursively optimizes nested CB",
-         parse("define DefKP x = CB"), "DefKP");
-    test("show exposes nested Peacock optimization",
-         parse("show DefKP"), "arity:1 KP");
+         parse("define DefKQ x = CB"), "DefKQ");
+    test("show exposes nested Queer optimization",
+         parse("show DefKQ"), "arity:1 KQ");
     test("define optimizes WB to Z",
          parse("define DefZ xy = x(xy)"), "DefZ");
     test("show exposes the optimized Zazu",
@@ -1364,19 +1368,19 @@ int main() {
     test("show exposes nested Zazu optimization",
          parse("show DefKZ"), "arity:1 KZ");
     test("define preprocessing creates the Bluebird",
-         parse("define DefB xyz = Pyxz"), "DefB");
+         parse("define DefB xyz = Qyxz"), "DefB");
     test("show exposes the preprocessed Bluebird",
          parse("show DefB"), "arity:3 B");
     test("preprocessed Bluebird preserves behavior",
          single_step(parse("DefB a b c")), "a(bc)");
-    test("define leaves nested CP unoptimized",
-         parse("define DefKB x = CP"), "DefKB");
-    test("show exposes nested unoptimized CP",
-         parse("show DefKB"), "arity:1 K(CP)");
-    test("define stops after optimizing CB to P",
+    test("define leaves nested CQ unoptimized",
+         parse("define DefKCQ x = CQ"), "DefKCQ");
+    test("show exposes nested unoptimized CQ",
+         parse("show DefKCQ"), "arity:1 K(CQ)");
+    test("define stops after optimizing CB to Q",
          parse("define DefChainB x = C(CB)x"), "DefChainB");
-    test("show exposes the resulting CP",
-         parse("show DefChainB"), "arity:1 CP");
+    test("show exposes the resulting CQ",
+         parse("show DefChainB"), "arity:1 CQ");
     test("define creates the Starling",
          parse("define DefS xyz = xz(yz)"), "DefS");
     test("basis step exposes the defined Starling",
@@ -1388,10 +1392,10 @@ int main() {
     test("whitespace-separated define symbols preserve their order",
          single_step(parse("Dws a b c"), true), "Iabc");
     test("define accepts a symbol adjacent to a one-letter name",
-         parse("define Fx = xSTK(KK)(SK)"), "F");
+         parse("define Ux = xSTK(KK)(SK)"), "U");
     test("compact one-letter define preserves its behavior",
          single_step(
-             parse("define Fx=xSTK(KK)(SK)")(w)),
+             parse("define Ux=xSTK(KK)(SK)")(w)),
          "wSTK(KK)(SK)");
     test("compact one-letter define infers its adjacent symbol",
          parse("define Ux = x"), "U");
@@ -1426,18 +1430,18 @@ int main() {
          },
          "define \xE2\x96\xA0 xyz = x(yz)");
     test("compact one-letter define recognizes recursion",
-         parse("define Fx = x(Fx)"), "F");
+         parse("define Ux = x(Ux)"), "U");
     test("compact recursive define is wrapped in Y",
-         parse("show F"), "arity:1 YO");
+         parse("show U"), "arity:1 YO");
     test("two-character define names retain their spaced symbol",
          parse("define Gx y = y"), "Gx");
     test("two-character define name registers without becoming G",
          single_step(parse("Gx a")), "a");
     test("compact define accepts multiple adjacent symbols",
-         parse("define Fxyz = x(yz)"), "F");
+         parse("define Uxyz = x(yz)"), "U");
     test("compact multiple-symbol define preserves its behavior",
          single_step(
-             parse("define Fxyz=x(yz)")(a)(b)(c)),
+             parse("define Uxyz=x(yz)")(a)(b)(c)),
          "a(bc)");
     test("an overlong compact signature is not an overlong name",
          parse("define ~abcdefghijklmno = a"), "~");
@@ -1455,9 +1459,8 @@ int main() {
                      : line_position + 1);
          },
          "define DRaw x = \"x\"x");
-    test("define creates the Eagle",
-         parse("define E xyzwv = xy(zwv)"), "E");
-    test("show exposes the defined Eagle",
+    test("pre-defined Eagle is registered", parse("E"), "E");
+    test("show exposes the pre-defined Eagle",
          parse("show E"), "arity:5 BDD");
     test("define recognizes a recursive name",
          parse("define Repeat x = x(Repeat x)"), "Repeat");
@@ -1755,9 +1758,9 @@ int main() {
          single_step(parse("\\\"M\\\"x")), "Mx");
 
     constexpr std::string_view expected_registered_basis_names[] = {
-        "M", "W", "B", "O", "T", "N", "R", "C", "P", "V", "D",
-        "L", "Z", "A", "Cstar", "Vstar", "V4", "G2", "G", "bazTest",
-        "Hprime", "H",
+        "M", "W", "B", "O", "T", "N", "R", "C", "Q", "V", "D",
+        "L", "Z", "A", "E", "F", "G", "H", "J", "Cstar", "Vstar",
+        "V4", "G2", "G1", "bazTest", "Hprime", "H1",
     };
     for (auto const name : expected_registered_basis_names) {
         auto title = std::string("parse named basis ");
@@ -1801,8 +1804,16 @@ int main() {
          single_step(parse("foo x")), "x");
     test("unseparated lowercase name remains symbols",
          parse("foox"), "foox");
-    test("single-character registered basis", single_step(parse("Jx")),
-         "x");
+    test("parse compact Eagle",
+         single_step(parse("Exyzwv")), "xy(zwv)");
+    test("parse compact Finch",
+         single_step(parse("Fxyz")), "zyx");
+    test("parse Goldfinch",
+         single_step(parse("G x y z w")), "xw(yz)");
+    test("parse compact Hummingbird",
+         single_step(parse("Hxyz")), "xyzy");
+    test("parse compact Jay",
+         single_step(parse("Jxyzw")), "xy(xwz)");
     test("registered bases use exact token lookup",
          single_step(parse("Jlong x")), "Kx");
     test("longer basis may start with primitive",
@@ -1833,7 +1844,7 @@ int main() {
     test_parse_failure("parse nested missing close", "x(y", 3);
     test_parse_failure("parse unexpected close", "x)", 1);
     test_parse_failure("parse extra nested close", "x(y))", 4);
-    test_parse_failure("parse uppercase symbol", "Q", 0);
+    test_parse_failure("parse uppercase symbol", "P", 0);
     test_parse_failure("parse numeric symbol", "x2", 1);
     test_parse_failure(
         "parse punctuation symbol", "@", 0, "unknown operand");
@@ -1915,13 +1926,13 @@ int main() {
         bracketed_arity,
         bracketed_arity.find('['));
     constexpr std::string_view overflowing_arity =
-        "set QovAr = 999999999999999999999999999999999999999 I";
+        "set PovAr = 999999999999999999999999999999999999999 I";
     test_parse_failure(
         "set rejects an overflowing arity",
         overflowing_arity,
         overflowing_arity.find('9'));
     test_parse_failure(
-        "overflowing arity does not register its name", "QovAr", 0);
+        "overflowing arity does not register its name", "PovAr", 0);
     constexpr std::string_view overlong_set_name =
         "set 1234567890123456=I";
     test_parse_failure(
@@ -1931,16 +1942,16 @@ int main() {
     test_parse_failure("set rejects an invalid basis name",
                        "set (Bad=I", 4);
     test_parse_failure("set name ends at a left parenthesis",
-                       "set Qparen(I=K", 10);
+                       "set Pparen(I=K", 10);
     test_parse_failure("parenthesized set name is not registered",
-                       "Qparen", 0);
+                       "Pparen", 0);
     test_parse_failure("set rejects an invalid expression",
-                       "set Qbad = K@", 12);
-    test_parse_failure("failed set does not register its name", "Qbad", 0);
+                       "set Pbad = K@", 12);
+    test_parse_failure("failed set does not register its name", "Pbad", 0);
     test_parse_failure("set rejects a trailing close parenthesis",
-                       "set Qtail=I)", 11);
+                       "set Ptail=I)", 11);
     test_parse_failure("trailing set error does not register its name",
-                       "Qtail", 0);
+                       "Ptail", 0);
     test_parse_failure(
         "define requires a basis name", "define = x", 7);
     constexpr std::string_view define_without_symbols =
@@ -1950,13 +1961,13 @@ int main() {
         define_without_symbols,
         define_without_symbols.find('='));
     constexpr std::string_view uppercase_define_symbol =
-        "define QUp X = x";
+        "define PUp X = x";
     test_parse_failure(
         "define rejects an uppercase symbol",
         uppercase_define_symbol,
         uppercase_define_symbol.find('X'));
     constexpr std::string_view numeric_define_symbol =
-        "define QDg x2 = x";
+        "define PDg x2 = x";
     test_parse_failure(
         "define rejects a numeric symbol",
         numeric_define_symbol,
@@ -1986,21 +1997,21 @@ int main() {
         overlong_define_name,
         overlong_define_name.find("1234567890123456") + 15);
     constexpr std::string_view invalid_define_body =
-        "define QdBody x = K@";
+        "define PdBody x = K@";
     test_parse_failure(
         "define rejects an invalid expression",
         invalid_define_body,
         invalid_define_body.find('@'));
     test_parse_failure(
-        "failed define does not register its name", "QdBody", 0);
+        "failed define does not register its name", "PdBody", 0);
     constexpr std::string_view trailing_define_close =
-        "define QTailD x = I)";
+        "define PTailD x = I)";
     test_parse_failure(
         "define rejects a trailing close parenthesis",
         trailing_define_close,
         trailing_define_close.find(')'));
     test_parse_failure(
-        "trailing define error does not register its name", "QTailD", 0);
+        "trailing define error does not register its name", "PTailD", 0);
     test("basis name beginning with single backslash rejected",
          [] {
              try {
@@ -2445,12 +2456,12 @@ int main() {
          "Byz");
     const std::vector<quoted_atomic> pending_y{
         quoted_atomic{y}};
-    test("contextual Peacock when only qfun contains next pending atom",
+    test("contextual Queer when only qfun contains next pending atom",
          combdsl::detail::takeout_with_pending_atoms(
              quoted_atomic{x},
              quote(y)(quote(z)(x)),
              pending_y),
-         "Pzy");
+         "Qzy");
     test("contextual Bluebird when neither contains next and counts tie",
          combdsl::detail::takeout_with_pending_atoms(
              quoted_atomic{x},
@@ -2469,13 +2480,13 @@ int main() {
     const std::vector<quoted_atomic> pending_x_y{
         quoted_atomic{x},
         quoted_atomic{y}};
-    test("contextual Peacock tests next pending atom after abstraction",
+    test("contextual Queer tests next pending atom after abstraction",
          combdsl::detail::takeout_with_pending_atoms(
              quoted_atomic{x},
              quote(y)(quote(z)(x)),
              pending_x_y),
-         "Pzy");
-    const std::vector<quoted_atomic> pending_peacock_w_x_y{
+         "Qzy");
+    const std::vector<quoted_atomic> pending_queer_w_x_y{
         quoted_atomic{w},
         quoted_atomic{x},
         quoted_atomic{y}};
@@ -2483,65 +2494,65 @@ int main() {
          combdsl::detail::takeout_with_pending_atoms(
              quoted_atomic{z},
              quote(y)(quote(w)(x)(z)),
-             pending_peacock_w_x_y),
-         "P(wx)y");
+             pending_queer_w_x_y),
+         "Q(wx)y");
     test("next atom in t takes priority over its lower count",
          combdsl::detail::takeout_with_pending_atoms(
              quoted_atomic{z},
              quote(w)(x)(quote(y)(z)),
-             pending_peacock_w_x_y),
+             pending_queer_w_x_y),
          "B(wx)y");
-    const std::vector<quoted_atomic> pending_peacock_w_y{
+    const std::vector<quoted_atomic> pending_queer_w_y{
         quoted_atomic{w},
         quoted_atomic{y}};
-    test("contextual Peacock when both contain next and qfun count wins",
+    test("contextual Queer when both contain next and qfun count wins",
          combdsl::detail::takeout_with_pending_atoms(
              quoted_atomic{x},
              quote(w)(y)(quote(y)(x)),
-             pending_peacock_w_y),
-         "Py(wy)");
+             pending_queer_w_y),
+         "Qy(wy)");
     test("contextual Bluebird when both contain next and t count wins",
          combdsl::detail::takeout_with_pending_atoms(
              quoted_atomic{x},
              quote(y)(quote(w)(y)(x)),
-             pending_peacock_w_y),
+             pending_queer_w_y),
          "By(wy)");
     test("contextual Bluebird when both contain next and counts tie",
          combdsl::detail::takeout_with_pending_atoms(
              quoted_atomic{x},
              quote(y)(quote(y)(x)),
-             pending_peacock_w_y),
+             pending_queer_w_y),
          "Byy");
-    test("contextual Peacock when neither contains next and qfun count wins",
+    test("contextual Queer when neither contains next and qfun count wins",
          combdsl::detail::takeout_with_pending_atoms(
              quoted_atomic{x},
              quote(w)(quote(z)(x)),
-             pending_peacock_w_y),
-         "Pzw");
+             pending_queer_w_y),
+         "Qzw");
     test("contextual Bluebird when neither contains next and t count wins",
          combdsl::detail::takeout_with_pending_atoms(
              quoted_atomic{x},
              quote(z)(quote(w)(x)),
-             pending_peacock_w_y),
+             pending_queer_w_y),
          "Bzw");
     test("contextual Bluebird when neither contains next and counts tie",
          combdsl::detail::takeout_with_pending_atoms(
              quoted_atomic{x},
              quote(z)(quote(v)(x)),
-             pending_peacock_w_y),
+             pending_queer_w_y),
          "Bzv");
-    test("Peacock count counts atoms rather than occurrences",
+    test("Queer count counts atoms rather than occurrences",
          combdsl::detail::takeout_with_pending_atoms(
              quoted_atomic{x},
              quote(w)(w)(quote(w)(x)),
-             pending_peacock_w_y),
+             pending_queer_w_y),
          "B(ww)w");
-    test("contextual takeout propagates Peacock selection recursively",
+    test("contextual takeout propagates Queer selection recursively",
          combdsl::detail::takeout_with_pending_atoms(
              quoted_atomic{x},
              quote(z)(quote(y)(quote(w)(x))),
              pending_y),
-         "Bz(Pwy)");
+         "Bz(Qwy)");
     const auto contextual_recursive_foo =
         combdsl::detail::make_quoted_rec_func(
             combdsl::detail::basis_label("foo"));
@@ -2549,27 +2560,27 @@ int main() {
         quoted_atomic{contextual_recursive_foo},
         quoted_atomic{x},
         quoted_atomic{y}};
-    test("z abstraction uses Peacock when only qfun has pending atoms",
+    test("z abstraction uses Queer when only qfun has pending atoms",
          combdsl::detail::takeout_with_pending_atoms(
              quoted_atomic{z},
              quote(y)(quote(w)(z)),
              pending_foo_x_y),
-         "Pwy");
+         "Qwy");
     test("z abstraction prioritizes qfun containing next pending atom",
          combdsl::detail::takeout_with_pending_atoms(
              quoted_atomic{z},
              quote(y)(contextual_recursive_foo(z)),
              pending_foo_x_y),
-         "P foo y");
+         "Q foo y");
     const std::vector<quoted_atomic> pending_foo_x{
         quoted_atomic{contextual_recursive_foo},
         quoted_atomic{x}};
-    test("y abstraction uses Peacock when only qfun has pending atoms",
+    test("y abstraction uses Queer when only qfun has pending atoms",
          combdsl::detail::takeout_with_pending_atoms(
              quoted_atomic{y},
              quote(x)(quote(w)(y)),
              pending_foo_x),
-         "Pwx");
+         "Qwx");
     test("y abstraction keeps Bluebird when t contains x",
          combdsl::detail::takeout_with_pending_atoms(
              quoted_atomic{y},
@@ -2578,12 +2589,12 @@ int main() {
          "Bux");
     const std::vector<quoted_atomic> pending_foo{
         quoted_atomic{contextual_recursive_foo}};
-    test("x abstraction uses Peacock when only qfun has pending atoms",
+    test("x abstraction uses Queer when only qfun has pending atoms",
          combdsl::detail::takeout_with_pending_atoms(
              quoted_atomic{x},
              contextual_recursive_foo(quote(z)(x)),
              pending_foo),
-         "Pz foo");
+         "Qz foo");
     test("x abstraction keeps Bluebird when t contains foo",
          combdsl::detail::takeout_with_pending_atoms(
              quoted_atomic{x},
@@ -2741,7 +2752,7 @@ int main() {
          "9");
     const auto combined_xyz_subexpression_match =
         combdsl::search_for_subexp(
-            B(P(T))(B));
+            B(Q(T))(B));
     test("combined subexpression search falls back to xyz",
          [&] {
              if (combined_xyz_subexpression_match) {
@@ -2761,7 +2772,7 @@ int main() {
                  std::cout << "not found";
              }
          },
-         "B(PT)B");
+         "B(QT)B");
     test("combined xyz search reports cumulative count",
          [&] {
              if (combined_xyz_subexpression_match) {
@@ -4252,8 +4263,8 @@ int main() {
     test("Rxyzw [moves x after yz (opposite of V)]", (R)(x)(y)(z)(w), "yzxw");
     test("C", (C), "C");
     test("Cxyzw [swaps y and z after x]", (C)(x)(y)(z)(w), "xzyw");
-    test("P", (P), "P");
-    test("Pxyzw [combines (xz) after y]", (P)(x)(y)(z)(w), "y(xz)w");
+    test("Q", (Q), "Q");
+    test("Qxyzw [combines (xz) after y]", (Q)(x)(y)(z)(w), "y(xz)w");
     test("V", (V), "V");
     test("Vxyzw [moves z in front of xy (opposite of R)]", (V)(x)(y)(z)(w), "zxyw");
     test("D", (D), "D");
@@ -4264,28 +4275,43 @@ int main() {
     test("Zxyw [combines (xy) after x]", (Z)(x)(y)(w), "x(xy)w");
     test("A", (A), "A");
     test("Axyw [combines (yx) after x]", (A)(x)(y)(w), "x(yx)w");
+    test("E", (E), "E");
+    test("Exyzwvu [combines (zwv) after xy]",
+         (E)(x)(y)(z)(w)(v)(u), "xy(zwv)u");
+    test("F", (F), "F");
+    test("Fxyzw [reverses x, y, and z]",
+         (F)(x)(y)(z)(w), "zyxw");
+    test("G", (G), "G");
+    test("Gxyzwv [combines (yz) after xw]",
+         (G)(x)(y)(z)(w)(v), "xw(yz)v");
+    test("H", (H), "H");
+    test("Hxyzw [repeats y after xyz]",
+         (H)(x)(y)(z)(w), "xyzyw");
+    test("J", (J), "J");
+    test("Jxyzwv [combines (xwz) after xy]",
+         (J)(x)(y)(z)(w)(v), "xy(xwz)v");
     test("Cstar", (Cstar), "Cstar");
     test("Cstar wxyzv [swaps y and z after wx]", (Cstar)(w)(x)(y)(z)(v), "wxzyv");
     test("Vstar", (Vstar), "Vstar");
     test("Vstar wxyzv [like V, but moves z after w and before xy]", (Vstar)(w)(x)(y)(z)(v), "wzxyv");
     test("V4", (V4), "V4");
     test("V4 wxyzv [like V, but moves z before wxy]", (V4)(w)(x)(y)(z)(v), "zwxyv");
-    test("G", (G), "G");
-    test("Gxw", (G)(x)(w), "xSTK(KK)(SK)w");
-    test("GK", (G)(K), "SK");
-    test("GB", (G)(B), "K");
-    test("GD", (G)(D), "K");
+    test("G1", (G1), "G1");
+    test("G1xw", (G1)(x)(w), "xSTK(KK)(SK)w");
+    test("G1K", (G1)(K), "SK");
+    test("G1B", (G1)(B), "K");
+    test("G1D", (G1)(D), "K");
     test("G2", (G2), "G2");
     test("G2 xw", (G2)(x)(w), "xSTK(KK)(SK)w");
     test("bazTest zxy", (bazTest)(z)(x)(y), "uy(z(yx))x");
     test("Hprime zxy", (Hprime)(z)(x)(y), "ySTK(KK)(SK)(z(yx))x");
-    test("HxK", (H)(x)(K), "x");
-    test("HxBKyz", (H)(x)(B)(K)(y)(z), "x(yz)");
-    test("HwBBKxyz", (H)(w)(B)(B)(K)(x)(y)(z), "w(xyz)");
-    test("HvBBBKwxyz", (H)(v)(B)(B)(B)(K)(w)(x)(y)(z), "v(wxyz)");
-    test("HwDKxyz", (H)(w)(D)(K)(x)(y)(z), "wx(yz)");
-    test("HvDDKwxyz", (H)(v)(D)(D)(K)(w)(x)(y)(z), "vw(xyz)");
-    test("HuDDDKvwxyz", (H)(u)(D)(D)(D)(K)(v)(w)(x)(y)(z), "uv(wxyz)");
+    test("H1xK", (H1)(x)(K), "x");
+    test("H1xBKyz", (H1)(x)(B)(K)(y)(z), "x(yz)");
+    test("H1wBBKxyz", (H1)(w)(B)(B)(K)(x)(y)(z), "w(xyz)");
+    test("H1vBBBKwxyz", (H1)(v)(B)(B)(B)(K)(w)(x)(y)(z), "v(wxyz)");
+    test("H1wDKxyz", (H1)(w)(D)(K)(x)(y)(z), "wx(yz)");
+    test("H1vDDKwxyz", (H1)(v)(D)(D)(K)(w)(x)(y)(z), "vw(xyz)");
+    test("H1uDDDKvwxyz", (H1)(u)(D)(D)(D)(K)(v)(w)(x)(y)(z), "uv(wxyz)");
 
     check(printed_lambda_calls == 0);
     check(printed_deferred_evaluations == 0);
@@ -4337,7 +4363,7 @@ int main() {
     test("parsed zero-arity basis expands with trailing arguments",
          single_step(parse("Qzero x y z")), "Kxyz");
 
-    auto move_only_basis = basis("P", 1, K(std::make_unique<int>(31)));
+    auto move_only_basis = basis("Q", 1, K(std::make_unique<int>(31)));
     using move_only_basis_type = decltype(move_only_basis);
     static_assert(!std::invocable<move_only_basis_type&, int>);
     static_assert(std::invocable<move_only_basis_type&&, int>);

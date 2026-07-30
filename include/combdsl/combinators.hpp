@@ -4672,7 +4672,7 @@ private:
                is_named_basis(inner->argument(), "C");
     }
 
-    [[nodiscard]] static bool is_peacock_thrush_cardinal(
+    [[nodiscard]] static bool is_queer_thrush_cardinal(
         quoted_expression const& expression) noexcept {
         auto const* outer = as_application(expression);
         if (outer == nullptr ||
@@ -4682,7 +4682,7 @@ private:
 
         auto const* inner = as_application(outer->function());
         return inner != nullptr &&
-               is_named_basis(inner->function(), "P") &&
+               is_named_basis(inner->function(), "Q") &&
                is_named_basis(inner->argument(), "T");
     }
 
@@ -4717,11 +4717,11 @@ private:
                is_named_basis(inner->argument(), "B");
     }
 
-    [[nodiscard]] static bool is_peacock_mockingbird(
+    [[nodiscard]] static bool is_queer_mockingbird(
         quoted_expression const& expression) noexcept {
         auto const* application = as_application(expression);
         return application != nullptr &&
-               is_named_basis(application->function(), "P") &&
+               is_named_basis(application->function(), "Q") &&
                is_named_basis(application->argument(), "M");
     }
 
@@ -4773,7 +4773,7 @@ private:
         if (is_bluebird_cardinal_thrush(expression)) {
             return registered_basis_expression("V");
         }
-        if (is_peacock_thrush_cardinal(expression)) {
+        if (is_queer_thrush_cardinal(expression)) {
             return registered_basis_expression("V");
         }
         if (is_double_bluebird(expression)) {
@@ -4785,7 +4785,7 @@ private:
         if (is_starling_bluebird_thrush(expression)) {
             return registered_basis_expression("A");
         }
-        if (is_peacock_mockingbird(expression)) {
+        if (is_queer_mockingbird(expression)) {
             return registered_basis_expression("L");
         }
         if (is_warbler_cardinal(expression)) {
@@ -4795,7 +4795,7 @@ private:
             return registered_basis_expression("N");
         }
         if (is_cardinal_bluebird(expression)) {
-            return registered_basis_expression("P");
+            return registered_basis_expression("Q");
         }
         if (is_warbler_bluebird(expression)) {
             return registered_basis_expression("Z");
@@ -5452,12 +5452,17 @@ BASIS(T, 2, S(K(S(I)))(K));
 BASIS(N, 2, S(S)(K));
 BASIS(R, 3, S(K(S(S)))(S(K(K))(K)));
 BASIS(C, 3, S(S(K(B))(S))(K(K)));
-BASIS(P, 3, S(K(S(B)))(K));
+BASIS(Q, 3, S(K(S(B)))(K));
 BASIS(V, 3, S(S(K(S))(S(K(K))(S(K(S))(T))))(K(K)));
 BASIS(D, 4, S(K(S(K(S))))(S(K(K))));
 BASIS(L, 2, S(B)(K(M)));
 BASIS(Z, 2, S(B)(I));
 BASIS(A, 2, S(B)(T));
+BASIS(E, 5, B(D)(D));
+BASIS(F, 3, B(Q(T))(R));
+BASIS(G, 4, D(C));
+BASIS(H, 3, S(R));
+BASIS(J, 4, S(D(B(Q)(C)))(D));
 
 #define SYMBOL(lower_letter) \
     inline constexpr auto lower_letter = \
@@ -5593,15 +5598,15 @@ takeout_impl(
             auto const t_contains_next =
                 contains_next_pending_atom(
                     pending_atoms, t);
-            auto const use_peacock =
+            auto const use_queer =
                 qfun_contains_next != t_contains_next
                     ? qfun_contains_next
                     : count_contained_quoted_atoms(
                           pending_atoms, qfun) >
                           count_contained_quoted_atoms(
                               pending_atoms, t);
-            if (use_peacock) {
-                return quote(P)(
+            if (use_queer) {
+                return quote(Q)(
                     std::move(t))(qfun);
             }
             return quote(B)(

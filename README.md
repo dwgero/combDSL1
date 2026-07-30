@@ -140,7 +140,8 @@ Mockingbird (`M`), Owl (`O`), Robin (`R`), Starling (`S`), Thrush (`T`),
 Vireo (`V`), and Warbler (`W`), using the capital first letter of each name.
 The Sage bird has been defined as `Y`, to match current conventions.
 The following additional bird combinators have also been defined: Albatross
-(`A`), Nightingale (`N`), Peacock (`P`), and Zazu (`Z`).
+(`A`), Eagle (`E`), Finch (`F`), Goldfinch (`G`), Hummingbird (`H`), Jay
+(`J`), Nightingale (`N`), Queer (`Q`), and Zazu (`Z`).
 The `basis(name, arity, combinator_expression)` function assigns an atomic
 printed name to any other combinator expression without changing its behavior.
 Named callables are deferred and cached like `S`, `K`, and `I`; copies share
@@ -433,12 +434,12 @@ parse("define Gx y = y");                // Gx
 ```
 
 `define` uses contextual `takeout` passes. In the argument-dependent case,
-`B(qfun)(t)` and `P(t)(qfun)` are equivalent. For `define foo xyz = exp`, the
+`B(qfun)(t)` and `Q(t)(qfun)` are equivalent. For `define foo xyz = exp`, the
 first pass takes out `z` with `x`, `y`, and recursive `foo` pending. It uses
-`P` if `qfun` contains the next pending atom and its recursively produced `t`
+`Q` if `qfun` contains the next pending atom and its recursively produced `t`
 does not; if only `t` contains it, `B` is used. When both or neither contain
 the next pending atom, each expression receives one point for every pending
-atom it contains. `P` is used only when `qfun`'s count is greater than `t`'s
+atom it contains. `Q` is used only when `qfun`'s count is greater than `t`'s
 count, and `B` is used on a tie or when `t`'s count is greater. The `y` pass
 similarly has `x` and `foo` pending, while the `x` pass has only `foo` pending.
 If the definition is recursive, the final `foo` pass has no pending atoms and
@@ -481,8 +482,8 @@ parse_eval("show Repeat");              // prints: arity:1 YO
 
 The resulting recursive transformation is
 `Y(optimize(takeout(rec_func, previous_takeout_result)))`. The optimization
-pass recursively replaces `BCT` or `PTC` with `V`, `BB` with `D`, `CC` with
-`R`, `SBT` with `A`, `PM` with `L`, `WC` or `WR` with `N`, `CB` with `P`,
+pass recursively replaces `BCT` or `QTC` with `V`, `BB` with `D`, `CC` with
+`R`, `SBT` with `A`, `QM` with `L`, `WC` or `WR` with `N`, `CB` with `Q`,
 and `WB` with `Z`.
 
 `search_for_xy_subexp(expression)` searches the unoptimized result of
@@ -503,7 +504,7 @@ and, only if that fails, tries the 3,137,844-candidate `xyz` search. Its
 
 ```cpp
 auto first = search_for_subexp(parse("SBT"));       // source: x(yx)
-auto fallback = search_for_subexp(parse("B(PT)B")); // source: x(zy)
+auto fallback = search_for_subexp(parse("B(QT)B")); // source: x(zy)
 auto none = search_for_subexp(parse("C(CB)"));      // std::nullopt
 ```
 
@@ -574,7 +575,7 @@ expression produces no output, while malformed or empty lines throw
 The `crepl` executable applies `input_escape` to each line before passing it to
 `parse_eval`, so ordinary quoted words and backslashes can be entered directly.
 When standard output is a terminal, it first prints
-`Combinator Read-Eval-Print Loop, version 1.11.1`. Long evaluations then display
+`Combinator Read-Eval-Print Loop, version 1.11.5`. Long evaluations then display
 the accumulated step count every 1,000 reductions by overwriting one status
 line; the line is cleared before evaluation output is printed. Its interactive
 prompt is `>`. Redirected output contains no progress status. Enter
@@ -605,7 +606,8 @@ calculated widths fit in 80 characters and otherwise uses two. Enter `about`
 to print CREPL's About text, based on the browser UI's About box, without its
 heading and wrapped to 80-character lines; its first line is the CREPL banner.
 Enter `quit` or `exit` with optional surrounding whitespace to end CREPL.
-Lowercase `q` is evaluated as a symbol, while uppercase `Q` is a parse error.
+Lowercase `q` is evaluated as a symbol, while uppercase `Q` is the pre-defined
+Queer combinator.
 Running `crepl --version` prints the same About text and exits successfully
 without starting the interactive loop.
 

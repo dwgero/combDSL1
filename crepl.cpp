@@ -45,7 +45,7 @@
 
 namespace {
 
-constexpr std::string_view crepl_version = "1.11.1";
+constexpr std::string_view crepl_version = "1.11.5";
 
 void print_crepl_banner(std::ostream& output) {
     output << "Combinator Read-Eval-Print Loop, version "
@@ -422,22 +422,27 @@ void print_birds(std::ostream& output) {
         bird_entry{"Bluebird", "Bxyz = x(yz)"},
         bird_entry{"Cardinal", "Cxyz = xzy"},
         bird_entry{"Dove", "Dxyzw = xy(zw)"},
-        bird_entry{"Identity", "Ix = x"},
+        bird_entry{"Eagle", "Exyzwv = xy(zwv)"},
+        bird_entry{"Finch", "Fxyz = zyx"},
+        bird_entry{"Goldfinch", "Gxyzw = xw(yz)"},
+        bird_entry{"Hummingbird", "Hxyz = xyzy"},
+        bird_entry{"Identity bird", "Ix = x"},
+        bird_entry{"Jay", "Jxyzw = xy(xwz)"},
         bird_entry{"Kestrel", "Kxy = x"},
         bird_entry{"Lark", "Lxy = x(yy)"},
         bird_entry{"Mockingbird", "Mx = xx"},
         bird_entry{"Nightingale", "Nxy = xyx"},
         bird_entry{"Owl", "Oxy = y(xy)"},
-        bird_entry{"Peacock", "Pxyz = y(xz)"},
+        bird_entry{"Queer bird", "Qxyz = y(xz)"},
         bird_entry{"Robin", "Rxyz = yzx"},
-        bird_entry{"Sage", "Yx = x(Yx)"},
+        bird_entry{"Sage bird", "Yx = x(Yx)"},
         bird_entry{"Starling", "Sxyz = xz(yz)"},
         bird_entry{"Thrush", "Txy = yx"},
         bird_entry{"Vireo", "Vxyz = zxy"},
         bird_entry{"Warbler", "Wxy = xyy"},
         bird_entry{"Zazu", "Zxy = x(xy)"}};
     constexpr std::size_t maximum_line_length = 80;
-    constexpr std::size_t column_gap = 2;
+    constexpr std::size_t column_gap = 3;
 
     struct column_layout {
         std::size_t column_count;
