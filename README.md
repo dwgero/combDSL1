@@ -435,11 +435,14 @@ parse("define Gx y = y");                // Gx
 `define` uses contextual `takeout` passes. In the argument-dependent case,
 `B(qfun)(t)` and `P(t)(qfun)` are equivalent. For `define foo xyz = exp`, the
 first pass takes out `z` with `x`, `y`, and recursive `foo` pending. It uses
-`P` only when its recursively produced `t` contains none of those pending
-atoms and `qfun` contains at least one of them; otherwise it uses `B`. The `y`
-pass similarly has `x` and `foo` pending, while the `x` pass has only `foo`
-pending. If the definition is recursive, the final `foo` pass has no pending
-atoms and therefore uses `B` in this case. The resulting expression has arity
+`P` if `qfun` contains the next pending atom and its recursively produced `t`
+does not; if only `t` contains it, `B` is used. When both or neither contain
+the next pending atom, each expression receives one point for every pending
+atom it contains. `P` is used only when `qfun`'s count is greater than `t`'s
+count, and `B` is used on a tie or when `t`'s count is greater. The `y` pass
+similarly has `x` and `foo` pending, while the `x` pass has only `foo` pending.
+If the definition is recursive, the final `foo` pass has no pending atoms and
+therefore uses `B` on the zero-to-zero tie. The resulting expression has arity
 `3`. As with `set`, the definition command is silent under `parse_eval`,
 `read_parse_eval`, and `parse_and_step` or `parse_and_key_step`, and malformed
 definitions are not registered.
@@ -572,7 +575,7 @@ expression produces no output, while malformed or empty lines throw
 The `crepl` executable applies `input_escape` to each line before passing it to
 `parse_eval`, so ordinary quoted words and backslashes can be entered directly.
 When standard output is a terminal, it first prints
-`Combinator Read-Eval-Print Loop, version 1.10.4`. Long evaluations then display
+`Combinator Read-Eval-Print Loop, version 1.10.5`. Long evaluations then display
 the accumulated step count every 1,000 reductions by overwriting one status
 line; the line is cleared before evaluation output is printed. Its interactive
 prompt is `>`. Redirected output contains no progress status. Enter

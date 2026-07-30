@@ -5503,18 +5503,6 @@ SYMBOL(z);
 
 namespace detail {
 
-[[nodiscard]] inline bool contains_any_quoted_atom(
-    std::span<quoted_atomic const> atoms,
-    quoted_expression const& expression) {
-    return std::any_of(
-        atoms.begin(),
-        atoms.end(),
-        [&](quoted_atomic const& atom) {
-            return contains_quoted_atom(
-                atom.expression(), expression);
-        });
-}
-
 [[nodiscard]] inline std::size_t count_contained_quoted_atoms(
     std::span<quoted_atomic const> atoms,
     quoted_expression const& expression) {
@@ -5610,10 +5598,20 @@ takeout_impl(
         if (qarg_contains_qa && !qfun_contains_qa) {
             auto t = takeout_impl(
                 qa, qarg, pending_atoms);
-            if (contains_any_quoted_atom(
-                    pending_atoms, qfun) &&
-                !contains_any_quoted_atom(
-                    pending_atoms, t)) {
+            auto const qfun_contains_next =
+                contains_next_pending_atom(
+                    pending_atoms, qfun);
+            auto const t_contains_next =
+                contains_next_pending_atom(
+                    pending_atoms, t);
+            auto const use_peacock =
+                qfun_contains_next != t_contains_next
+                    ? qfun_contains_next
+                    : count_contained_quoted_atoms(
+                          pending_atoms, qfun) >
+                          count_contained_quoted_atoms(
+                              pending_atoms, t);
+            if (use_peacock) {
                 return quote(P)(
                     std::move(t))(qfun);
             }

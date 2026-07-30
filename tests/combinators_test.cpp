@@ -2437,7 +2437,7 @@ int main() {
              quoted_atomic{x},
              quote(y)(quote(z)(quote(w)(x)))),
          "By(Bzw)");
-    test("contextual takeout keeps Bluebird with no pending atoms",
+    test("contextual Bluebird when no pending atoms tie",
          combdsl::detail::takeout_with_pending_atoms(
              quoted_atomic{x},
              quote(y)(quote(z)(x)),
@@ -2445,13 +2445,13 @@ int main() {
          "Byz");
     const std::vector<quoted_atomic> pending_y{
         quoted_atomic{y}};
-    test("contextual takeout uses Peacock when only qfun is pending",
+    test("contextual Peacock when only qfun contains next pending atom",
          combdsl::detail::takeout_with_pending_atoms(
              quoted_atomic{x},
              quote(y)(quote(z)(x)),
              pending_y),
          "Pzy");
-    test("contextual takeout keeps Bluebird when qfun is not pending",
+    test("contextual Bluebird when neither contains next and counts tie",
          combdsl::detail::takeout_with_pending_atoms(
              quoted_atomic{x},
              quote(w)(quote(z)(x)),
@@ -2460,7 +2460,7 @@ int main() {
     const std::vector<quoted_atomic> pending_y_z{
         quoted_atomic{y},
         quoted_atomic{z}};
-    test("contextual takeout keeps Bluebird when t is pending",
+    test("contextual Bluebird when only t contains next pending atom",
          combdsl::detail::takeout_with_pending_atoms(
              quoted_atomic{x},
              quote(y)(quote(z)(x)),
@@ -2469,12 +2469,73 @@ int main() {
     const std::vector<quoted_atomic> pending_x_y{
         quoted_atomic{x},
         quoted_atomic{y}};
-    test("contextual takeout tests pending atoms after abstraction",
+    test("contextual Peacock tests next pending atom after abstraction",
          combdsl::detail::takeout_with_pending_atoms(
              quoted_atomic{x},
              quote(y)(quote(z)(x)),
              pending_x_y),
          "Pzy");
+    const std::vector<quoted_atomic> pending_peacock_w_x_y{
+        quoted_atomic{w},
+        quoted_atomic{x},
+        quoted_atomic{y}};
+    test("next atom in qfun takes priority over its lower count",
+         combdsl::detail::takeout_with_pending_atoms(
+             quoted_atomic{z},
+             quote(y)(quote(w)(x)(z)),
+             pending_peacock_w_x_y),
+         "P(wx)y");
+    test("next atom in t takes priority over its lower count",
+         combdsl::detail::takeout_with_pending_atoms(
+             quoted_atomic{z},
+             quote(w)(x)(quote(y)(z)),
+             pending_peacock_w_x_y),
+         "B(wx)y");
+    const std::vector<quoted_atomic> pending_peacock_w_y{
+        quoted_atomic{w},
+        quoted_atomic{y}};
+    test("contextual Peacock when both contain next and qfun count wins",
+         combdsl::detail::takeout_with_pending_atoms(
+             quoted_atomic{x},
+             quote(w)(y)(quote(y)(x)),
+             pending_peacock_w_y),
+         "Py(wy)");
+    test("contextual Bluebird when both contain next and t count wins",
+         combdsl::detail::takeout_with_pending_atoms(
+             quoted_atomic{x},
+             quote(y)(quote(w)(y)(x)),
+             pending_peacock_w_y),
+         "By(wy)");
+    test("contextual Bluebird when both contain next and counts tie",
+         combdsl::detail::takeout_with_pending_atoms(
+             quoted_atomic{x},
+             quote(y)(quote(y)(x)),
+             pending_peacock_w_y),
+         "Byy");
+    test("contextual Peacock when neither contains next and qfun count wins",
+         combdsl::detail::takeout_with_pending_atoms(
+             quoted_atomic{x},
+             quote(w)(quote(z)(x)),
+             pending_peacock_w_y),
+         "Pzw");
+    test("contextual Bluebird when neither contains next and t count wins",
+         combdsl::detail::takeout_with_pending_atoms(
+             quoted_atomic{x},
+             quote(z)(quote(w)(x)),
+             pending_peacock_w_y),
+         "Bzw");
+    test("contextual Bluebird when neither contains next and counts tie",
+         combdsl::detail::takeout_with_pending_atoms(
+             quoted_atomic{x},
+             quote(z)(quote(v)(x)),
+             pending_peacock_w_y),
+         "Bzv");
+    test("Peacock count counts atoms rather than occurrences",
+         combdsl::detail::takeout_with_pending_atoms(
+             quoted_atomic{x},
+             quote(w)(w)(quote(w)(x)),
+             pending_peacock_w_y),
+         "B(ww)w");
     test("contextual takeout propagates Peacock selection recursively",
          combdsl::detail::takeout_with_pending_atoms(
              quoted_atomic{x},
@@ -2494,12 +2555,12 @@ int main() {
              quote(y)(quote(w)(z)),
              pending_foo_x_y),
          "Pwy");
-    test("z abstraction keeps Bluebird when t contains foo",
+    test("z abstraction prioritizes qfun containing next pending atom",
          combdsl::detail::takeout_with_pending_atoms(
              quoted_atomic{z},
              quote(y)(contextual_recursive_foo(z)),
              pending_foo_x_y),
-         "By foo");
+         "P foo y");
     const std::vector<quoted_atomic> pending_foo_x{
         quoted_atomic{contextual_recursive_foo},
         quoted_atomic{x}};
