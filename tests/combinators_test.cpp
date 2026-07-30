@@ -97,6 +97,8 @@ using combdsl::N;
 using combdsl::R;
 using combdsl::C;
 using combdsl::Q;
+using combdsl::Q1;
+using combdsl::Q3;
 using combdsl::V;
 using combdsl::D;
 using combdsl::L;
@@ -1471,6 +1473,16 @@ int main() {
          parse("show U"), "arity:2 BOM");
     test("pre-defined Turing reduces",
          single_step(parse("Uxy")), "y(xxy)");
+    test("pre-defined Quixotic is registered", parse("Q1"), "Q1");
+    test("show exposes the pre-defined Quixotic",
+         parse("show Q1"), "arity:3 BCB");
+    test("pre-defined Quixotic reduces",
+         single_step(parse("Q1 x y z")), "x(zy)");
+    test("pre-defined Quirky is registered", parse("Q3"), "Q3");
+    test("show exposes the pre-defined Quirky",
+         parse("show Q3"), "arity:3 BT");
+    test("pre-defined Quirky reduces",
+         single_step(parse("Q3 x y z")), "z(xy)");
     test("define recognizes a recursive name",
          parse("define Repeat x = x(Repeat x)"), "Repeat");
     test("recursive define stores a Y application",
@@ -1767,7 +1779,7 @@ int main() {
          single_step(parse("\\\"M\\\"x")), "Mx");
 
     constexpr std::string_view expected_registered_basis_names[] = {
-        "M", "W", "B", "O", "T", "U", "N", "R", "C", "Q", "V", "D",
+        "M", "W", "B", "O", "T", "U", "N", "R", "C", "Q", "Q1", "Q3", "V", "D",
         "L", "Z", "A", "E", "F", "G", "H", "J", "Cstar", "Vstar",
         "V4", "G2", "G1", "bazTest", "Hprime", "H1",
     };
@@ -1819,6 +1831,10 @@ int main() {
          single_step(parse("Exyzwv")), "xy(zwv)");
     test("parse compact Finch",
          single_step(parse("Fxyz")), "zyx");
+    test("show Finch exposes CV",
+         parse("show F"), "arity:3 CV");
+    test("basis step exposes CV for Finch",
+         single_step(parse("Fxyz"), true), "CVxyz");
     test("parse Goldfinch",
          single_step(parse("G x y z w")), "xw(yz)");
     test("parse compact Hummingbird",
@@ -4278,6 +4294,12 @@ int main() {
     test("Cxyzw [swaps y and z after x]", (C)(x)(y)(z)(w), "xzyw");
     test("Q", (Q), "Q");
     test("Qxyzw [combines (xz) after y]", (Q)(x)(y)(z)(w), "y(xz)w");
+    test("Q1", (Q1), "Q1");
+    test("Q1xyzw [combines (zy) after x]",
+         (Q1)(x)(y)(z)(w), "x(zy)w");
+    test("Q3", (Q3), "Q3");
+    test("Q3xyzw [combines (xy) after z]",
+         (Q3)(x)(y)(z)(w), "z(xy)w");
     test("V", (V), "V");
     test("Vxyzw [moves z in front of xy (opposite of R)]", (V)(x)(y)(z)(w), "zxyw");
     test("D", (D), "D");

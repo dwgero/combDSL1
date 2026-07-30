@@ -141,7 +141,8 @@ Vireo (`V`), and Warbler (`W`), using the capital first letter of each name.
 The Sage bird has been defined as `Y`, to match current conventions.
 The following additional bird combinators have also been defined: Albatross
 (`A`), Eagle (`E`), Finch (`F`), Goldfinch (`G`), Hummingbird (`H`), Jay
-(`J`), Nightingale (`N`), Queer (`Q`), Turing (`U`), and Zazu (`Z`).
+(`J`), Nightingale (`N`), Queer (`Q`), Quirky (`Q3`), Quixotic (`Q1`),
+Turing (`U`), and Zazu (`Z`).
 The `basis(name, arity, combinator_expression)` function assigns an atomic
 printed name to any other combinator expression without changing its behavior.
 Named callables are deferred and cached like `S`, `K`, and `I`; copies share
@@ -575,7 +576,7 @@ expression produces no output, while malformed or empty lines throw
 The `crepl` executable applies `input_escape` to each line before passing it to
 `parse_eval`, so ordinary quoted words and backslashes can be entered directly.
 When standard output is a terminal, it first prints
-`Combinator Read-Eval-Print Loop, version 1.11.9`. Long evaluations then display
+`Combinator Read-Eval-Print Loop, version 1.11.13`. Long evaluations then display
 the accumulated step count every 1,000 reductions by overwriting one status
 line; the line is cleared before evaluation output is printed. Its interactive
 prompt is `>`. Redirected output contains no progress status. Enter
