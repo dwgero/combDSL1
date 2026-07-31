@@ -474,8 +474,8 @@ parse_eval("show Repeat");              // prints: arity:1 YO
 
 The resulting recursive transformation is
 `Y(optimize(takeout(rec_func, previous_takeout_result)))`. The optimization
-pass recursively replaces `BCT` or `QTC` with `V`, `BB` with `D`, `CC` with
-`R`, `SBT` with `A`, `QM` with `L`, `WC` or `WR` with `N`, `CB` with `Q`,
+pass recursively replaces `BCT` with `V`, `BT` with `Q3`, `BW` with `W*`,
+`BB` with `D`, `SBT` with `A`, `SR` with `H`, `QM` with `L`, `WC` with `N`,
 and `WB` with `Z`.
 
 `search_for_xy_subexp(expression)` searches the unoptimized result of
@@ -568,7 +568,7 @@ expression produces no output, while malformed or empty lines throw
 The `crepl` executable applies `input_escape` to each line before passing it to
 `parse_eval`, so ordinary quoted words and backslashes can be entered directly.
 When standard output is a terminal, it first prints
-`Combinator Read-Eval-Print Loop, version 2.0.0`. Long evaluations display
+`Combinator Read-Eval-Print Loop, version 2.0.3`. Long evaluations display
 the accumulated step count every 1,000 reductions by overwriting one status
 line; the line is cleared before evaluation output is printed. Its interactive
 prompt is `>`. Redirected output contains no progress status. Enter

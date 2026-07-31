@@ -4695,18 +4695,20 @@ private:
                is_named_basis(inner->argument(), "C");
     }
 
-    [[nodiscard]] static bool is_queer_thrush_cardinal(
+    [[nodiscard]] static bool is_bluebird_thrush(
         quoted_expression const& expression) noexcept {
-        auto const* outer = as_application(expression);
-        if (outer == nullptr ||
-            !is_named_basis(outer->argument(), "C")) {
-            return false;
-        }
+        auto const* application = as_application(expression);
+        return application != nullptr &&
+               is_named_basis(application->function(), "B") &&
+               is_named_basis(application->argument(), "T");
+    }
 
-        auto const* inner = as_application(outer->function());
-        return inner != nullptr &&
-               is_named_basis(inner->function(), "Q") &&
-               is_named_basis(inner->argument(), "T");
+    [[nodiscard]] static bool is_bluebird_warbler(
+        quoted_expression const& expression) noexcept {
+        auto const* application = as_application(expression);
+        return application != nullptr &&
+               is_named_basis(application->function(), "B") &&
+               is_named_basis(application->argument(), "W");
     }
 
     [[nodiscard]] static bool is_double_bluebird(
@@ -4715,14 +4717,6 @@ private:
         return application != nullptr &&
                is_named_basis(application->function(), "B") &&
                is_named_basis(application->argument(), "B");
-    }
-
-    [[nodiscard]] static bool is_double_cardinal(
-        quoted_expression const& expression) noexcept {
-        auto const* application = as_application(expression);
-        return application != nullptr &&
-               is_named_basis(application->function(), "C") &&
-               is_named_basis(application->argument(), "C");
     }
 
     [[nodiscard]] static bool is_starling_bluebird_thrush(
@@ -4756,20 +4750,13 @@ private:
                is_named_basis(application->argument(), "C");
     }
 
-    [[nodiscard]] static bool is_warbler_robin(
+    [[nodiscard]] static bool is_starling_robin(
         quoted_expression const& expression) noexcept {
         auto const* application = as_application(expression);
         return application != nullptr &&
-               is_named_basis(application->function(), "W") &&
+               quoted_access::root(application->function())->kind() ==
+                   quoted_node_kind::substitution &&
                is_named_basis(application->argument(), "R");
-    }
-
-    [[nodiscard]] static bool is_cardinal_bluebird(
-        quoted_expression const& expression) noexcept {
-        auto const* application = as_application(expression);
-        return application != nullptr &&
-               is_named_basis(application->function(), "C") &&
-               is_named_basis(application->argument(), "B");
     }
 
     [[nodiscard]] static bool is_warbler_bluebird(
@@ -4796,29 +4783,26 @@ private:
         if (is_bluebird_cardinal_thrush(expression)) {
             return registered_basis_expression("V");
         }
-        if (is_queer_thrush_cardinal(expression)) {
-            return registered_basis_expression("V");
+        if (is_bluebird_thrush(expression)) {
+            return registered_basis_expression("Q3");
+        }
+        if (is_bluebird_warbler(expression)) {
+            return registered_basis_expression("W*");
         }
         if (is_double_bluebird(expression)) {
             return registered_basis_expression("D");
         }
-        if (is_double_cardinal(expression)) {
-            return registered_basis_expression("R");
-        }
         if (is_starling_bluebird_thrush(expression)) {
             return registered_basis_expression("A");
+        }
+        if (is_starling_robin(expression)) {
+            return registered_basis_expression("H");
         }
         if (is_queer_mockingbird(expression)) {
             return registered_basis_expression("L");
         }
         if (is_warbler_cardinal(expression)) {
             return registered_basis_expression("N");
-        }
-        if (is_warbler_robin(expression)) {
-            return registered_basis_expression("N");
-        }
-        if (is_cardinal_bluebird(expression)) {
-            return registered_basis_expression("Q");
         }
         if (is_warbler_bluebird(expression)) {
             return registered_basis_expression("Z");

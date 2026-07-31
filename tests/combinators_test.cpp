@@ -1306,24 +1306,32 @@ int main() {
          parse("define DefKV x = BCT"), "DefKV");
     test("show exposes nested Vireo optimization",
          parse("show DefKV"), "arity:1 KV");
-    test("define recursively optimizes nested QTC",
+    test("define recursively optimizes nested BT",
+         parse("define DefKQ3 x = BT"), "DefKQ3");
+    test("show exposes nested Quirky optimization",
+         parse("show DefKQ3"), "arity:1 K Q3");
+    test("define recursively optimizes nested BW",
+         parse("define DefKWstar x = BW"), "DefKWstar");
+    test("show exposes nested Warbler star optimization",
+         parse("show DefKWstar"), "arity:1 K W*");
+    test("define preserves nested QTC",
          parse("define DefKQV x = QTC"), "DefKQV");
-    test("show exposes nested Queer Vireo optimization",
-         parse("show DefKQV"), "arity:1 KV");
+    test("show exposes nested unoptimized QTC",
+         parse("show DefKQV"), "arity:1 K(QTC)");
     test("define recursively optimizes nested BB",
          parse("define DefKD x = BB"), "DefKD");
     test("show exposes nested Dove optimization",
          parse("show DefKD"), "arity:1 KD");
-    test("define optimizes CC to R",
+    test("define produces R without the CC optimizer",
          parse("define DefR xyz = yzx"), "DefR");
-    test("show exposes the optimized Robin",
+    test("show exposes the takeout-produced Robin",
          parse("show DefR"), "arity:3 R");
-    test("optimized Robin preserves behavior",
+    test("takeout-produced Robin preserves behavior",
          single_step(single_step(parse("DefR a b c"))), "bca");
-    test("define recursively optimizes nested CC",
+    test("define preserves nested CC",
          parse("define DefKR x = CC"), "DefKR");
-    test("show exposes nested Robin optimization",
-         parse("show DefKR"), "arity:1 KR");
+    test("show exposes nested unoptimized CC",
+         parse("show DefKR"), "arity:1 K(CC)");
     test("define optimizes SBT to A",
          parse("define DefA xy = x(yx)"), "DefA");
     test("show exposes the optimized Albatross",
@@ -1334,7 +1342,11 @@ int main() {
          parse("define DefKA x = SBT"), "DefKA");
     test("show exposes nested Albatross optimization",
          parse("show DefKA"), "arity:1 KA");
-    test("define chains CB and QM optimizations to L",
+    test("define recursively optimizes nested SR",
+         parse("define DefKH x = SR"), "DefKH");
+    test("show exposes nested H optimization",
+         parse("show DefKH"), "arity:1 KH");
+    test("define optimizes QM to L",
          parse("define DefL xy = x(yy)"), "DefL");
     test("show exposes the optimized Lark",
          parse("show DefL"), "arity:2 L");
@@ -1354,20 +1366,20 @@ int main() {
          parse("define DefKN x = WC"), "DefKN");
     test("show exposes nested Nightingale optimization",
          parse("show DefKN"), "arity:1 KN");
-    test("define recursively optimizes nested WR",
+    test("define preserves nested WR",
          parse("define DefKNR x = WR"), "DefKNR");
-    test("show exposes nested Robin Nightingale optimization",
-         parse("show DefKNR"), "arity:1 KN");
-    test("define optimizes CB to Q",
+    test("show exposes nested unoptimized WR",
+         parse("show DefKNR"), "arity:1 K(WR)");
+    test("define produces Q without the CB optimizer",
          parse("define DefQ xyz = y(xz)"), "DefQ");
-    test("show exposes the optimized Queer",
+    test("show exposes the takeout-produced Queer",
          parse("show DefQ"), "arity:3 Q");
-    test("optimized Queer preserves behavior",
+    test("takeout-produced Queer preserves behavior",
          single_step(single_step(parse("DefQ a b c"))), "b(ac)");
-    test("define recursively optimizes nested CB",
+    test("define preserves nested CB",
          parse("define DefKQ x = CB"), "DefKQ");
-    test("show exposes nested Queer optimization",
-         parse("show DefKQ"), "arity:1 KQ");
+    test("show exposes nested unoptimized CB",
+         parse("show DefKQ"), "arity:1 K(CB)");
     test("define optimizes WB to Z",
          parse("define DefZ xy = x(xy)"), "DefZ");
     test("show exposes the optimized Zazu",
@@ -1388,10 +1400,10 @@ int main() {
          parse("define DefKCQ x = CQ"), "DefKCQ");
     test("show exposes nested unoptimized CQ",
          parse("show DefKCQ"), "arity:1 K(CQ)");
-    test("define stops after optimizing CB to Q",
+    test("define preserves CB within C",
          parse("define DefChainB x = C(CB)x"), "DefChainB");
-    test("show exposes the resulting CQ",
-         parse("show DefChainB"), "arity:1 CQ");
+    test("show exposes the resulting C(CB)",
+         parse("show DefChainB"), "arity:1 C(CB)");
     test("define creates the Starling",
          parse("define DefS xyz = xz(yz)"), "DefS");
     test("basis step exposes the defined Starling",
