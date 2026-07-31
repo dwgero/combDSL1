@@ -188,6 +188,15 @@ if(COMBDSL_BUILD_TESTS)
         PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}"
     )
 
+    add_executable(
+        combdsl_define_check_tests
+        tests/define_check_test.cpp
+    )
+    target_link_libraries(
+        combdsl_define_check_tests
+        PRIVATE combdsl::combdsl
+    )
+
     if(MSVC)
         target_compile_options(
             combdsl_tests
@@ -195,6 +204,10 @@ if(COMBDSL_BUILD_TESTS)
         )
         target_compile_options(
             combdsl_browser_load_tests
+            PRIVATE /W4 /permissive-
+        )
+        target_compile_options(
+            combdsl_define_check_tests
             PRIVATE /W4 /permissive-
         )
     else()
@@ -206,12 +219,20 @@ if(COMBDSL_BUILD_TESTS)
             combdsl_browser_load_tests
             PRIVATE -Wall -Wextra -Wpedantic
         )
+        target_compile_options(
+            combdsl_define_check_tests
+            PRIVATE -Wall -Wextra -Wpedantic
+        )
     endif()
 
     add_test(NAME combinators COMMAND combdsl_tests)
     add_test(
         NAME browser_load
         COMMAND combdsl_browser_load_tests
+    )
+    add_test(
+        NAME define_check
+        COMMAND combdsl_define_check_tests
     )
 
     if(TARGET crepl)
