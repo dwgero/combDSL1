@@ -272,16 +272,28 @@ static_assert(std::is_same_v<
 static_assert(
     combdsl::check_for_pairs_match_candidate_count == 808);
 static_assert(
-    combdsl::check_for_trips_match_candidate_count == 45'994);
+    combdsl::check_for_trips_match_candidate_count == 45'186);
+static_assert(
+    combdsl::check_for_match_left_trip_candidate_count == 22'562);
+static_assert(
+    combdsl::check_for_match_right_trip_candidate_count == 22'624);
 static_assert(
     combdsl::check_for_quads_match_tuple_count == 707'281);
 static_assert(
-    combdsl::check_for_quads_match_candidate_count == 3'320'516);
+    combdsl::check_for_quads_match_candidate_count == 3'228'466);
 static_assert(
     combdsl::check_for_quads_match_candidate_count ==
-    2 * combdsl::check_for_match_combinator_count *
-        combdsl::check_for_trips_match_candidate_count +
+    combdsl::check_for_match_combinator_count *
+        combdsl::check_for_match_left_trip_candidate_count +
     combdsl::check_for_pairs_match_candidate_count *
+        combdsl::check_for_pairs_match_candidate_count +
+    (combdsl::check_for_match_combinator_count - 1) *
+        combdsl::check_for_match_combinator_count *
+        combdsl::check_for_pairs_match_candidate_count +
+    (combdsl::check_for_match_combinator_count - 1) *
+        combdsl::check_for_match_left_trip_candidate_count +
+    (combdsl::check_for_match_combinator_count - 1) *
+        (combdsl::check_for_match_combinator_count - 1) *
         combdsl::check_for_pairs_match_candidate_count);
 using combinator_match_symbol_span =
     std::span<combdsl::quoted_atomic const>;
@@ -1603,6 +1615,8 @@ int main() {
     test("pre-defined Eagle is registered", parse("E"), "E");
     test("show exposes the pre-defined Eagle",
          parse("show E"), "arity:5 BDD");
+    test("show exposes the pre-defined Jay",
+         parse("show J"), "arity:4 C**(HE)");
     test("pre-defined Turing is registered", parse("U"), "U");
     test("show exposes the pre-defined Turing",
          parse("show U"), "arity:2 BOM");
@@ -3199,6 +3213,7 @@ int main() {
     bool generated_right_partial_k = false;
     bool generated_left_sk = false;
     bool generated_right_sk = false;
+    bool generated_right_identity = false;
     combdsl::detail::for_each_predefined_bird_trip(
         [&](combdsl::quoted_expression trip) {
             generated_saturated_k =
@@ -3217,6 +3232,10 @@ int main() {
                 generated_right_sk ||
                 combdsl::detail::same_parser_definition_expression(
                     trip, quote(S)(quote(K)(A)));
+            generated_right_identity =
+                generated_right_identity ||
+                combdsl::detail::same_parser_definition_expression(
+                    trip, quote(I)(quote(H)(E)));
             if (first_trips.size() < 2) {
                 first_trips.push_back(std::move(trip));
             }
@@ -3228,7 +3247,8 @@ int main() {
                        << generated_saturated_k
                        << generated_right_partial_k
                        << generated_left_sk
-                       << generated_right_sk << ' ';
+                       << generated_right_sk
+                       << generated_right_identity << ' ';
              if (first_trips.size() >= 2) {
                  first_trips[0].print_to(std::cout);
                  std::cout << ' ';
@@ -3237,7 +3257,7 @@ int main() {
                  std::cout << first_trips.size();
              }
          },
-         "45994 0101 AAA A(AA)");
+         "45186 01010 AAA A(AA)");
     auto const a_trip_target = quote(A)(quote(A)(A));
     auto const parallel_trip_matches =
         combdsl::check_for_trips_match(
@@ -3307,6 +3327,9 @@ int main() {
             return present;
         };
     constexpr std::size_t a_index = 0;
+    constexpr std::size_t c_star_star_index = 4;
+    constexpr std::size_t e_index = 6;
+    constexpr std::size_t h_index = 9;
     constexpr std::size_t i_index = 10;
     constexpr std::size_t k_index = 11;
     constexpr std::size_t m_index = 13;
@@ -3328,6 +3351,9 @@ int main() {
              std::cout << ' ';
              print_presence(quad_shape_presence(
                  a_index, a_index, i_index, a_index));
+             std::cout << ' ';
+             print_presence(quad_shape_presence(
+                 a_index, a_index, a_index, i_index));
              std::cout << " | ";
              std::array const mockingbird_turing_pairs{
                  std::pair{m_index, m_index},
@@ -3373,13 +3399,28 @@ int main() {
              print_presence(quad_shape_presence(
                  a_index, s_index, k_index, a_index));
          },
-         "00111 11001 10110 | "
+         "00000 11000 10110 11111 | "
          "00111 11001 10110 | "
          "00111 11001 10110 | "
          "00111 11001 10110 | "
          "00111 11001 10110 | "
          "01111 11101 | "
          "01101 11101");
+    test("quad exclusions reject I applied to composite arguments",
+         [&] {
+             std::cout
+                 << !quad_shape_presence(
+                        c_star_star_index,
+                        i_index,
+                        h_index,
+                        e_index)[4]
+                 << !quad_shape_presence(
+                        i_index,
+                        c_star_star_index,
+                        h_index,
+                        e_index)[4];
+         },
+         "11");
     auto const divergent_quad_matches =
         combdsl::check_for_quads_match(
             std::span<quoted_atomic const>{},

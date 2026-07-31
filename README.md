@@ -509,21 +509,23 @@ trees. `check_for_pairs_match(symbol_list, expression)` runs that check for all
 808 ordered pairs, with repetition, made from the 29 combinators in Bird Info
 other than `J` and `Y`, and returns every matching pair. Every pair headed by
 `I`, along with `MM`, `MU`, `UM`, and `UU`, is excluded.
-`check_for_trips_match(symbol_list, expression)` similarly checks 45,994
+`check_for_trips_match(symbol_list, expression)` similarly checks 45,186
 ordered trip applications in both the left-associated and right-associated
 application-tree shapes. It skips `(AB)C` when `AB` is excluded and
 independently skips `A(BC)` when `BC` is excluded. In the left-associated
 `ABC` shape, it also skips every saturated `K<anything><anything>` expression;
 the partially applied `K(BC)` right-associated shape remains eligible. It also
-skips `SK<anything>` in the `ABC` shape while retaining `S(K<anything>)`.
-`check_for_quads_match(symbol_list, expression)` checks 3,320,516 eligible
+skips `SK<anything>` in the `ABC` shape while retaining `S(K<anything>)`, and
+skips right-associated `I(BC)` because `I` is applied to the composite `BC`.
+`check_for_quads_match(symbol_list, expression)` checks 3,228,466 eligible
 quad applications across the five application trees `ABCD`, `AB(CD)`,
 `A(BC)D`, `A(BCD)`, and `A(B(CD))`. It inherits the pair and trip exclusions
 at every pair or trip subtree. Both pair subtrees in `AB(CD)` must be eligible,
-and the `Kxx` and `SKx` exclusions are checked in both left-associated triplet
-positions, `ABC` and `BCD`. The exhaustive quad search is not run automatically;
-call `check_for_quads_match` explicitly when its potentially minutes-long
-search is wanted.
+every application of `I` is excluded even when its argument is composite, and
+the `Kxx` and `SKx` exclusions are checked in both left-associated triplet
+positions, `ABC` and `BCD`. The exhaustive quad search is not run
+automatically; call `check_for_quads_match` explicitly when its potentially
+minutes-long search is wanted.
 
 ```cpp
 std::array const symbols{
@@ -631,7 +633,7 @@ expression produces no output, while malformed or empty lines throw
 The `crepl` executable applies `input_escape` to each line before passing it to
 `parse_eval`, so ordinary quoted words and backslashes can be entered directly.
 When standard output is a terminal, it first prints
-`Combinator Read-Eval-Print Loop, version 2.0.20`. Long evaluations display
+`Combinator Read-Eval-Print Loop, version 2.0.22`. Long evaluations display
 the accumulated step count every 1,000 reductions by overwriting one status
 line; the line is cleared before evaluation output is printed. Its interactive
 prompt is `>`. Redirected output contains no progress status. Enter

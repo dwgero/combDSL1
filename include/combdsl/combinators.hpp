@@ -5652,7 +5652,7 @@ BASIS(E, 5, B(D)(D));
 BASIS(F, 3, C(V));
 BASIS(G, 4, D(C));
 BASIS(H, 3, S(R));
-BASIS(J, 4, S(D(B(Q)(C)))(D));
+BASIS(J, 4, C_star_star(H(E)));
 
 #define SYMBOL(lower_letter) \
     inline constexpr auto lower_letter = \
@@ -5848,12 +5848,20 @@ inline constexpr std::size_t check_for_pairs_match_candidate_count =
     check_for_match_combinator_count *
         check_for_match_combinator_count -
     check_for_match_excluded_pair_count;
+inline constexpr std::size_t
+    check_for_match_left_trip_candidate_count =
+        check_for_match_combinator_count *
+            check_for_pairs_match_candidate_count -
+        check_for_match_combinator_count *
+            check_for_match_combinator_count -
+        check_for_match_combinator_count;
+inline constexpr std::size_t
+    check_for_match_right_trip_candidate_count =
+        (check_for_match_combinator_count - 1) *
+        check_for_pairs_match_candidate_count;
 inline constexpr std::size_t check_for_trips_match_candidate_count =
-    2 * check_for_match_combinator_count *
-        check_for_pairs_match_candidate_count -
-    check_for_match_combinator_count *
-        check_for_match_combinator_count -
-    check_for_match_combinator_count;
+    check_for_match_left_trip_candidate_count +
+    check_for_match_right_trip_candidate_count;
 inline constexpr std::size_t check_for_quads_match_shape_count = 5;
 inline constexpr std::size_t check_for_quads_match_tuple_count =
     check_for_match_combinator_count *
@@ -5861,9 +5869,17 @@ inline constexpr std::size_t check_for_quads_match_tuple_count =
     check_for_match_combinator_count *
     check_for_match_combinator_count;
 inline constexpr std::size_t check_for_quads_match_candidate_count =
-    2 * check_for_match_combinator_count *
-        check_for_trips_match_candidate_count +
+    check_for_match_combinator_count *
+        check_for_match_left_trip_candidate_count +
     check_for_pairs_match_candidate_count *
+        check_for_pairs_match_candidate_count +
+    (check_for_match_combinator_count - 1) *
+        check_for_match_combinator_count *
+        check_for_pairs_match_candidate_count +
+    (check_for_match_combinator_count - 1) *
+        check_for_match_left_trip_candidate_count +
+    (check_for_match_combinator_count - 1) *
+        (check_for_match_combinator_count - 1) *
         check_for_pairs_match_candidate_count;
 
 struct subexpression_search_match {
@@ -6323,11 +6339,16 @@ predefined_bird_combinators() {
     return combinators;
 }
 
+[[nodiscard]] inline bool is_identity_combinator(
+    quoted_expression const& expression) noexcept {
+    return quoted_access::root(expression)->kind() ==
+           quoted_node_kind::identity;
+}
+
 [[nodiscard]] inline bool is_excluded_match_pair(
     quoted_expression const& function,
     quoted_expression const& argument) noexcept {
-    if (quoted_access::root(function)->kind() ==
-        quoted_node_kind::identity) {
+    if (is_identity_combinator(function)) {
         return true;
     }
     auto is_mockingbird_or_turing =
@@ -6366,6 +6387,15 @@ is_allowed_predefined_bird_left_trip(
                first, second);
 }
 
+[[nodiscard]] inline bool
+is_allowed_predefined_bird_right_trip(
+    quoted_expression const& first,
+    quoted_expression const& second,
+    quoted_expression const& third) noexcept {
+    return !is_identity_combinator(first) &&
+           !is_excluded_match_pair(second, third);
+}
+
 template <class Visitor>
 inline void for_each_predefined_bird_pair(
     Visitor&& visitor) {
@@ -6393,7 +6423,8 @@ inline void for_each_predefined_bird_trip(
                     visitor(first(second)(third));
                 }
 
-                if (!is_excluded_match_pair(second, third)) {
+                if (is_allowed_predefined_bird_right_trip(
+                        first, second, third)) {
                     visitor(first(second(third)));
                 }
             }
@@ -6431,16 +6462,24 @@ inline void for_each_predefined_bird_quad_at(
         !is_excluded_match_pair(second, third);
     auto const pair_cd =
         !is_excluded_match_pair(third, fourth);
-    auto const trip_abc =
+    auto const first_is_identity =
+        is_identity_combinator(first);
+    auto const second_is_identity =
+        is_identity_combinator(second);
+    auto const left_trip_abc =
         pair_ab &&
         is_allowed_predefined_bird_left_trip_head(
             first, second);
-    auto const trip_bcd =
+    auto const right_trip_abc =
+        !first_is_identity && pair_bc;
+    auto const left_trip_bcd =
         pair_bc &&
         is_allowed_predefined_bird_left_trip_head(
             second, third);
+    auto const right_trip_bcd =
+        !second_is_identity && pair_cd;
 
-    if (trip_abc) {
+    if (left_trip_abc) {
         visitor(
             std::size_t{0},
             first(second)(third)(fourth));
@@ -6450,17 +6489,17 @@ inline void for_each_predefined_bird_quad_at(
             std::size_t{1},
             first(second)(third(fourth)));
     }
-    if (pair_bc) {
+    if (right_trip_abc) {
         visitor(
             std::size_t{2},
             first(second(third))(fourth));
     }
-    if (trip_bcd) {
+    if (left_trip_bcd && !first_is_identity) {
         visitor(
             std::size_t{3},
             first(second(third)(fourth)));
     }
-    if (pair_cd) {
+    if (right_trip_bcd && !first_is_identity) {
         visitor(
             std::size_t{4},
             first(second(third(fourth))));
