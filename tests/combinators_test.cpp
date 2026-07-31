@@ -1520,6 +1520,17 @@ int main() {
          parse("define DefKWss x = B W*"), "DefKWss");
     test("show exposes nested Warbler star star optimization",
          parse("show DefKWss"), "arity:1 K W**");
+    test("define optimizes S(D(BQC))D to Jay",
+         parse("define OptJ xyzw = xy(xwz)"), "OptJ");
+    test("show exposes the optimized Jay",
+         parse("show OptJ"), "arity:4 J");
+    test("optimized Jay preserves behavior",
+         single_step(single_step(parse("OptJ a b c d"))),
+         "ab(adc)");
+    test("define recursively optimizes nested S(D(BQC))D",
+         parse("define DefKJ x = S(D(BQC))D"), "DefKJ");
+    test("show exposes the nested Jay optimization",
+         parse("show DefKJ"), "arity:1 KJ");
     test("define preprocessing creates the Bluebird",
          parse("define DefB xyz = Qyxz"), "DefB");
     test("show exposes the preprocessed Bluebird",

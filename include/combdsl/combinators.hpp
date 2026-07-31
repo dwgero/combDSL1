@@ -4866,6 +4866,43 @@ private:
                is_named_basis(application->argument(), "B");
     }
 
+    [[nodiscard]] static bool is_jay_pattern(
+        quoted_expression const& expression) noexcept {
+        auto const* outer = as_application(expression);
+        if (outer == nullptr ||
+            !is_named_basis(outer->argument(), "D")) {
+            return false;
+        }
+
+        auto const* starling =
+            as_application(outer->function());
+        if (starling == nullptr ||
+            quoted_access::root(starling->function())->kind() !=
+                quoted_node_kind::substitution) {
+            return false;
+        }
+
+        auto const* dove =
+            as_application(starling->argument());
+        if (dove == nullptr ||
+            !is_named_basis(dove->function(), "D")) {
+            return false;
+        }
+
+        auto const* cardinal =
+            as_application(dove->argument());
+        if (cardinal == nullptr ||
+            !is_named_basis(cardinal->argument(), "C")) {
+            return false;
+        }
+
+        auto const* bluebird_queer =
+            as_application(cardinal->function());
+        return bluebird_queer != nullptr &&
+               is_named_basis(bluebird_queer->function(), "B") &&
+               is_named_basis(bluebird_queer->argument(), "Q");
+    }
+
     [[nodiscard]] quoted_expression registered_basis_expression(
         std::string_view name) const {
         auto const match = registered_bases_.find(name);
@@ -4935,6 +4972,9 @@ private:
         }
         if (is_warbler_bluebird(expression)) {
             return registered_basis_expression("Z");
+        }
+        if (is_jay_pattern(expression)) {
+            return registered_basis_expression("J");
         }
         return std::nullopt;
     }

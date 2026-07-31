@@ -478,7 +478,7 @@ optimization pass recursively replaces `C*T` with `V`, `BDD` with `E`, `BOM`
 with `U`, `B(QT)R` with `F`, `B(QT)B` with `Q1`, `BT` with `Q3`, `BW` with
 `W*`, `B W*` with `W**`, `BC` with `C*`, `B C*` with `C**`, `YO` with `Y`,
 `BB` with `D`, `SBT` with `A`, `SR` with `H`, `QM` with `L`, `DC` with `G`,
-`WC` with `N`, `WV` with `W1`, and `WB` with `Z`.
+`WC` with `N`, `WV` with `W1`, `WB` with `Z`, and `S(D(BQC))D` with `J`.
 
 `search_for_xy_subexp(expression)` searches the unoptimized result of
 contextually taking out `y` with `x` pending, then taking out `x` with no
@@ -633,7 +633,7 @@ expression produces no output, while malformed or empty lines throw
 The `crepl` executable applies `input_escape` to each line before passing it to
 `parse_eval`, so ordinary quoted words and backslashes can be entered directly.
 When standard output is a terminal, it first prints
-`Combinator Read-Eval-Print Loop, version 2.0.22`. Long evaluations display
+`Combinator Read-Eval-Print Loop, version 2.0.24`. Long evaluations display
 the accumulated step count every 1,000 reductions by overwriting one status
 line; the line is cleared before evaluation output is printed. Its interactive
 prompt is `>`. Redirected output contains no progress status. Enter
