@@ -24,6 +24,7 @@
 #include <concepts>
 #include <csignal>
 #include <cstdint>
+#include <exception>
 #include <functional>
 #include <iostream>
 #include <iterator>
@@ -43,6 +44,10 @@
 #include <unordered_set>
 #include <utility>
 #include <vector>
+
+#if !defined(__EMSCRIPTEN__)
+#include <thread>
+#endif
 
 namespace combdsl {
 
@@ -4506,8 +4511,9 @@ private:
                 quoted_atomic{recursive_function},
                 std::move(body),
                 pending_atoms);
-            body = quote(Y)(
-                optimize_final_takeout(std::move(body)));
+            body = optimize_final_takeout(
+                quote(Y)(
+                    optimize_final_takeout(std::move(body))));
         } else {
             body = optimize_final_takeout(std::move(body));
         }
@@ -4681,18 +4687,62 @@ private:
             static_cast<quoted_application_node const&>(*root));
     }
 
-    [[nodiscard]] static bool is_bluebird_cardinal_thrush(
+    [[nodiscard]] static bool is_cardinal_star_thrush(
+        quoted_expression const& expression) noexcept {
+        auto const* application = as_application(expression);
+        return application != nullptr &&
+               is_named_basis(application->function(), "C*") &&
+               is_named_basis(application->argument(), "T");
+    }
+
+    [[nodiscard]] static bool is_bluebird_double_dove(
         quoted_expression const& expression) noexcept {
         auto const* outer = as_application(expression);
         if (outer == nullptr ||
-            !is_named_basis(outer->argument(), "T")) {
+            !is_named_basis(outer->argument(), "D")) {
             return false;
         }
 
         auto const* inner = as_application(outer->function());
         return inner != nullptr &&
                is_named_basis(inner->function(), "B") &&
-               is_named_basis(inner->argument(), "C");
+               is_named_basis(inner->argument(), "D");
+    }
+
+    [[nodiscard]] static bool is_bluebird_owl_mockingbird(
+        quoted_expression const& expression) noexcept {
+        auto const* outer = as_application(expression);
+        if (outer == nullptr ||
+            !is_named_basis(outer->argument(), "M")) {
+            return false;
+        }
+
+        auto const* inner = as_application(outer->function());
+        return inner != nullptr &&
+               is_named_basis(inner->function(), "B") &&
+               is_named_basis(inner->argument(), "O");
+    }
+
+    [[nodiscard]] static bool is_bluebird_queer_thrush(
+        quoted_expression const& expression,
+        std::string_view final_argument) noexcept {
+        auto const* outer = as_application(expression);
+        if (outer == nullptr ||
+            !is_named_basis(outer->argument(), final_argument)) {
+            return false;
+        }
+
+        auto const* inner = as_application(outer->function());
+        if (inner == nullptr ||
+            !is_named_basis(inner->function(), "B")) {
+            return false;
+        }
+
+        auto const* queer_thrush =
+            as_application(inner->argument());
+        return queer_thrush != nullptr &&
+               is_named_basis(queer_thrush->function(), "Q") &&
+               is_named_basis(queer_thrush->argument(), "T");
     }
 
     [[nodiscard]] static bool is_bluebird_thrush(
@@ -4709,6 +4759,39 @@ private:
         return application != nullptr &&
                is_named_basis(application->function(), "B") &&
                is_named_basis(application->argument(), "W");
+    }
+
+    [[nodiscard]] static bool is_bluebird_warbler_star(
+        quoted_expression const& expression) noexcept {
+        auto const* application = as_application(expression);
+        return application != nullptr &&
+               is_named_basis(application->function(), "B") &&
+               is_named_basis(application->argument(), "W*");
+    }
+
+    [[nodiscard]] static bool is_bluebird_cardinal(
+        quoted_expression const& expression) noexcept {
+        auto const* application = as_application(expression);
+        return application != nullptr &&
+               is_named_basis(application->function(), "B") &&
+               is_named_basis(application->argument(), "C");
+    }
+
+    [[nodiscard]] static bool is_bluebird_cardinal_star(
+        quoted_expression const& expression) noexcept {
+        auto const* application = as_application(expression);
+        return application != nullptr &&
+               is_named_basis(application->function(), "B") &&
+               is_named_basis(application->argument(), "C*");
+    }
+
+    [[nodiscard]] static bool is_sage_owl(
+        quoted_expression const& expression) noexcept {
+        auto const* application = as_application(expression);
+        return application != nullptr &&
+               quoted_access::root(application->function())->kind() ==
+                   quoted_node_kind::fixed_point &&
+               is_named_basis(application->argument(), "O");
     }
 
     [[nodiscard]] static bool is_double_bluebird(
@@ -4742,6 +4825,14 @@ private:
                is_named_basis(application->argument(), "M");
     }
 
+    [[nodiscard]] static bool is_dove_cardinal(
+        quoted_expression const& expression) noexcept {
+        auto const* application = as_application(expression);
+        return application != nullptr &&
+               is_named_basis(application->function(), "D") &&
+               is_named_basis(application->argument(), "C");
+    }
+
     [[nodiscard]] static bool is_warbler_cardinal(
         quoted_expression const& expression) noexcept {
         auto const* application = as_application(expression);
@@ -4757,6 +4848,14 @@ private:
                quoted_access::root(application->function())->kind() ==
                    quoted_node_kind::substitution &&
                is_named_basis(application->argument(), "R");
+    }
+
+    [[nodiscard]] static bool is_warbler_vireo(
+        quoted_expression const& expression) noexcept {
+        auto const* application = as_application(expression);
+        return application != nullptr &&
+               is_named_basis(application->function(), "W") &&
+               is_named_basis(application->argument(), "V");
     }
 
     [[nodiscard]] static bool is_warbler_bluebird(
@@ -4780,14 +4879,38 @@ private:
     [[nodiscard]] std::optional<quoted_expression>
     optimize_final_takeout_at_root(
         quoted_expression const& expression) const {
-        if (is_bluebird_cardinal_thrush(expression)) {
+        if (is_cardinal_star_thrush(expression)) {
             return registered_basis_expression("V");
+        }
+        if (is_bluebird_double_dove(expression)) {
+            return registered_basis_expression("E");
+        }
+        if (is_bluebird_owl_mockingbird(expression)) {
+            return registered_basis_expression("U");
+        }
+        if (is_bluebird_queer_thrush(expression, "R")) {
+            return registered_basis_expression("F");
+        }
+        if (is_bluebird_queer_thrush(expression, "B")) {
+            return registered_basis_expression("Q1");
         }
         if (is_bluebird_thrush(expression)) {
             return registered_basis_expression("Q3");
         }
+        if (is_bluebird_warbler_star(expression)) {
+            return registered_basis_expression("W**");
+        }
         if (is_bluebird_warbler(expression)) {
             return registered_basis_expression("W*");
+        }
+        if (is_bluebird_cardinal_star(expression)) {
+            return registered_basis_expression("C**");
+        }
+        if (is_bluebird_cardinal(expression)) {
+            return registered_basis_expression("C*");
+        }
+        if (is_sage_owl(expression)) {
+            return quote(Y);
         }
         if (is_double_bluebird(expression)) {
             return registered_basis_expression("D");
@@ -4801,8 +4924,14 @@ private:
         if (is_queer_mockingbird(expression)) {
             return registered_basis_expression("L");
         }
+        if (is_dove_cardinal(expression)) {
+            return registered_basis_expression("G");
+        }
         if (is_warbler_cardinal(expression)) {
             return registered_basis_expression("N");
+        }
+        if (is_warbler_vireo(expression)) {
+            return registered_basis_expression("W1");
         }
         if (is_warbler_bluebird(expression)) {
             return registered_basis_expression("Z");
@@ -5712,6 +5841,30 @@ inline constexpr std::size_t search_for_xyz_subexp_candidate_count =
 inline constexpr std::size_t search_for_subexp_candidate_count =
     search_for_xy_subexp_candidate_count +
     search_for_xyz_subexp_candidate_count;
+inline constexpr std::size_t check_for_match_reduction_limit = 256;
+inline constexpr std::size_t check_for_match_combinator_count = 29;
+inline constexpr std::size_t check_for_match_excluded_pair_count = 33;
+inline constexpr std::size_t check_for_pairs_match_candidate_count =
+    check_for_match_combinator_count *
+        check_for_match_combinator_count -
+    check_for_match_excluded_pair_count;
+inline constexpr std::size_t check_for_trips_match_candidate_count =
+    2 * check_for_match_combinator_count *
+        check_for_pairs_match_candidate_count -
+    check_for_match_combinator_count *
+        check_for_match_combinator_count -
+    check_for_match_combinator_count;
+inline constexpr std::size_t check_for_quads_match_shape_count = 5;
+inline constexpr std::size_t check_for_quads_match_tuple_count =
+    check_for_match_combinator_count *
+    check_for_match_combinator_count *
+    check_for_match_combinator_count *
+    check_for_match_combinator_count;
+inline constexpr std::size_t check_for_quads_match_candidate_count =
+    2 * check_for_match_combinator_count *
+        check_for_trips_match_candidate_count +
+    check_for_pairs_match_candidate_count *
+        check_for_pairs_match_candidate_count;
 
 struct subexpression_search_match {
     quoted_expression source_expression;
@@ -6087,6 +6240,579 @@ template <class Expression>
 [[nodiscard]] inline std::optional<subexpression_search_match>
 search_for_subexp(Expression&& expression) {
     return search_for_subexp(
+        quote(std::forward<Expression>(expression)));
+}
+
+namespace detail {
+
+inline constexpr std::size_t
+    combinator_match_expression_key_size_limit = 65'536;
+
+[[nodiscard]] inline std::optional<quoted_expression>
+normalize_for_combinator_match(quoted_expression expression) {
+    std::unordered_set<std::string> seen;
+    auto initial_key = quoted_expression_key(expression);
+    if (initial_key.size() >
+        combinator_match_expression_key_size_limit) {
+        return std::nullopt;
+    }
+    seen.emplace(std::move(initial_key));
+    std::size_t remaining_steps =
+        check_for_match_reduction_limit;
+
+    for (;;) {
+        auto reduced = reduce_next_redex(
+            expression,
+            reduction_options{
+                .basis_step = false,
+                .reduce_partial_k_argument = false,
+            });
+        if (!reduced) {
+            return expression;
+        }
+        if (remaining_steps == 0) {
+            return std::nullopt;
+        }
+        --remaining_steps;
+
+        expression = std::move(*reduced);
+        auto key = quoted_expression_key(expression);
+        if (key.size() >
+            combinator_match_expression_key_size_limit ||
+            !seen.emplace(std::move(key)).second) {
+            return std::nullopt;
+        }
+    }
+}
+
+[[nodiscard]] inline auto const&
+predefined_bird_combinators() {
+    static std::array<
+        quoted_expression,
+        check_for_match_combinator_count> const combinators{
+        quote(A),
+        quote(B),
+        quote(C),
+        quote(C_star),
+        quote(C_star_star),
+        quote(D),
+        quote(E),
+        quote(F),
+        quote(G),
+        quote(H),
+        quote(I),
+        quote(K),
+        quote(L),
+        quote(M),
+        quote(N),
+        quote(O),
+        quote(Q),
+        quote(Q1),
+        quote(Q3),
+        quote(R),
+        quote(S),
+        quote(T),
+        quote(U),
+        quote(V),
+        quote(W),
+        quote(W_star),
+        quote(W_star_star),
+        quote(W1),
+        quote(Z),
+    };
+    return combinators;
+}
+
+[[nodiscard]] inline bool is_excluded_match_pair(
+    quoted_expression const& function,
+    quoted_expression const& argument) noexcept {
+    if (quoted_access::root(function)->kind() ==
+        quoted_node_kind::identity) {
+        return true;
+    }
+    auto is_mockingbird_or_turing =
+        [](quoted_expression const& expression) noexcept {
+            auto const& root = quoted_access::root(expression);
+            if (root->kind() != quoted_node_kind::basis) {
+                return false;
+            }
+            auto const name =
+                static_cast<quoted_basis_node_base const&>(*root)
+                    .name();
+            return name == "M" || name == "U";
+        };
+    return is_mockingbird_or_turing(function) &&
+           is_mockingbird_or_turing(argument);
+}
+
+[[nodiscard]] inline bool
+is_allowed_predefined_bird_left_trip_head(
+    quoted_expression const& first,
+    quoted_expression const& second) noexcept {
+    return quoted_access::root(first)->kind() !=
+               quoted_node_kind::constant &&
+           !(quoted_access::root(first)->kind() ==
+                 quoted_node_kind::substitution &&
+             quoted_access::root(second)->kind() ==
+                 quoted_node_kind::constant);
+}
+
+[[nodiscard]] inline bool
+is_allowed_predefined_bird_left_trip(
+    quoted_expression const& first,
+    quoted_expression const& second) noexcept {
+    return !is_excluded_match_pair(first, second) &&
+           is_allowed_predefined_bird_left_trip_head(
+               first, second);
+}
+
+template <class Visitor>
+inline void for_each_predefined_bird_pair(
+    Visitor&& visitor) {
+    auto const& combinators =
+        predefined_bird_combinators();
+    for (auto const& function : combinators) {
+        for (auto const& argument : combinators) {
+            if (!is_excluded_match_pair(function, argument)) {
+                visitor(function(argument));
+            }
+        }
+    }
+}
+
+template <class Visitor>
+inline void for_each_predefined_bird_trip(
+    Visitor&& visitor) {
+    auto const& combinators =
+        predefined_bird_combinators();
+    for (auto const& first : combinators) {
+        for (auto const& second : combinators) {
+            for (auto const& third : combinators) {
+                if (is_allowed_predefined_bird_left_trip(
+                        first, second)) {
+                    visitor(first(second)(third));
+                }
+
+                if (!is_excluded_match_pair(second, third)) {
+                    visitor(first(second(third)));
+                }
+            }
+        }
+    }
+}
+
+template <class Visitor>
+inline void for_each_predefined_bird_quad_at(
+    std::size_t tuple_index,
+    Visitor&& visitor) {
+    auto const& combinators =
+        predefined_bird_combinators();
+    auto remainder = tuple_index;
+    auto const fourth_index =
+        remainder % check_for_match_combinator_count;
+    remainder /= check_for_match_combinator_count;
+    auto const third_index =
+        remainder % check_for_match_combinator_count;
+    remainder /= check_for_match_combinator_count;
+    auto const second_index =
+        remainder % check_for_match_combinator_count;
+    remainder /= check_for_match_combinator_count;
+    auto const first_index =
+        remainder % check_for_match_combinator_count;
+
+    auto const& first = combinators[first_index];
+    auto const& second = combinators[second_index];
+    auto const& third = combinators[third_index];
+    auto const& fourth = combinators[fourth_index];
+
+    auto const pair_ab =
+        !is_excluded_match_pair(first, second);
+    auto const pair_bc =
+        !is_excluded_match_pair(second, third);
+    auto const pair_cd =
+        !is_excluded_match_pair(third, fourth);
+    auto const trip_abc =
+        pair_ab &&
+        is_allowed_predefined_bird_left_trip_head(
+            first, second);
+    auto const trip_bcd =
+        pair_bc &&
+        is_allowed_predefined_bird_left_trip_head(
+            second, third);
+
+    if (trip_abc) {
+        visitor(
+            std::size_t{0},
+            first(second)(third)(fourth));
+    }
+    if (pair_ab && pair_cd) {
+        visitor(
+            std::size_t{1},
+            first(second)(third(fourth)));
+    }
+    if (pair_bc) {
+        visitor(
+            std::size_t{2},
+            first(second(third))(fourth));
+    }
+    if (trip_bcd) {
+        visitor(
+            std::size_t{3},
+            first(second(third)(fourth)));
+    }
+    if (pair_cd) {
+        visitor(
+            std::size_t{4},
+            first(second(third(fourth))));
+    }
+}
+
+[[nodiscard]] inline bool check_normalized_match(
+    quoted_expression combs,
+    std::span<quoted_atomic const> symbol_list,
+    quoted_expression const& normalized_expression) {
+    for (auto const& symbol_value : symbol_list) {
+        combs = combs(symbol_value.expression());
+    }
+
+    auto normalized_combs =
+        normalize_for_combinator_match(std::move(combs));
+    return normalized_combs &&
+           same_parser_definition_expression(
+               *normalized_combs,
+               normalized_expression);
+}
+
+} // namespace detail
+
+[[nodiscard]] inline bool check_for_match(
+    quoted_expression combs,
+    std::span<quoted_atomic const> symbol_list,
+    quoted_expression const& expression) {
+    auto normalized_expression =
+        detail::normalize_for_combinator_match(expression);
+    return normalized_expression &&
+           detail::check_normalized_match(
+               std::move(combs),
+               symbol_list,
+               *normalized_expression);
+}
+
+template <class Combs, class Expression>
+    requires (!(std::same_as<
+                    std::remove_cvref_t<Combs>,
+                    quoted_expression> &&
+                std::same_as<
+                    std::remove_cvref_t<Expression>,
+                    quoted_expression>))
+[[nodiscard]] inline bool check_for_match(
+    Combs&& combs,
+    std::span<quoted_atomic const> symbol_list,
+    Expression&& expression) {
+    return check_for_match(
+        quote(std::forward<Combs>(combs)),
+        symbol_list,
+        quote(std::forward<Expression>(expression)));
+}
+
+[[nodiscard]] inline std::vector<quoted_expression>
+check_for_pairs_match(
+    std::span<quoted_atomic const> symbol_list,
+    quoted_expression const& expression) {
+    std::vector<quoted_expression> result;
+    auto normalized_expression =
+        detail::normalize_for_combinator_match(expression);
+    if (!normalized_expression) {
+        return result;
+    }
+
+    detail::for_each_predefined_bird_pair(
+        [&](quoted_expression pair) {
+            if (detail::check_normalized_match(
+                    pair,
+                    symbol_list,
+                    *normalized_expression)) {
+                result.push_back(std::move(pair));
+            }
+        });
+    return result;
+}
+
+template <class Expression>
+    requires (!std::same_as<
+              std::remove_cvref_t<Expression>,
+              quoted_expression>)
+[[nodiscard]] inline std::vector<quoted_expression>
+check_for_pairs_match(
+    std::span<quoted_atomic const> symbol_list,
+    Expression&& expression) {
+    return check_for_pairs_match(
+        symbol_list,
+        quote(std::forward<Expression>(expression)));
+}
+
+[[nodiscard]] inline std::vector<quoted_expression>
+check_for_trips_match(
+    std::span<quoted_atomic const> symbol_list,
+    quoted_expression const& expression) {
+    std::vector<quoted_expression> result;
+    auto normalized_expression =
+        detail::normalize_for_combinator_match(expression);
+    if (!normalized_expression) {
+        return result;
+    }
+
+#if defined(__EMSCRIPTEN__)
+    detail::for_each_predefined_bird_trip(
+        [&](quoted_expression trip) {
+            if (detail::check_normalized_match(
+                    trip,
+                    symbol_list,
+                    *normalized_expression)) {
+                result.push_back(std::move(trip));
+            }
+        });
+#else
+    std::vector<quoted_expression> candidates;
+    candidates.reserve(check_for_trips_match_candidate_count);
+    detail::for_each_predefined_bird_trip(
+        [&](quoted_expression trip) {
+            candidates.push_back(std::move(trip));
+        });
+
+    auto const reported_worker_count =
+        std::thread::hardware_concurrency();
+    auto const worker_count = std::min(
+        candidates.size(),
+        std::size_t{
+            reported_worker_count == 0
+                ? 1
+                : reported_worker_count});
+    std::vector<std::uint8_t> matched(
+        candidates.size(), std::uint8_t{0});
+    std::atomic<std::size_t> next_candidate = 0;
+    std::atomic<bool> failed = false;
+    std::exception_ptr failure;
+    std::mutex failure_mutex;
+    std::vector<std::jthread> workers;
+    workers.reserve(worker_count);
+
+    for (std::size_t worker_index = 0;
+         worker_index < worker_count;
+         ++worker_index) {
+        workers.emplace_back(
+            [&] {
+                try {
+                    constexpr std::size_t chunk_size = 1;
+                    while (!failed.load(
+                        std::memory_order_relaxed)) {
+                        auto const begin =
+                            next_candidate.fetch_add(
+                                chunk_size,
+                                std::memory_order_relaxed);
+                        if (begin >= candidates.size()) {
+                            break;
+                        }
+                        auto const end = std::min(
+                            begin + chunk_size,
+                            candidates.size());
+                        for (auto index = begin;
+                             index < end;
+                             ++index) {
+                            if (detail::check_normalized_match(
+                                    candidates[index],
+                                    symbol_list,
+                                    *normalized_expression)) {
+                                matched[index] = 1;
+                            }
+                        }
+                    }
+                } catch (...) {
+                    if (!failed.exchange(
+                            true,
+                            std::memory_order_relaxed)) {
+                        std::scoped_lock lock(failure_mutex);
+                        failure = std::current_exception();
+                    }
+                }
+            });
+    }
+    for (auto& worker : workers) {
+        worker.join();
+    }
+    if (failure) {
+        std::rethrow_exception(failure);
+    }
+    for (std::size_t index = 0;
+         index < candidates.size();
+         ++index) {
+        if (matched[index] != 0) {
+            result.push_back(std::move(candidates[index]));
+        }
+    }
+#endif
+    return result;
+}
+
+template <class Expression>
+    requires (!std::same_as<
+              std::remove_cvref_t<Expression>,
+              quoted_expression>)
+[[nodiscard]] inline std::vector<quoted_expression>
+check_for_trips_match(
+    std::span<quoted_atomic const> symbol_list,
+    Expression&& expression) {
+    return check_for_trips_match(
+        symbol_list,
+        quote(std::forward<Expression>(expression)));
+}
+
+[[nodiscard]] inline std::vector<quoted_expression>
+check_for_quads_match(
+    std::span<quoted_atomic const> symbol_list,
+    quoted_expression const& expression) {
+    std::vector<quoted_expression> result;
+    auto normalized_expression =
+        detail::normalize_for_combinator_match(expression);
+    if (!normalized_expression) {
+        return result;
+    }
+    (void)detail::predefined_bird_combinators();
+
+#if defined(__EMSCRIPTEN__)
+    for (std::size_t tuple_index = 0;
+         tuple_index < check_for_quads_match_tuple_count;
+         ++tuple_index) {
+        detail::for_each_predefined_bird_quad_at(
+            tuple_index,
+            [&](std::size_t, quoted_expression quad) {
+                if (detail::check_normalized_match(
+                        quad,
+                        symbol_list,
+                        *normalized_expression)) {
+                    result.push_back(std::move(quad));
+                }
+            });
+    }
+#else
+    constexpr auto slot_count =
+        check_for_quads_match_shape_count *
+        check_for_quads_match_tuple_count;
+    auto const reported_worker_count =
+        std::thread::hardware_concurrency();
+    auto const worker_count = std::min(
+        check_for_quads_match_tuple_count,
+        std::size_t{
+            reported_worker_count == 0
+                ? 1
+                : reported_worker_count});
+    std::vector<std::uint8_t> matched(
+        slot_count, std::uint8_t{0});
+    std::atomic<std::size_t> next_tuple = 0;
+    std::atomic<bool> failed = false;
+    std::exception_ptr failure;
+    std::mutex failure_mutex;
+    std::vector<std::jthread> workers;
+    workers.reserve(worker_count);
+
+    for (std::size_t worker_index = 0;
+         worker_index < worker_count;
+         ++worker_index) {
+        workers.emplace_back(
+            [&] {
+                try {
+                    constexpr std::size_t chunk_size = 4;
+                    while (!failed.load(
+                        std::memory_order_relaxed)) {
+                        auto const begin =
+                            next_tuple.fetch_add(
+                                chunk_size,
+                                std::memory_order_relaxed);
+                        if (begin >=
+                            check_for_quads_match_tuple_count) {
+                            break;
+                        }
+                        auto const end = std::min(
+                            begin + chunk_size,
+                            check_for_quads_match_tuple_count);
+                        for (auto tuple_index = begin;
+                             tuple_index < end;
+                             ++tuple_index) {
+                            detail::for_each_predefined_bird_quad_at(
+                                tuple_index,
+                                [&](std::size_t shape_index,
+                                    quoted_expression quad) {
+                                    if (detail::check_normalized_match(
+                                            std::move(quad),
+                                            symbol_list,
+                                            *normalized_expression)) {
+                                        matched[
+                                            tuple_index *
+                                                check_for_quads_match_shape_count +
+                                            shape_index] = 1;
+                                    }
+                                });
+                        }
+                    }
+                } catch (...) {
+                    if (!failed.exchange(
+                            true,
+                            std::memory_order_relaxed)) {
+                        std::scoped_lock lock(failure_mutex);
+                        failure = std::current_exception();
+                    }
+                }
+            });
+    }
+    for (auto& worker : workers) {
+        worker.join();
+    }
+    if (failure) {
+        std::rethrow_exception(failure);
+    }
+
+    for (std::size_t tuple_index = 0;
+         tuple_index < check_for_quads_match_tuple_count;
+         ++tuple_index) {
+        auto const slot_begin =
+            tuple_index * check_for_quads_match_shape_count;
+        auto const any_match = std::any_of(
+            matched.begin() +
+                static_cast<std::ptrdiff_t>(slot_begin),
+            matched.begin() +
+                static_cast<std::ptrdiff_t>(
+                    slot_begin +
+                    check_for_quads_match_shape_count),
+            [](std::uint8_t value) {
+                return value != 0;
+            });
+        if (!any_match) {
+            continue;
+        }
+
+        detail::for_each_predefined_bird_quad_at(
+            tuple_index,
+            [&](std::size_t shape_index,
+                quoted_expression quad) {
+                if (matched[slot_begin + shape_index] != 0) {
+                    result.push_back(std::move(quad));
+                }
+            });
+    }
+#endif
+    return result;
+}
+
+template <class Expression>
+    requires (!std::same_as<
+              std::remove_cvref_t<Expression>,
+              quoted_expression>)
+[[nodiscard]] inline std::vector<quoted_expression>
+check_for_quads_match(
+    std::span<quoted_atomic const> symbol_list,
+    Expression&& expression) {
+    return check_for_quads_match(
+        symbol_list,
         quote(std::forward<Expression>(expression)));
 }
 

@@ -469,14 +469,16 @@ producing `Y(optimized_expression)`:
 
 ```cpp
 parse("define Repeat x = x(Repeat x)"); // Repeat
-parse_eval("show Repeat");              // prints: arity:1 YO
+parse_eval("show Repeat");              // prints: arity:1 Y
 ```
 
 The resulting recursive transformation is
-`Y(optimize(takeout(rec_func, previous_takeout_result)))`. The optimization
-pass recursively replaces `BCT` with `V`, `BT` with `Q3`, `BW` with `W*`,
-`BB` with `D`, `SBT` with `A`, `SR` with `H`, `QM` with `L`, `WC` with `N`,
-and `WB` with `Z`.
+`optimize(Y(optimize(takeout(rec_func, previous_takeout_result))))`. The
+optimization pass recursively replaces `C*T` with `V`, `BDD` with `E`, `BOM`
+with `U`, `B(QT)R` with `F`, `B(QT)B` with `Q1`, `BT` with `Q3`, `BW` with
+`W*`, `B W*` with `W**`, `BC` with `C*`, `B C*` with `C**`, `YO` with `Y`,
+`BB` with `D`, `SBT` with `A`, `SR` with `H`, `QM` with `L`, `DC` with `G`,
+`WC` with `N`, `WV` with `W1`, and `WB` with `Z`.
 
 `search_for_xy_subexp(expression)` searches the unoptimized result of
 contextually taking out `y` with `x` pending, then taking out `x` with no
@@ -499,6 +501,67 @@ auto first = search_for_subexp(parse("SBT"));       // source: x(yx)
 auto fallback = search_for_subexp(parse("B(QT)B")); // source: x(zy)
 auto none = search_for_subexp(parse("C(CB)"));      // std::nullopt
 ```
+
+`check_for_match(combs, symbol_list, expression)` appends the quoted atoms in
+`symbol_list` to `combs`, normalizes that application and `expression` using
+the ordinary evaluator rules, and compares the resulting quoted expression
+trees. `check_for_pairs_match(symbol_list, expression)` runs that check for all
+808 ordered pairs, with repetition, made from the 29 combinators in Bird Info
+other than `J` and `Y`, and returns every matching pair. Every pair headed by
+`I`, along with `MM`, `MU`, `UM`, and `UU`, is excluded.
+`check_for_trips_match(symbol_list, expression)` similarly checks 45,994
+ordered trip applications in both the left-associated and right-associated
+application-tree shapes. It skips `(AB)C` when `AB` is excluded and
+independently skips `A(BC)` when `BC` is excluded. In the left-associated
+`ABC` shape, it also skips every saturated `K<anything><anything>` expression;
+the partially applied `K(BC)` right-associated shape remains eligible. It also
+skips `SK<anything>` in the `ABC` shape while retaining `S(K<anything>)`.
+`check_for_quads_match(symbol_list, expression)` checks 3,320,516 eligible
+quad applications across the five application trees `ABCD`, `AB(CD)`,
+`A(BC)D`, `A(BCD)`, and `A(B(CD))`. It inherits the pair and trip exclusions
+at every pair or trip subtree. Both pair subtrees in `AB(CD)` must be eligible,
+and the `Kxx` and `SKx` exclusions are checked in both left-associated triplet
+positions, `ABC` and `BCD`. The exhaustive quad search is not run automatically;
+call `check_for_quads_match` explicitly when its potentially minutes-long
+search is wanted.
+
+```cpp
+std::array const symbols{
+    quoted_atomic{x}, quoted_atomic{y},
+    quoted_atomic{z}, quoted_atomic{w},
+};
+auto target = quote(x)(y)(quote(x)(w)(z));
+auto one_match = check_for_match(I(J), symbols, target); // true
+auto pair_matches = check_for_pairs_match(symbols, target); // empty
+auto trip_matches = check_for_trips_match(
+    std::span<quoted_atomic const>{},
+    quote(A)(quote(A)(A))); // starts with AAA and A(AA)
+// Run only when the exhaustive search is wanted:
+auto quad_matches = check_for_quads_match(symbols, target);
+```
+
+`AB` and `BA` are separate candidates. For each remaining triplet, both
+`(AB)C`, printed as `ABC`, and `A(BC)` are included and are not deduplicated
+even if they normalize to the same result. The pair, trip, and quad pools omit
+`J` to avoid trivial Jay matches and omit `Y` to avoid recursive candidates;
+`check_for_match` itself accepts either combinator.
+The `I`-headed exclusions avoid redundant matches because `Ix` reduces to
+`x`. The fixed `MM`, `MU`, `UM`, and `UU` exclusions avoid pairs that do not
+reach normal form under the matcher's bounded normalization. This trip and
+quad subtree pruning checks every position for all four pairs and is
+deliberately heuristic because surrounding application context can make an
+excluded pair normalize.
+Each normalization is limited to
+`check_for_match_reduction_limit` reductions, currently 256, and also stops on
+a repeated or excessively large expression. A stopped normalization is treated
+as a non-match, preventing a divergent candidate from blocking the remaining
+candidates.
+Native `check_for_trips_match` and `check_for_quads_match` dynamically
+distribute work among up to `std::thread::hardware_concurrency()`
+`std::jthread` workers. Matches are recorded by original candidate index and
+collected in index order, preserving the sequential result order. The quad
+search constructs candidates on demand rather than retaining millions of
+expression trees. Emscripten builds retain the single-threaded searches.
 
 Names created with `set` or `define` may be redefined. A changed definition
 replaces the user-defined basis for future parsing; expressions parsed earlier
@@ -568,7 +631,7 @@ expression produces no output, while malformed or empty lines throw
 The `crepl` executable applies `input_escape` to each line before passing it to
 `parse_eval`, so ordinary quoted words and backslashes can be entered directly.
 When standard output is a terminal, it first prints
-`Combinator Read-Eval-Print Loop, version 2.0.3`. Long evaluations display
+`Combinator Read-Eval-Print Loop, version 2.0.20`. Long evaluations display
 the accumulated step count every 1,000 reductions by overwriting one status
 line; the line is cleared before evaluation output is printed. Its interactive
 prompt is `>`. Redirected output contains no progress status. Enter

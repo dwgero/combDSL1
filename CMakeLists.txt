@@ -34,6 +34,12 @@ target_include_directories(
         $<INSTALL_INTERFACE:include>
 )
 
+if(NOT EMSCRIPTEN)
+    set(THREADS_PREFER_PTHREAD_FLAG TRUE)
+    find_package(Threads REQUIRED)
+    target_link_libraries(combdsl INTERFACE Threads::Threads)
+endif()
+
 if(CMAKE_SOURCE_DIR STREQUAL PROJECT_SOURCE_DIR)
     set(COMBDSL_TOP_LEVEL ON)
 else()

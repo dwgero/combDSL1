@@ -269,6 +269,43 @@ static_assert(
 static_assert(std::is_same_v<
               decltype(combdsl::search_for_subexp(S(B)(T))),
               std::optional<combdsl::subexpression_search_match>>);
+static_assert(
+    combdsl::check_for_pairs_match_candidate_count == 808);
+static_assert(
+    combdsl::check_for_trips_match_candidate_count == 45'994);
+static_assert(
+    combdsl::check_for_quads_match_tuple_count == 707'281);
+static_assert(
+    combdsl::check_for_quads_match_candidate_count == 3'320'516);
+static_assert(
+    combdsl::check_for_quads_match_candidate_count ==
+    2 * combdsl::check_for_match_combinator_count *
+        combdsl::check_for_trips_match_candidate_count +
+    combdsl::check_for_pairs_match_candidate_count *
+        combdsl::check_for_pairs_match_candidate_count);
+using combinator_match_symbol_span =
+    std::span<combdsl::quoted_atomic const>;
+static_assert(std::is_same_v<
+              decltype(combdsl::check_for_match(
+                  std::declval<combdsl::quoted_expression>(),
+                  std::declval<combinator_match_symbol_span>(),
+                  std::declval<combdsl::quoted_expression const&>())),
+              bool>);
+static_assert(std::is_same_v<
+              decltype(combdsl::check_for_pairs_match(
+                  std::declval<combinator_match_symbol_span>(),
+                  std::declval<combdsl::quoted_expression const&>())),
+              std::vector<combdsl::quoted_expression>>);
+static_assert(std::is_same_v<
+              decltype(combdsl::check_for_trips_match(
+                  std::declval<combinator_match_symbol_span>(),
+                  std::declval<combdsl::quoted_expression const&>())),
+              std::vector<combdsl::quoted_expression>>);
+static_assert(std::is_same_v<
+              decltype(combdsl::check_for_quads_match(
+                  std::declval<combinator_match_symbol_span>(),
+                  std::declval<combdsl::quoted_expression const&>())),
+              std::vector<combdsl::quoted_expression>>);
 static_assert(is_single_utf8_char(
     std::string_view("\xF0\x9F\x98\x80", 4)));
 static_assert(!is_single_utf8_char(
@@ -1290,7 +1327,7 @@ int main() {
          single_step(parse("Flip a b")), "ba");
     test("show exposes one level of a defined basis",
          parse("show Flip"), "arity:2 T");
-    test("define optimizes BCT to V",
+    test("define chains BC and C*T optimizations to V",
          parse("define DefV x = C(Tx)"), "DefV");
     test("show exposes the optimized Vireo",
          parse("show DefV"), "arity:1 V");
@@ -1302,10 +1339,66 @@ int main() {
          parse("show DefD"), "arity:1 D");
     test("optimized Dove preserves behavior",
          single_step(single_step(parse("DefD a b c d"))), "ab(cd)");
-    test("define recursively optimizes nested BCT",
+    test("define recursively chains BC and C*T to V",
          parse("define DefKV x = BCT"), "DefKV");
     test("show exposes nested Vireo optimization",
          parse("show DefKV"), "arity:1 KV");
+    test("define recursively optimizes nested C*T",
+         parse("define DefKCstarT x = C*T"), "DefKCstarT");
+    test("show exposes direct C*T Vireo optimization",
+         parse("show DefKCstarT"), "arity:1 KV");
+    test("define optimizes BC to Cardinal star",
+         parse("define OptCstar xyzw = xywz"), "OptCstar");
+    test("show exposes optimized Cardinal star",
+         parse("show OptCstar"), "arity:4 C*");
+    test("define recursively optimizes nested BC",
+         parse("define DefKCstar x = BC"), "DefKCstar");
+    test("show exposes nested Cardinal star optimization",
+         parse("show DefKCstar"), "arity:1 K C*");
+    test("define optimizes B C* to Cardinal star star",
+         parse("define OptCstarstar xyzwv = xyzvw"), "OptCstarstar");
+    test("show exposes optimized Cardinal star star",
+         parse("show OptCstarstar"), "arity:5 C**");
+    test("define recursively optimizes nested B C*",
+         parse("define DefKCstarstar x = B C*"), "DefKCstarstar");
+    test("show exposes nested Cardinal star star optimization",
+         parse("show DefKCstarstar"), "arity:1 K C**");
+    test("define optimizes B(QT)R to Finch",
+         parse("define OptF xyz = zyx"), "OptF");
+    test("show exposes optimized Finch",
+         parse("show OptF"), "arity:3 F");
+    test("optimized Finch preserves behavior",
+         single_step(single_step(parse("OptF a b c"))), "cba");
+    test("define recursively optimizes nested B(QT)R",
+         parse("define DefKF x = B(QT)R"), "DefKF");
+    test("show exposes nested Finch optimization",
+         parse("show DefKF"), "arity:1 KF");
+    test("define optimizes B(QT)B to Quixotic bird",
+         parse("define OptQ1 xyz = x(zy)"), "OptQ1");
+    test("show exposes optimized Quixotic bird",
+         parse("show OptQ1"), "arity:3 Q1");
+    test("optimized Quixotic bird preserves behavior",
+         single_step(single_step(parse("OptQ1 a b c"))), "a(cb)");
+    test("define recursively optimizes nested B(QT)B",
+         parse("define DefKQ1 x = B(QT)B"), "DefKQ1");
+    test("show exposes nested Quixotic optimization",
+         parse("show DefKQ1"), "arity:1 K Q1");
+    test("define optimizes BDD to Eagle",
+         parse("define OptE xyzwv = xy(zwv)"), "OptE");
+    test("show exposes optimized Eagle",
+         parse("show OptE"), "arity:5 E");
+    test("define recursively optimizes nested BDD",
+         parse("define DefKE x = BDD"), "DefKE");
+    test("show exposes nested Eagle optimization",
+         parse("show DefKE"), "arity:1 KE");
+    test("define optimizes BOM to Turing bird",
+         parse("define OptU xy = y(xxy)"), "OptU");
+    test("show exposes optimized Turing bird",
+         parse("show OptU"), "arity:2 U");
+    test("define recursively optimizes nested BOM",
+         parse("define DefKU x = BOM"), "DefKU");
+    test("show exposes nested Turing bird optimization",
+         parse("show DefKU"), "arity:1 KU");
     test("define recursively optimizes nested BT",
          parse("define DefKQ3 x = BT"), "DefKQ3");
     test("show exposes nested Quirky optimization",
@@ -1346,6 +1439,14 @@ int main() {
          parse("define DefKH x = SR"), "DefKH");
     test("show exposes nested H optimization",
          parse("show DefKH"), "arity:1 KH");
+    test("define optimizes DC to Goldfinch",
+         parse("define OptG xyzw = xw(yz)"), "OptG");
+    test("show exposes optimized Goldfinch",
+         parse("show OptG"), "arity:4 G");
+    test("define recursively optimizes nested DC",
+         parse("define DefKG x = DC"), "DefKG");
+    test("show exposes nested Goldfinch optimization",
+         parse("show DefKG"), "arity:1 KG");
     test("define optimizes QM to L",
          parse("define DefL xy = x(yy)"), "DefL");
     test("show exposes the optimized Lark",
@@ -1366,6 +1467,14 @@ int main() {
          parse("define DefKN x = WC"), "DefKN");
     test("show exposes nested Nightingale optimization",
          parse("show DefKN"), "arity:1 KN");
+    test("define optimizes WV to Converse warbler",
+         parse("define OptW1 xy = yxx"), "OptW1");
+    test("show exposes optimized Converse warbler",
+         parse("show OptW1"), "arity:2 W1");
+    test("define recursively optimizes nested WV",
+         parse("define DefKW1 x = WV"), "DefKW1");
+    test("show exposes nested Converse warbler optimization",
+         parse("show DefKW1"), "arity:1 K W1");
     test("define preserves nested WR",
          parse("define DefKNR x = WR"), "DefKNR");
     test("show exposes nested unoptimized WR",
@@ -1390,6 +1499,15 @@ int main() {
          parse("define DefKZ x = WB"), "DefKZ");
     test("show exposes nested Zazu optimization",
          parse("show DefKZ"), "arity:1 KZ");
+    test("define optimizes BW* to Warbler star star",
+         parse("define OptWstarstar xyzw = xyzww"),
+         "OptWstarstar");
+    test("show exposes optimized Warbler star star",
+         parse("show OptWstarstar"), "arity:4 W**");
+    test("define recursively optimizes nested BW*",
+         parse("define DefKWss x = B W*"), "DefKWss");
+    test("show exposes nested Warbler star star optimization",
+         parse("show DefKWss"), "arity:1 K W**");
     test("define preprocessing creates the Bluebird",
          parse("define DefB xyz = Qyxz"), "DefB");
     test("show exposes the preprocessed Bluebird",
@@ -1455,7 +1573,7 @@ int main() {
     test("compact one-letter define recognizes recursion",
          parse("define Xx = x(Xx)"), "X");
     test("compact recursive define is wrapped in Y",
-         parse("show X"), "arity:1 YO");
+         parse("show X"), "arity:1 Y");
     test("two-character define names retain their spaced symbol",
          parse("define Gx y = y"), "Gx");
     test("two-character define name registers without becoming G",
@@ -1546,8 +1664,8 @@ int main() {
          single_step(parse("Q3xyz")), "z(xy)");
     test("define recognizes a recursive name",
          parse("define Repeat x = x(Repeat x)"), "Repeat");
-    test("recursive define stores a Y application",
-         parse("show Repeat"), "arity:1 YO");
+    test("recursive define optimizes YO to Y",
+         parse("show Repeat"), "arity:1 Y");
     test("set list preserves a recursive define",
          [] {
              auto definitions = set_list();
@@ -1558,6 +1676,10 @@ int main() {
                      : line_position + 1);
          },
          "define Repeat x = x(Repeat x)");
+    test("define recursively optimizes nested YO",
+         parse("define DefKY x = YO"), "DefKY");
+    test("show exposes nested Sage optimization",
+         parse("show DefKY"), "arity:1 KY");
     test("recursive define can reach a terminating result",
          parse("define Recur x = Kx Recur"), "Recur");
     test("show exposes recursive abstraction",
@@ -2955,6 +3077,316 @@ int main() {
                  combdsl::detail::contains_quoted_subexpression(
                      quote(Y),
                      quote(B)(K)(K));
+         },
+         "0");
+    std::array const j_match_symbols{
+        quoted_atomic{x},
+        quoted_atomic{y},
+        quoted_atomic{z},
+        quoted_atomic{w},
+    };
+    auto const j_match_expression =
+        quote(x)(y)(quote(x)(w)(z));
+    test("check for match appends symbols in order",
+         [&] {
+             std::cout << combdsl::check_for_match(
+                 I(J),
+                 j_match_symbols,
+                 j_match_expression);
+         },
+         "1");
+    test("check for match rejects a different reduction",
+         [&] {
+             std::cout << combdsl::check_for_match(
+                 I(K),
+                 j_match_symbols,
+                 j_match_expression);
+         },
+         "0");
+    test("check for match safely rejects a reduction cycle",
+         [&] {
+             std::cout << combdsl::check_for_match(
+                 M(M),
+                 j_match_symbols,
+                 j_match_expression);
+         },
+         "0");
+    test("pair and trip search catalog excludes J and Y",
+         [] {
+             bool contains_j = false;
+             bool contains_y = false;
+             for (auto const& combinator :
+                  combdsl::detail::predefined_bird_combinators()) {
+                 contains_j =
+                     contains_j ||
+                     combdsl::detail::same_parser_definition_expression(
+                         combinator, quote(J));
+                 contains_y =
+                     contains_y ||
+                     combdsl::detail::same_parser_definition_expression(
+                         combinator, quote(Y));
+             }
+             std::cout << contains_j << contains_y;
+         },
+         "00");
+    test("fixed match pair exclusions include I anything",
+         [] {
+             std::size_t excluded_count = 0;
+             auto const& combinators =
+                 combdsl::detail::predefined_bird_combinators();
+             for (auto const& function : combinators) {
+                 for (auto const& argument : combinators) {
+                     if (combdsl::detail::is_excluded_match_pair(
+                             function, argument)) {
+                         ++excluded_count;
+                     }
+                 }
+             }
+             std::cout
+                 << excluded_count << ' '
+                 << combdsl::detail::is_excluded_match_pair(
+                        quote(I), quote(A))
+                 << combdsl::detail::is_excluded_match_pair(
+                        quote(I), quote(Z))
+                 << combdsl::detail::is_excluded_match_pair(
+                        quote(M), quote(M))
+                 << combdsl::detail::is_excluded_match_pair(
+                        quote(M), quote(U))
+                 << combdsl::detail::is_excluded_match_pair(
+                        quote(U), quote(M))
+                 << combdsl::detail::is_excluded_match_pair(
+                        quote(U), quote(U))
+                 << ' '
+                 << combdsl::detail::is_excluded_match_pair(
+                        quote(A), quote(I));
+         },
+         "33 111111 0");
+    std::vector<combdsl::quoted_expression> first_pairs;
+    first_pairs.reserve(2);
+    std::size_t generated_pair_count = 0;
+    combdsl::detail::for_each_predefined_bird_pair(
+        [&](combdsl::quoted_expression pair) {
+            if (first_pairs.size() < 2) {
+                first_pairs.push_back(std::move(pair));
+            }
+            ++generated_pair_count;
+        });
+    test("pair generator skips fixed terrible twos",
+         [&] {
+             std::cout << generated_pair_count << ' ';
+             if (first_pairs.size() >= 2) {
+                 first_pairs[0].print_to(std::cout);
+                 std::cout << ' ';
+                 first_pairs[1].print_to(std::cout);
+             } else {
+                 std::cout << first_pairs.size();
+             }
+         },
+         "808 AA AB");
+    auto const j_pair_matches =
+        combdsl::check_for_pairs_match(
+            j_match_symbols,
+            j_match_expression);
+    test("pair matching searches 808 ordered pairs without J or Y",
+         [&] {
+             std::cout << j_pair_matches.size();
+         },
+         "0");
+    std::vector<combdsl::quoted_expression> first_trips;
+    first_trips.reserve(2);
+    std::size_t generated_trip_count = 0;
+    bool generated_saturated_k = false;
+    bool generated_right_partial_k = false;
+    bool generated_left_sk = false;
+    bool generated_right_sk = false;
+    combdsl::detail::for_each_predefined_bird_trip(
+        [&](combdsl::quoted_expression trip) {
+            generated_saturated_k =
+                generated_saturated_k ||
+                combdsl::detail::same_parser_definition_expression(
+                    trip, quote(K)(A)(A));
+            generated_right_partial_k =
+                generated_right_partial_k ||
+                combdsl::detail::same_parser_definition_expression(
+                    trip, quote(K)(quote(A)(A)));
+            generated_left_sk =
+                generated_left_sk ||
+                combdsl::detail::same_parser_definition_expression(
+                    trip, quote(S)(K)(A));
+            generated_right_sk =
+                generated_right_sk ||
+                combdsl::detail::same_parser_definition_expression(
+                    trip, quote(S)(quote(K)(A)));
+            if (first_trips.size() < 2) {
+                first_trips.push_back(std::move(trip));
+            }
+            ++generated_trip_count;
+        });
+    test("trip generator skips fixed terrible twos",
+         [&] {
+             std::cout << generated_trip_count << ' '
+                       << generated_saturated_k
+                       << generated_right_partial_k
+                       << generated_left_sk
+                       << generated_right_sk << ' ';
+             if (first_trips.size() >= 2) {
+                 first_trips[0].print_to(std::cout);
+                 std::cout << ' ';
+                 first_trips[1].print_to(std::cout);
+             } else {
+                 std::cout << first_trips.size();
+             }
+         },
+         "45994 0101 AAA A(AA)");
+    auto const a_trip_target = quote(A)(quote(A)(A));
+    auto const parallel_trip_matches =
+        combdsl::check_for_trips_match(
+            std::span<quoted_atomic const>{},
+            a_trip_target);
+    test("native parallel trip matching preserves candidate order",
+         [&] {
+             std::cout << parallel_trip_matches.size();
+             if (parallel_trip_matches.size() >= 2) {
+                 std::cout << ' ';
+                 parallel_trip_matches[0].print_to(std::cout);
+                 std::cout << ' ';
+                 parallel_trip_matches[1].print_to(std::cout);
+             }
+         },
+         "30 AAA A(AA)");
+    test("AAA and A(AA) both match the same target",
+         [&] {
+             std::cout << combdsl::check_for_match(
+                              quote(A)(A)(A),
+                              std::span<quoted_atomic const>{},
+                              a_trip_target)
+                       << combdsl::check_for_match(
+                              quote(A)(quote(A)(A)),
+                              std::span<quoted_atomic const>{},
+                              a_trip_target);
+         },
+         "11");
+    std::vector<combdsl::quoted_expression> first_quad_shapes;
+    combdsl::detail::for_each_predefined_bird_quad_at(
+        0,
+        [&](std::size_t, combdsl::quoted_expression quad) {
+            first_quad_shapes.push_back(std::move(quad));
+        });
+    test("quad shape construction does not run exhaustive search",
+         [&] {
+             std::cout << first_quad_shapes.size();
+             for (auto const& quad : first_quad_shapes) {
+                 std::cout << ' ';
+                 quad.print_to(std::cout);
+             }
+         },
+         "5 AAAA AA(AA) A(AA)A A(AAA) A(A(AA))");
+    auto quad_shape_presence =
+        [](std::size_t first,
+           std::size_t second,
+           std::size_t third,
+           std::size_t fourth) {
+            constexpr auto combinator_count =
+                combdsl::check_for_match_combinator_count;
+            auto const tuple_index =
+                ((first * combinator_count + second) *
+                     combinator_count +
+                 third) *
+                    combinator_count +
+                fourth;
+            std::array<
+                bool,
+                combdsl::check_for_quads_match_shape_count>
+                present{};
+            combdsl::detail::for_each_predefined_bird_quad_at(
+                tuple_index,
+                [&](std::size_t shape_index,
+                    combdsl::quoted_expression) {
+                    present[shape_index] = true;
+                });
+            return present;
+        };
+    constexpr std::size_t a_index = 0;
+    constexpr std::size_t i_index = 10;
+    constexpr std::size_t k_index = 11;
+    constexpr std::size_t m_index = 13;
+    constexpr std::size_t s_index = 20;
+    constexpr std::size_t u_index = 22;
+    test("quad exclusions cover every pair and triplet position",
+         [&] {
+             auto print_presence =
+                 [](auto const& presence) {
+                     for (auto const present : presence) {
+                         std::cout << present;
+                     }
+                 };
+             print_presence(quad_shape_presence(
+                 i_index, a_index, a_index, a_index));
+             std::cout << ' ';
+             print_presence(quad_shape_presence(
+                 a_index, i_index, a_index, a_index));
+             std::cout << ' ';
+             print_presence(quad_shape_presence(
+                 a_index, a_index, i_index, a_index));
+             std::cout << " | ";
+             std::array const mockingbird_turing_pairs{
+                 std::pair{m_index, m_index},
+                 std::pair{m_index, u_index},
+                 std::pair{u_index, m_index},
+                 std::pair{u_index, u_index},
+             };
+             bool first_pair = true;
+             for (auto const [function, argument] :
+                  mockingbird_turing_pairs) {
+                 if (!first_pair) {
+                     std::cout << " | ";
+                 }
+                 first_pair = false;
+                 print_presence(quad_shape_presence(
+                     function,
+                     argument,
+                     a_index,
+                     a_index));
+                 std::cout << ' ';
+                 print_presence(quad_shape_presence(
+                     a_index,
+                     function,
+                     argument,
+                     a_index));
+                 std::cout << ' ';
+                 print_presence(quad_shape_presence(
+                     a_index,
+                     a_index,
+                     function,
+                     argument));
+             }
+             std::cout << " | ";
+             print_presence(quad_shape_presence(
+                 k_index, a_index, a_index, a_index));
+             std::cout << ' ';
+             print_presence(quad_shape_presence(
+                 a_index, k_index, a_index, a_index));
+             std::cout << " | ";
+             print_presence(quad_shape_presence(
+                 s_index, k_index, a_index, a_index));
+             std::cout << ' ';
+             print_presence(quad_shape_presence(
+                 a_index, s_index, k_index, a_index));
+         },
+         "00111 11001 10110 | "
+         "00111 11001 10110 | "
+         "00111 11001 10110 | "
+         "00111 11001 10110 | "
+         "00111 11001 10110 | "
+         "01111 11101 | "
+         "01101 11101");
+    auto const divergent_quad_matches =
+        combdsl::check_for_quads_match(
+            std::span<quoted_atomic const>{},
+            quote(M)(M));
+    test("quad matching rejects divergent target before search",
+         [&] {
+             std::cout << divergent_quad_matches.size();
          },
          "0");
     const auto recursive_x = combdsl::detail::make_quoted_rec_func(
