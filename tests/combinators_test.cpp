@@ -16,8 +16,6 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include <fmt/format.h>
-
 #include <combdsl/combinators.hpp>
 #include <combdsl/color_step_ansi.hpp>
 

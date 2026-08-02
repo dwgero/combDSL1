@@ -50,6 +50,122 @@ option(COMBDSL_BUILD_EXAMPLES "Build the combDSL example" ${COMBDSL_TOP_LEVEL})
 option(COMBDSL_BUILD_TESTS "Build the combDSL tests" ${COMBDSL_TOP_LEVEL})
 option(COMBDSL_BUILD_BROWSER "Build the browser WebAssembly application" OFF)
 
+if(COMBDSL_TOP_LEVEL)
+    if(POLICY CMP0135)
+        cmake_policy(SET CMP0135 NEW)
+    endif()
+
+    include(ExternalProject)
+    set(
+        COMBDSL_FMT_RELEASE_METADATA_URL
+        "https://api.github.com/repos/fmtlib/fmt/releases/latest"
+    )
+    set(COMBDSL_FMT_TEMP_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/fmt")
+    set(
+        COMBDSL_FMT_RELEASE_METADATA
+        "${COMBDSL_FMT_TEMP_DIRECTORY}/latest-release.json"
+    )
+    file(MAKE_DIRECTORY "${COMBDSL_FMT_TEMP_DIRECTORY}")
+    file(
+        DOWNLOAD
+        "${COMBDSL_FMT_RELEASE_METADATA_URL}"
+        "${COMBDSL_FMT_RELEASE_METADATA}"
+        STATUS COMBDSL_FMT_METADATA_STATUS
+        HTTPHEADER "Accept: application/vnd.github+json"
+        HTTPHEADER "X-GitHub-Api-Version: 2022-11-28"
+        HTTPHEADER "User-Agent: combDSL-CMake"
+        TLS_VERIFY ON
+        TIMEOUT 30
+        INACTIVITY_TIMEOUT 15
+    )
+    list(GET COMBDSL_FMT_METADATA_STATUS 0 COMBDSL_FMT_METADATA_STATUS_CODE)
+    list(GET COMBDSL_FMT_METADATA_STATUS 1 COMBDSL_FMT_METADATA_STATUS_MESSAGE)
+    if(NOT COMBDSL_FMT_METADATA_STATUS_CODE EQUAL 0)
+        message(
+            FATAL_ERROR
+            "Unable to read the latest fmt release metadata: "
+            "${COMBDSL_FMT_METADATA_STATUS_MESSAGE}"
+        )
+    endif()
+
+    file(READ "${COMBDSL_FMT_RELEASE_METADATA}" COMBDSL_FMT_METADATA)
+    string(JSON COMBDSL_FMT_RELEASE_TAG GET "${COMBDSL_FMT_METADATA}" tag_name)
+    string(REGEX REPLACE "^v" "" COMBDSL_FMT_VERSION "${COMBDSL_FMT_RELEASE_TAG}")
+    set(COMBDSL_FMT_ARCHIVE "fmt-${COMBDSL_FMT_VERSION}.zip")
+
+    string(JSON COMBDSL_FMT_ASSET_COUNT LENGTH "${COMBDSL_FMT_METADATA}" assets)
+    if(COMBDSL_FMT_ASSET_COUNT EQUAL 0)
+        message(FATAL_ERROR "The latest fmt release has no downloadable assets")
+    endif()
+    math(EXPR COMBDSL_FMT_LAST_ASSET "${COMBDSL_FMT_ASSET_COUNT} - 1")
+    unset(COMBDSL_FMT_URL)
+    unset(COMBDSL_FMT_DIGEST)
+    foreach(COMBDSL_FMT_ASSET_INDEX RANGE ${COMBDSL_FMT_LAST_ASSET})
+        string(
+            JSON COMBDSL_FMT_ASSET_NAME
+            GET "${COMBDSL_FMT_METADATA}"
+            assets ${COMBDSL_FMT_ASSET_INDEX} name
+        )
+        if("${COMBDSL_FMT_ASSET_NAME}" STREQUAL "${COMBDSL_FMT_ARCHIVE}")
+            string(
+                JSON COMBDSL_FMT_URL
+                GET "${COMBDSL_FMT_METADATA}"
+                assets ${COMBDSL_FMT_ASSET_INDEX} browser_download_url
+            )
+            string(
+                JSON COMBDSL_FMT_DIGEST
+                GET "${COMBDSL_FMT_METADATA}"
+                assets ${COMBDSL_FMT_ASSET_INDEX} digest
+            )
+            break()
+        endif()
+    endforeach()
+
+    if(NOT DEFINED COMBDSL_FMT_URL)
+        message(
+            FATAL_ERROR
+            "The latest fmt release does not contain ${COMBDSL_FMT_ARCHIVE}"
+        )
+    endif()
+    if(NOT COMBDSL_FMT_DIGEST MATCHES "^sha256:[0-9a-fA-F]+$")
+        message(
+            FATAL_ERROR
+            "The latest fmt release does not provide a SHA-256 digest for "
+            "${COMBDSL_FMT_ARCHIVE}"
+        )
+    endif()
+    string(REGEX REPLACE "^sha256:" "" COMBDSL_FMT_SHA256 "${COMBDSL_FMT_DIGEST}")
+    string(LENGTH "${COMBDSL_FMT_SHA256}" COMBDSL_FMT_SHA256_LENGTH)
+    if(NOT COMBDSL_FMT_SHA256_LENGTH EQUAL 64)
+        message(
+            FATAL_ERROR
+            "The latest fmt release has an invalid SHA-256 digest for "
+            "${COMBDSL_FMT_ARCHIVE}"
+        )
+    endif()
+    message(STATUS "Selected latest fmt release ${COMBDSL_FMT_RELEASE_TAG}")
+
+    ExternalProject_Add(
+        combdsl_fmt
+        URL "${COMBDSL_FMT_URL}"
+        URL_HASH "SHA256=${COMBDSL_FMT_SHA256}"
+        PREFIX "${COMBDSL_FMT_TEMP_DIRECTORY}"
+        DOWNLOAD_DIR "${COMBDSL_FMT_TEMP_DIRECTORY}/download"
+        SOURCE_DIR "${COMBDSL_FMT_TEMP_DIRECTORY}/source"
+        TLS_VERIFY TRUE
+        TIMEOUT 60
+        INACTIVITY_TIMEOUT 30
+        CONFIGURE_COMMAND ""
+        BUILD_COMMAND ""
+        INSTALL_COMMAND
+            "${CMAKE_COMMAND}" -E copy_directory
+            <SOURCE_DIR>/include/fmt
+            "${CMAKE_CURRENT_SOURCE_DIR}/include/fmt"
+        TEST_COMMAND ""
+        EXCLUDE_FROM_ALL TRUE
+    )
+endif()
+
 if(COMBDSL_BUILD_EXAMPLES)
     if(POLICY CMP0135)
         cmake_policy(SET CMP0135 NEW)
@@ -136,6 +252,9 @@ if(COMBDSL_BUILD_EXAMPLES)
         target_link_options(crepl PRIVATE -Wl,-search_paths_first)
     endif()
     add_dependencies(crepl combdsl_readline)
+    if(TARGET combdsl_fmt)
+        add_dependencies(crepl combdsl_fmt)
+    endif()
     add_custom_command(
         TARGET crepl
         POST_BUILD
@@ -267,6 +386,9 @@ if(COMBDSL_BUILD_TESTS)
         tests/registered_basis_test_support.cpp
     )
     target_link_libraries(combdsl_tests PRIVATE combdsl::combdsl)
+    if(TARGET combdsl_fmt)
+        add_dependencies(combdsl_tests combdsl_fmt)
+    endif()
 
     add_executable(
         combdsl_browser_load_tests

@@ -793,6 +793,14 @@ ctest --test-dir build --output-on-failure
 ./build/crepl
 ```
 
+The `crepl` and `combdsl_tests` targets depend on `combdsl_fmt`. During
+configuration, CMake queries GitHub for the latest fmt release and obtains the
+release archive’s SHA-256 digest. On its first build, `combdsl_fmt` downloads
+and verifies that archive in the build directory, then copies its `include/fmt`
+directory to the project’s `include/fmt` directory. It can also be run directly
+with `cmake --build build --target combdsl_fmt`. Top-level CMake configuration
+therefore requires access to GitHub’s release API.
+
 ### Browser WebAssembly
 
 The browser target exposes the equivalent of

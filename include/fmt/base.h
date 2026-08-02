@@ -223,11 +223,6 @@
 #else
 #  define FMT_PRAGMA_CLANG(x)
 #endif
-#if FMT_MSC_VERSION
-#  define FMT_PRAGMA_MSVC(x) __pragma(x)
-#else
-#  define FMT_PRAGMA_MSVC(x)
-#endif
 
 #ifndef FMT_USE_OPTIMIZE_PRAGMA
 #  define FMT_USE_OPTIMIZE_PRAGMA 1
@@ -239,9 +234,6 @@ FMT_PRAGMA_GCC(push_options)
     !defined(__CUDACC__) && !defined(FMT_MODULE)
 FMT_PRAGMA_GCC(optimize("Og"))
 #endif
-
-FMT_PRAGMA_MSVC(warning(push))
-FMT_PRAGMA_MSVC(warning(disable : 4702))
 
 #ifdef FMT_DEPRECATED
 // Use the provided definition.
@@ -501,10 +493,9 @@ inline FMT_CONSTEXPR auto get_container(OutputIt it) ->
 template <typename T, typename Enable = void>
 struct is_contiguous : std::false_type {};
 template <typename T>
-struct is_contiguous<T,
-                     void_t<decltype(std::declval<T&>().data()),
-                            decltype(std::declval<T&>().size()),
-                            decltype(std::declval<T&>().operator[](size_t()))>>
+struct is_contiguous<T, void_t<decltype(std::declval<T&>().data()),
+                               decltype(std::declval<T&>().size()),
+                               decltype(std::declval<T&>()[size_t()])>>
     : std::true_type {};
 }  // namespace detail
 
@@ -2944,7 +2935,6 @@ FMT_INLINE void println(format_string<T...> fmt, T&&... args) {
 }
 
 FMT_PRAGMA_GCC(pop_options)
-FMT_PRAGMA_MSVC(warning(pop))
 FMT_END_EXPORT
 FMT_END_NAMESPACE
 
