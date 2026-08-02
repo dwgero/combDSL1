@@ -20,7 +20,7 @@ project(
     combDSL
     VERSION 1.0.0
     DESCRIPTION "A small, functional SKIY combinator DSL for modern C++"
-    LANGUAGES CXX
+    LANGUAGES C CXX
 )
 
 add_library(combdsl INTERFACE)
@@ -51,8 +51,101 @@ option(COMBDSL_BUILD_TESTS "Build the combDSL tests" ${COMBDSL_TOP_LEVEL})
 option(COMBDSL_BUILD_BROWSER "Build the browser WebAssembly application" OFF)
 
 if(COMBDSL_BUILD_EXAMPLES)
+    if(POLICY CMP0135)
+        cmake_policy(SET CMP0135 NEW)
+    endif()
+
+    include(ExternalProject)
+    find_program(COMBDSL_MAKE_EXECUTABLE NAMES make gmake REQUIRED)
+    ExternalProject_Add(
+        combdsl_ncurses
+        URL
+            "https://invisible-island.net/archives/ncurses/current/ncurses.tar.gz"
+        SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/ncurses"
+        DOWNLOAD_DIR "${CMAKE_CURRENT_BINARY_DIR}/downloads"
+        TLS_VERIFY TRUE
+        CONFIGURE_COMMAND
+            <SOURCE_DIR>/configure
+            "--bindir=${CMAKE_CURRENT_SOURCE_DIR}/bin"
+            "--libdir=${CMAKE_CURRENT_SOURCE_DIR}/lib"
+            "--includedir=${CMAKE_CURRENT_SOURCE_DIR}/include"
+            --without-manpages
+            --enable-termcap
+            --enable-ext-colors
+            --enable-rgb-color
+        BUILD_COMMAND "${COMBDSL_MAKE_EXECUTABLE}"
+        BUILD_IN_SOURCE TRUE
+        INSTALL_COMMAND
+            "${CMAKE_COMMAND}" -E env
+            "PATH=${CMAKE_CURRENT_SOURCE_DIR}/bin:$ENV{PATH}"
+            "${COMBDSL_MAKE_EXECUTABLE}" install
+        TEST_COMMAND ""
+        EXCLUDE_FROM_ALL TRUE
+    )
+
+    set(COMBDSL_READLINE_LDFLAGS
+        "-L${CMAKE_CURRENT_SOURCE_DIR}/lib")
+    if(APPLE)
+        string(APPEND COMBDSL_READLINE_LDFLAGS
+            " -Wl,-search_paths_first")
+    endif()
+
+    ExternalProject_Add(
+        combdsl_readline
+        GIT_REPOSITORY
+            "git://git.git.savannah.gnu.org/readline.git"
+        GIT_TAG 553d6bb272f26400d6d4d1cac7c1df84c447449b
+        GIT_PROGRESS TRUE
+        SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/readline"
+        CONFIGURE_COMMAND
+            "${CMAKE_COMMAND}" -E env
+            "PATH=${CMAKE_CURRENT_SOURCE_DIR}/bin:$ENV{PATH}"
+            "CPPFLAGS=-I${CMAKE_CURRENT_SOURCE_DIR}/include"
+            "LDFLAGS=${COMBDSL_READLINE_LDFLAGS}"
+            "bash_cv_termcap_lib=libncursesw"
+            <SOURCE_DIR>/configure
+            "--prefix=${CMAKE_CURRENT_SOURCE_DIR}"
+            "--bindir=${CMAKE_CURRENT_SOURCE_DIR}/bin"
+            "--libdir=${CMAKE_CURRENT_SOURCE_DIR}/lib"
+            "--includedir=${CMAKE_CURRENT_SOURCE_DIR}/include"
+            --disable-shared
+            --disable-install-examples
+            --enable-multibyte
+            --with-curses
+        BUILD_COMMAND "${COMBDSL_MAKE_EXECUTABLE}"
+        BUILD_IN_SOURCE TRUE
+        INSTALL_COMMAND
+            "${CMAKE_COMMAND}" -E env
+            "PATH=${CMAKE_CURRENT_SOURCE_DIR}/bin:$ENV{PATH}"
+            "${COMBDSL_MAKE_EXECUTABLE}" install
+        TEST_COMMAND ""
+        DEPENDS combdsl_ncurses
+        EXCLUDE_FROM_ALL TRUE
+    )
+
     add_executable(crepl crepl.cpp)
-    target_link_libraries(crepl PRIVATE combdsl::combdsl)
+    target_link_directories(crepl PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/lib")
+    target_link_libraries(
+        crepl
+        PRIVATE
+            combdsl::combdsl
+            readline
+            ncursesw
+    )
+    if(APPLE)
+        target_link_options(crepl PRIVATE -Wl,-search_paths_first)
+    endif()
+    add_dependencies(crepl combdsl_readline)
+    add_custom_command(
+        TARGET crepl
+        POST_BUILD
+        COMMAND "${CMAKE_COMMAND}" -E make_directory
+            "${CMAKE_CURRENT_SOURCE_DIR}/bin"
+        COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+            "$<TARGET_FILE:crepl>"
+            "${CMAKE_CURRENT_SOURCE_DIR}/bin/crepl"
+        COMMENT "Copying crepl to ${CMAKE_CURRENT_SOURCE_DIR}/bin"
+    )
 
     add_executable(combdsl_example examples/main.cpp)
     target_link_libraries(combdsl_example PRIVATE combdsl::combdsl)

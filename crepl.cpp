@@ -32,6 +32,9 @@
 #include <string>
 #include <string_view>
 #include <utility>
+extern "C" {
+    #include <readline/readline.h>
+}
 
 #if defined(_WIN32)
 #include <conio.h>
@@ -1082,13 +1085,12 @@ int main(int argc, char* argv[]) {
 
     std::string source;
     while (std::cin) {
-        if (interactive_output) {
-            std::cout << '>' << std::flush;
-        }
-
-        if (!std::getline(std::cin, source)) {
+        char *line = readline(interactive_output ? ">" : "");
+        if (line == nullptr) {
             break;
         }
+        source = line;
+        std::free(line);
         if (ignore_empty_line_after_key_quit) {
             ignore_empty_line_after_key_quit = false;
             if (source.empty()) {
