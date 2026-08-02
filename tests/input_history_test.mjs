@@ -29,6 +29,77 @@ new vm.Script(readFileSync(sourceUrl, "utf8"), {
 }).runInContext(context);
 
 const createHistory = context.combdslInputHistory.create;
+const createCommandCompleter =
+    context.combdslInputHistory.createCommandCompleter;
+
+test("completes unique Studio command prefixes", () => {
+    const complete = createCommandCompleter([
+        "define",
+        "set",
+        "show",
+    ]);
+
+    assert.equal(complete("def"), "define");
+    assert.equal(complete("se"), "set");
+    assert.equal(complete("sho"), "show");
+});
+
+test("does not complete ambiguous, exact, or argument text", () => {
+    const complete = createCommandCompleter([
+        "define",
+        "set",
+        "show",
+    ]);
+
+    assert.equal(complete("s"), undefined);
+    assert.equal(complete("show"), undefined);
+    assert.equal(complete("show M"), undefined);
+    assert.equal(complete("Mx"), undefined);
+    assert.equal(complete(""), undefined);
+    assert.equal(complete("   "), undefined);
+});
+
+test("can append a command delimiter to an exact match", () => {
+    const complete = createCommandCompleter([
+        "define",
+        "set",
+        "show",
+    ], {appendSpaceToExact: true});
+
+    assert.equal(complete("se"), "set ");
+    assert.equal(complete("set"), "set ");
+    assert.equal(complete("  sho"), "  show ");
+    assert.equal(complete("show "), undefined);
+    assert.equal(complete("show M"), undefined);
+});
+
+test("completes phrases while preserving multiple whitespace", () => {
+    const complete = createCommandCompleter([
+        "basis step",
+        "key step",
+        "single step",
+    ]);
+
+    assert.equal(complete("key   st"), "key   step");
+    assert.equal(complete("  ke\tst  "), "  key\tstep  ");
+    assert.equal(complete("key   "), "key   step");
+});
+
+test("normalizes extensible command phrase definitions", () => {
+    const complete = createCommandCompleter([
+        "  key    step  ",
+        "key step",
+    ]);
+
+    assert.equal(complete("ke  st"), "key  step");
+});
+
+test("uses the parser's ASCII command whitespace", () => {
+    const complete = createCommandCompleter(["key step"]);
+
+    assert.equal(complete("key\u00a0st"), undefined);
+    assert.equal(complete("key\vst"), "key\vstep");
+});
 
 test("starts with an empty visible history", () => {
     const history = createHistory();

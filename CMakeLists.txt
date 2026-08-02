@@ -433,6 +433,22 @@ if(COMBDSL_BUILD_TESTS)
                 -P
                 "${CMAKE_CURRENT_SOURCE_DIR}/tests/crepl_command_test.cmake"
         )
+        if(UNIX)
+            find_package(Python3 QUIET COMPONENTS Interpreter)
+            if(Python3_Interpreter_FOUND)
+                add_test(
+                    NAME crepl_completion
+                    COMMAND
+                        "${Python3_EXECUTABLE}"
+                        "${CMAKE_CURRENT_SOURCE_DIR}/tests/crepl_completion_test.py"
+                        "$<TARGET_FILE:crepl>"
+                )
+                set_tests_properties(
+                    crepl_completion
+                    PROPERTIES TIMEOUT 30
+                )
+            endif()
+        endif()
     endif()
 
     find_program(COMBDSL_NODE_EXECUTABLE NAMES node nodejs)

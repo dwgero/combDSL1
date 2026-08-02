@@ -23,8 +23,10 @@
 #include <array>
 #include <cerrno>
 #include <csignal>
-#include <cstdio>
 #include <cstddef>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include <iostream>
 #include <optional>
 #include <sstream>
@@ -32,10 +34,9 @@
 #include <string>
 #include <string_view>
 #include <utility>
-extern "C" {
-    #include <readline/history.h>
-    #include <readline/readline.h>
-}
+
+#include <readline/history.h>
+#include <readline/readline.h>
 
 #if defined(_WIN32)
 #include <conio.h>
@@ -49,7 +50,7 @@ extern "C" {
 
 namespace {
 
-constexpr std::string_view crepl_version = "2.1.1";
+constexpr std::string_view crepl_version = "2.1.2";
 
 void print_crepl_banner(std::ostream& output) {
     output << "Combinator Read-Eval-Print Loop, version "
@@ -83,6 +84,127 @@ enum class help_detail {
     brief,
     full
 };
+
+struct completion_candidates {
+    std::string_view const* data = nullptr;
+    std::size_t size = 0;
+};
+
+constexpr std::array<std::string_view, 12> command_completion_candidates = {
+    "about", "basis", "birds", "colorize", "define", "exit",
+    "help", "key", "quit", "set", "show", "single"};
+constexpr std::array<std::string_view, 1> step_completion_candidates = {
+    "step"};
+constexpr std::array<std::string_view, 2> toggle_completion_candidates = {
+    "off", "on"};
+constexpr std::array<std::string_view, 2> help_completion_candidates = {
+    "brief", "full"};
+
+template<std::size_t Size>
+[[nodiscard]] constexpr completion_candidates make_completion_candidates(
+    std::array<std::string_view, Size> const& candidates) noexcept {
+    return {candidates.data(), candidates.size()};
+}
+
+[[nodiscard]] completion_candidates command_completions_after(
+    std::string_view prefix) noexcept {
+    std::array<std::string_view, 3> words{};
+    std::size_t word_count = 0;
+    std::size_t position = 0;
+    while (position < prefix.size()) {
+        while (position < prefix.size() &&
+               is_command_whitespace(prefix[position])) {
+            ++position;
+        }
+        if (position == prefix.size()) {
+            break;
+        }
+        if (word_count == words.size()) {
+            return {};
+        }
+
+        auto const start = position;
+        while (position < prefix.size() &&
+               !is_command_whitespace(prefix[position])) {
+            ++position;
+        }
+        words[word_count++] = prefix.substr(start, position - start);
+    }
+
+    if (word_count == 0) {
+        return make_completion_candidates(command_completion_candidates);
+    }
+    if (word_count == 1) {
+        if (words[0] == "basis" || words[0] == "key" ||
+            words[0] == "single") {
+            return make_completion_candidates(step_completion_candidates);
+        }
+        if (words[0] == "colorize") {
+            return make_completion_candidates(toggle_completion_candidates);
+        }
+        if (words[0] == "help") {
+            return make_completion_candidates(help_completion_candidates);
+        }
+        return {};
+    }
+    if (word_count == 2 && words[1] == "step" &&
+        (words[0] == "basis" || words[0] == "key" ||
+         words[0] == "single")) {
+        return make_completion_candidates(toggle_completion_candidates);
+    }
+    return {};
+}
+
+completion_candidates active_completion_candidates;
+
+[[nodiscard]] char* duplicate_completion(
+    std::string_view completion) noexcept {
+    auto* result = static_cast<char*>(
+        std::malloc(completion.size() + 1));
+    if (result == nullptr) {
+        return nullptr;
+    }
+    std::memcpy(result, completion.data(), completion.size());
+    result[completion.size()] = '\0';
+    return result;
+}
+
+[[nodiscard]] char* crepl_completion_generator(
+    char const* text,
+    int state) noexcept {
+    static std::size_t candidate_index = 0;
+    if (state == 0) {
+        candidate_index = 0;
+    }
+
+    auto const partial = std::string_view(text == nullptr ? "" : text);
+    while (candidate_index < active_completion_candidates.size) {
+        auto const candidate =
+            active_completion_candidates.data[candidate_index++];
+        if (candidate.starts_with(partial)) {
+            return duplicate_completion(candidate);
+        }
+    }
+    return nullptr;
+}
+
+[[nodiscard]] char** crepl_attempted_completion(
+    char const* text,
+    int start,
+    int) noexcept {
+    rl_attempted_completion_over = 1;
+    if (rl_line_buffer == nullptr || start < 0) {
+        return nullptr;
+    }
+
+    active_completion_candidates = command_completions_after(
+        std::string_view(
+            rl_line_buffer, static_cast<std::size_t>(start)));
+    if (active_completion_candidates.size == 0) {
+        return nullptr;
+    }
+    return rl_completion_matches(text, crepl_completion_generator);
+}
 
 [[nodiscard]] bool is_exact_command(
     std::string_view source,
@@ -356,7 +478,14 @@ void print_help_full(std::ostream& output) {
         "name. For example, \"show E\" for the Eagle bird would display "
         "\"arity:5 BDD\".");
 
-    output << "\nOther Commands\n\n"
+    output << "\nCommand Entry\n\n";
+    print_help_topic(
+        output,
+        "Tab completion",
+        "Press Tab while entering a command to complete command words and "
+        "supported options. Existing whitespace between words is preserved.");
+
+    output << "Other Commands\n\n"
            << "birds\n";
     write_wrapped_paragraph(
         output,
@@ -1144,6 +1273,7 @@ int main(int argc, char* argv[]) {
 
     if (interactive_input) {
         using_history();
+        rl_attempted_completion_function = crepl_attempted_completion;
     }
     std::string source;
     while (std::cin) {

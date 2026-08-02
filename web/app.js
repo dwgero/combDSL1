@@ -22,8 +22,13 @@
 (() => {
     const evaluationWatchdog =
         globalThis.combdslEvaluationWatchdog;
-    const inputHistory =
-        globalThis.combdslInputHistory.create();
+    const inputHistoryTools = globalThis.combdslInputHistory;
+    const inputHistory = inputHistoryTools.create();
+    const completeCommand = inputHistoryTools.createCommandCompleter([
+        "define",
+        "set",
+        "show",
+    ], {appendSpaceToExact: true});
     const form = document.querySelector("#evaluation-form");
     const sourceBox = document.querySelector("#source-box");
     const sourceHistory = document.querySelector("#source-history");
@@ -1089,6 +1094,22 @@
     }, {once: true});
 
     source.addEventListener("keydown", event => {
+        if (event.key === "Tab" && !event.isComposing &&
+            !event.shiftKey && !event.ctrlKey && !event.metaKey &&
+            !event.altKey && !source.readOnly &&
+            source.selectionStart === source.value.length &&
+            source.selectionEnd === source.value.length) {
+            const completed = completeCommand(source.value);
+            if (completed !== undefined) {
+                event.preventDefault();
+                source.value = completed;
+                source.setSelectionRange(
+                    completed.length, completed.length);
+                resizeSourceEditor();
+            }
+            return;
+        }
+
         if (event.key === "Enter" && !event.isComposing) {
             if (activeRequest?.keyStep) {
                 if (!activeRequest.stepReady) {

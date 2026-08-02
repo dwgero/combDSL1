@@ -49,6 +49,12 @@ show <name>
 The show command displays the arity and combinators stored for name. For
 example, "show E" for the Eagle bird would display "arity:5 BDD".
 
+Command Entry
+
+Tab completion
+Press Tab while entering a command to complete command words and supported
+options. Existing whitespace between words is preserved.
+
 Other Commands
 
 birds

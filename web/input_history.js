@@ -20,6 +20,73 @@
 "use strict";
 
 globalThis.combdslInputHistory = (() => {
+    const commandWhitespace = "[ \\t\\n\\r\\f\\v]";
+    const commandWhitespaceOnly =
+        new RegExp(`^${commandWhitespace}+$`);
+    const commandWhitespaceRuns =
+        new RegExp(`${commandWhitespace}+`, "g");
+    const commandParts =
+        new RegExp(`${commandWhitespace}+|[^ \\t\\n\\r\\f\\v]+`, "g");
+    const leadingOrTrailingCommandWhitespace =
+        new RegExp(
+            `^${commandWhitespace}+|${commandWhitespace}+$`, "g");
+    const endsWithCommandWhitespace =
+        new RegExp(`${commandWhitespace}$`);
+
+    const createCommandCompleter = (
+        commandPhrases,
+        {appendSpaceToExact = false} = {},
+    ) => {
+        const commands = [...new Set(
+            Array.from(
+                commandPhrases,
+                phrase => String(phrase)
+                    .replace(leadingOrTrailingCommandWhitespace, "")
+                    .replace(commandWhitespaceRuns, " "),
+            ).filter(phrase => phrase !== ""),
+        )].map(phrase => phrase.split(" "));
+
+        return source => {
+            const original = String(source);
+            const parts = original.match(commandParts) ?? [];
+            const prefixes = parts.filter(
+                part => !commandWhitespaceOnly.test(part));
+            if (prefixes.length === 0) {
+                return undefined;
+            }
+
+            const matches = commands.filter(words =>
+                words.length >= prefixes.length &&
+                prefixes.every((prefix, index) =>
+                    words[index].startsWith(prefix)));
+            if (matches.length !== 1) {
+                return undefined;
+            }
+
+            const words = matches[0];
+            let word = 0;
+            let completed = parts.map(part => {
+                if (commandWhitespaceOnly.test(part)) {
+                    return part;
+                }
+                return words[word++];
+            }).join("");
+
+            while (word < words.length) {
+                if (!endsWithCommandWhitespace.test(completed)) {
+                    completed += " ";
+                }
+                completed += words[word++];
+            }
+
+            if (appendSpaceToExact &&
+                !endsWithCommandWhitespace.test(completed)) {
+                completed += " ";
+            }
+            return completed === original ? undefined : completed;
+        };
+    };
+
     const create = () => {
         const entries = [];
 
@@ -42,5 +109,5 @@ globalThis.combdslInputHistory = (() => {
         });
     };
 
-    return Object.freeze({create});
+    return Object.freeze({create, createCommandCompleter});
 })();

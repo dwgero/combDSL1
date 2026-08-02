@@ -633,12 +633,13 @@ expression produces no output, while malformed or empty lines throw
 The `crepl` executable applies `input_escape` to each line before passing it to
 `parse_eval`, so ordinary quoted words and backslashes can be entered directly.
 When standard output is a terminal, it first prints
-`Combinator Read-Eval-Print Loop, version 2.1.1`. Long evaluations display
+`Combinator Read-Eval-Print Loop, version 2.1.2`. Long evaluations display
 the accumulated step count every 1,000 reductions by overwriting one status
 line; the line is cleared before evaluation output is printed. Its interactive
 prompt is `>`. Interactive input uses GNU Readline, so previous nonempty
-commands can be recalled with Up Arrow or Ctrl-P. Redirected output contains
-no progress status. Enter
+commands can be recalled with Up Arrow or Ctrl-P. Press Tab to complete command
+words and supported options; whitespace already entered between words is
+preserved. Redirected output contains no progress status. Enter
 `single step` or `single step on` to print every subsequent reduction, and
 enter `single step off` to return to printing only the final result. Enter
 `key step` or `key step on` to display the starting expression and wait for
@@ -830,7 +831,9 @@ remain visible in submission order. Cancelled and timed-out expressions are
 retained with ` [cancelled]` and ` [timed out]` appended, respectively. Parse
 errors are not added to the history. A successfully registered
 `set` command leaves only that submitted definition line, with no output
-beneath it.
+beneath it. Press Tab to complete a unique prefix for the `set`, `define`, or
+`show` command; when no completion is available, Tab keeps its normal browser
+focus behavior.
 
 The Single Step button switches between displaying only the evaluated result
 and displaying every reduction produced by
