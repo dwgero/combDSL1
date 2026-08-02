@@ -33,6 +33,7 @@
 #include <string_view>
 #include <utility>
 extern "C" {
+    #include <readline/history.h>
     #include <readline/readline.h>
 }
 
@@ -48,7 +49,7 @@ extern "C" {
 
 namespace {
 
-constexpr std::string_view crepl_version = "2.1.0";
+constexpr std::string_view crepl_version = "2.1.1";
 
 void print_crepl_banner(std::ostream& output) {
     output << "Combinator Read-Eval-Print Loop, version "
@@ -1083,14 +1084,24 @@ int main(int argc, char* argv[]) {
         std::cout << '\n';
     }
 
+    if (interactive_input) {
+        using_history();
+    }
     std::string source;
     while (std::cin) {
-        char *line = readline(interactive_output ? ">" : "");
-        if (line == nullptr) {
+        if (interactive_input) {
+            char *line = readline(interactive_output ? ">" : "");
+            if (line == nullptr) {
+                break;
+            }
+            source = line;
+            std::free(line);
+            if (!source.empty()) {
+                add_history(source.c_str());
+            }
+        } else if (!std::getline(std::cin, source)) {
             break;
         }
-        source = line;
-        std::free(line);
         if (ignore_empty_line_after_key_quit) {
             ignore_empty_line_after_key_quit = false;
             if (source.empty()) {
