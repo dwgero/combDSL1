@@ -582,6 +582,59 @@ bool ignore_empty_line_after_key_quit = false;
 
 #if defined(__unix__) || defined(__APPLE__)
 volatile std::sig_atomic_t keypress_interrupted = 0;
+volatile std::sig_atomic_t terminal_resize_pending = 0;
+
+void terminal_sigwinch_handler(int) noexcept {
+    terminal_resize_pending = 1;
+}
+
+class scoped_terminal_sigwinch_handler {
+public:
+    explicit scoped_terminal_sigwinch_handler(bool enabled) noexcept {
+        terminal_resize_pending = 0;
+        if (!enabled) {
+            return;
+        }
+
+        struct sigaction action {};
+        action.sa_handler = terminal_sigwinch_handler;
+        static_cast<void>(sigemptyset(&action.sa_mask));
+        action.sa_flags = 0;
+        installed_ =
+            ::sigaction(SIGWINCH, &action, &previous_) == 0;
+    }
+
+    scoped_terminal_sigwinch_handler(
+        scoped_terminal_sigwinch_handler const&) = delete;
+    scoped_terminal_sigwinch_handler& operator=(
+        scoped_terminal_sigwinch_handler const&) = delete;
+
+    ~scoped_terminal_sigwinch_handler() {
+        if (installed_) {
+            static_cast<void>(
+                ::sigaction(SIGWINCH, &previous_, nullptr));
+        }
+    }
+
+private:
+    struct sigaction previous_ {};
+    bool installed_ = false;
+};
+
+void handle_pending_terminal_resize() noexcept {
+    if (terminal_resize_pending != 0) {
+        auto const was_redisplaying =
+            RL_ISSTATE(RL_STATE_REDISPLAYING) != 0;
+        if (!was_redisplaying) {
+            RL_SETSTATE(RL_STATE_REDISPLAYING);
+        }
+        rl_resize_terminal();
+        if (!was_redisplaying) {
+            RL_UNSETSTATE(RL_STATE_REDISPLAYING);
+        }
+        terminal_resize_pending = 0;
+    }
+}
 
 void keypress_sigint_handler(int) noexcept {
     keypress_interrupted = 1;
@@ -728,6 +781,7 @@ private:
     read_byte() noexcept {
         unsigned char value = 0;
         for (;;) {
+            handle_pending_terminal_resize();
             if (keypress_interrupted != 0) {
                 return std::nullopt;
             }
@@ -1076,6 +1130,10 @@ int main(int argc, char* argv[]) {
 
     auto const interactive_output = standard_output_is_terminal();
     auto const interactive_input = standard_input_is_terminal();
+#if defined(__unix__) || defined(__APPLE__)
+    scoped_terminal_sigwinch_handler sigwinch_handler(
+        interactive_input);
+#endif
     auto active_stepping_mode = stepping_mode::none;
     bool basis_step_mode = false;
     bool colorize_mode = false;
@@ -1089,6 +1147,9 @@ int main(int argc, char* argv[]) {
     }
     std::string source;
     while (std::cin) {
+#if defined(__unix__) || defined(__APPLE__)
+        handle_pending_terminal_resize();
+#endif
         if (interactive_input) {
             char *line = readline(interactive_output ? ">" : "");
             if (line == nullptr) {
