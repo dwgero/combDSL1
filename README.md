@@ -459,8 +459,8 @@ expression is `B`. If this preprocessing repeats an expression or exceeds its
 reduction limit, `define` safely abstracts the original body instead.
 
 The names `set`, `define`, `show`, `single`, `key`, `basis`, `colorize`,
-`about`, `birds`, `help`, `save`, `quit`, and `exit` are reserved words and
-cannot be used as names by either `set` or `define`.
+`about`, `birds`, `help`, `load`, `save`, `quit`, and `exit` are reserved
+words and cannot be used as names by either `set` or `define`.
 
 Occurrences of the defined name in the combinator expression are recursive
 references. If any remain after the argument symbols are abstracted, `define`
@@ -633,13 +633,15 @@ expression produces no output, while malformed or empty lines throw
 The `crepl` executable applies `input_escape` to each line before passing it to
 `parse_eval`, so ordinary quoted words and backslashes can be entered directly.
 When standard output is a terminal, it first prints
-`Combinator Read-Eval-Print Loop, version 2.1.2`. Long evaluations display
+`Combinator Read-Eval-Print Loop, version 2.1.3`. Long evaluations display
 the accumulated step count every 1,000 reductions by overwriting one status
 line; the line is cleared before evaluation output is printed. Its interactive
 prompt is `>`. Interactive input uses GNU Readline, so previous nonempty
 commands can be recalled with Up Arrow or Ctrl-P. Press Tab to complete command
 words and supported options; whitespace already entered between words is
-preserved. Redirected output contains no progress status. Enter
+preserved. Save and load each remember their own most recently successful
+filename, initially `set_list.cmb`; Tab at either filename position restores
+it. Redirected output contains no progress status. Enter
 `single step` or `single step on` to print every subsequent reduction, and
 enter `single step off` to return to printing only the final result. Enter
 `key step` or `key step on` to display the starting expression and wait for
@@ -660,6 +662,12 @@ basis name before the step and its stored contents after the step, both red;
 all arguments remain uncolored. Ordinary evaluation ignores this setting.
 The mode commands themselves produce no output. Enter `help` or `help brief`
 to display the command summary; enter `help full` to display detailed help.
+Enter `load <filename>` to recreate user-defined combinators from a file
+without evaluating them. File redefinitions are applied silently. Parsing
+continues after an error, up to 15 errors, but any error rolls back the entire
+load. Diagnostics identify the filename and one-based line and byte position.
+The filename is the remainder of the command after surrounding whitespace is
+removed, so it may contain spaces.
 Enter `save <filename>` to write all user-defined combinators to that file in
 the same format returned by `set_list()`. The filename is the remainder of the
 command after surrounding whitespace is removed, so it may contain spaces.

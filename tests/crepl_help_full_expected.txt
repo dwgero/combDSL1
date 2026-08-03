@@ -53,9 +53,18 @@ Command Entry
 
 Tab completion
 Press Tab while entering a command to complete command words and supported
-options. Existing whitespace between words is preserved.
+options. Save and load each remember their own most recently successful
+filename, initially "set_list.cmb"; Tab at either filename position restores it.
+Existing whitespace between words is preserved.
 
 Other Commands
+
+load <filename>
+Loads user-defined combinators from filename without evaluating them. The
+filename is the rest of the command after surrounding whitespace is removed, so
+it may contain spaces. User-defined combinators are replaced silently. Parsing
+continues after an error, up to 15 errors, but if any error is found, the entire
+load is rolled back.
 
 save <filename>
 Saves all user-defined combinators to filename, replacing any existing file. The

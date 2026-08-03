@@ -127,6 +127,16 @@ def main():
     executable = os.path.abspath(sys.argv[1])
     working_directory = tempfile.TemporaryDirectory(
         prefix="crepl-completion-")
+    with open(
+            os.path.join(working_directory.name, "set_list.cmb"),
+            "w", encoding="utf-8") as load_file:
+        load_file.write("set DefaultLoad = 0 I")
+    with open(
+            os.path.join(
+                working_directory.name,
+                "remembered load definitions.cmb"),
+            "w", encoding="utf-8") as load_file:
+        load_file.write("set RememberedLoad = 0 K")
     child, master = os.forkpty()
     if child == 0:
         environment = os.environ.copy()
@@ -174,6 +184,46 @@ def main():
         if b"Saved remembered definitions.cmb\n" not in normalized(output):
             raise AssertionError(
                 f"expected remembered save; received {output!r}")
+
+        write_all(master, b"loa\t\t\n")
+        output = reader.read_until(b">")
+        require_completed_line(output, b"load set_list.cmb \n")
+        if b"Loaded set_list.cmb\n" not in normalized(output):
+            raise AssertionError(
+                f"expected default load; received {output!r}")
+
+        write_all(master, b"load remembered load definitions.cmb\n")
+        output = reader.read_until(b">")
+        require_completed_line(
+            output, b"load remembered load definitions.cmb\n")
+        if b"Loaded remembered load definitions.cmb\n" not in normalized(
+                output):
+            raise AssertionError(
+                f"expected successful load; received {output!r}")
+
+        write_all(master, b"load missing definitions.cmb\n")
+        output = reader.read_until(b">")
+        if (b"Could not open missing definitions.cmb for reading\n"
+                not in normalized(output)):
+            raise AssertionError(
+                f"expected failed load; received {output!r}")
+
+        write_all(master, b"load \t\n")
+        output = reader.read_until(b">")
+        require_completed_line(
+            output, b"load remembered load definitions.cmb \n")
+        if b"Loaded remembered load definitions.cmb\n" not in normalized(
+                output):
+            raise AssertionError(
+                f"expected remembered load; received {output!r}")
+
+        write_all(master, b"save \t\n")
+        output = reader.read_until(b">")
+        require_completed_line(
+            output, b"save remembered definitions.cmb \n")
+        if b"Saved remembered definitions.cmb\n" not in normalized(output):
+            raise AssertionError(
+                f"expected independent remembered save; received {output!r}")
 
         write_all(master, b"exi\t\n")
         output = reader.read_to_end()

@@ -20,6 +20,8 @@
 #include <combdsl/combinators.hpp>
 #include <combdsl/color_step_ansi.hpp>
 
+#include "web/load_set_list.hpp"
+
 #include <array>
 #include <cerrno>
 #include <csignal>
@@ -51,7 +53,7 @@
 
 namespace {
 
-constexpr std::string_view crepl_version = "2.1.2";
+constexpr std::string_view crepl_version = "2.1.3";
 
 void print_crepl_banner(std::ostream& output) {
     output << "Combinator Read-Eval-Print Loop, version "
@@ -91,9 +93,9 @@ struct completion_candidates {
     std::size_t size = 0;
 };
 
-constexpr std::array<std::string_view, 13> command_completion_candidates = {
+constexpr std::array<std::string_view, 14> command_completion_candidates = {
     "about", "basis", "birds", "colorize", "define", "exit",
-    "help", "key", "quit", "save", "set", "show", "single"};
+    "help", "key", "load", "quit", "save", "set", "show", "single"};
 constexpr std::array<std::string_view, 1> step_completion_candidates = {
     "step"};
 constexpr std::array<std::string_view, 2> toggle_completion_candidates = {
@@ -102,6 +104,8 @@ constexpr std::array<std::string_view, 2> help_completion_candidates = {
     "brief", "full"};
 std::string last_save_filename = "set_list.cmb";
 std::array<std::string_view, 1> save_filename_completion_candidates;
+std::string last_load_filename = "set_list.cmb";
+std::array<std::string_view, 1> load_filename_completion_candidates;
 
 template<std::size_t Size>
 [[nodiscard]] constexpr completion_candidates make_completion_candidates(
@@ -153,6 +157,12 @@ template<std::size_t Size>
                 last_save_filename;
             return make_completion_candidates(
                 save_filename_completion_candidates);
+        }
+        if (words[0] == "load") {
+            load_filename_completion_candidates[0] =
+                last_load_filename;
+            return make_completion_candidates(
+                load_filename_completion_candidates);
         }
         return {};
     }
@@ -345,7 +355,9 @@ parse_help_command(std::string_view source) {
 }
 
 [[nodiscard]] std::optional<std::string>
-parse_save_command(std::string_view source) {
+parse_filename_command(
+    std::string_view source,
+    std::string_view command) {
     std::size_t position = 0;
     while (position < source.size() &&
            is_command_whitespace(source[position])) {
@@ -358,7 +370,7 @@ parse_save_command(std::string_view source) {
         ++position;
     }
     if (source.substr(command_start, position - command_start) !=
-        "save") {
+        command) {
         return std::nullopt;
     }
 
@@ -433,6 +445,7 @@ void print_help_brief(std::ostream& output) {
         "exit                                  | end the program\n"
         "help [brief | full]                   | display help information\n"
         "key step [on | off]                   | after each step, wait for a keypress to continue\n"
+        "load <filename>                       | load user-defined combinators from a file\n"
         "quit                                  | end the program\n"
         "save <filename>                       | save user-defined combinators to a file\n"
         "set <name> = [number] <expression>    | store <expression> as <name> with arity <number> or 0\n"
@@ -529,9 +542,22 @@ void print_help_full(std::ostream& output) {
         output,
         "Tab completion",
         "Press Tab while entering a command to complete command words and "
-        "supported options. Existing whitespace between words is preserved.");
+        "supported options. Save and load each remember their own most "
+        "recently successful filename, initially \"set_list.cmb\"; Tab at "
+        "either filename position restores it. Existing whitespace between "
+        "words is preserved.");
 
     output << "Other Commands\n\n"
+           << "load <filename>\n";
+    write_wrapped_paragraph(
+        output,
+        "Loads user-defined combinators from filename without evaluating "
+        "them. The filename is the rest of the command after surrounding "
+        "whitespace is removed, so it may contain spaces. User-defined "
+        "combinators are replaced silently. Parsing continues after an "
+        "error, up to 15 errors, but if any error is found, the entire load "
+        "is rolled back.");
+    output << '\n'
            << "save <filename>\n";
     write_wrapped_paragraph(
         output,
@@ -764,6 +790,44 @@ void print_birds(std::ostream& output) {
     }
 
     output << "Saved " << filename << '\n';
+    output.flush();
+    return true;
+}
+
+[[nodiscard]] bool load_set_list_file(
+    std::string_view filename,
+    std::ostream& output,
+    std::ostream& error_output) {
+    std::ifstream file(std::string(filename), std::ios::binary);
+    if (!file) {
+        error_output << "Could not open " << filename
+                     << " for reading\n";
+        error_output.flush();
+        return false;
+    }
+
+    std::ostringstream contents;
+    contents << file.rdbuf();
+    if (file.bad()) {
+        error_output << "Could not read " << filename << '\n';
+        error_output.flush();
+        return false;
+    }
+
+    auto const load_result =
+        combdsl::web_detail::load_set_list(contents.str());
+    if (!load_result.success) {
+        auto const diagnostics =
+            combdsl::web_detail::format_file_load_diagnostics(
+                filename, load_result);
+        if (!diagnostics.empty()) {
+            error_output << diagnostics << '\n';
+            error_output.flush();
+        }
+        return false;
+    }
+
+    output << "Loaded " << filename << '\n';
     output.flush();
     return true;
 }
@@ -1404,7 +1468,16 @@ int main(int argc, char* argv[]) {
                 print_birds(std::cout);
                 continue;
             }
-            if (auto const filename = parse_save_command(source)) {
+            if (auto const filename =
+                    parse_filename_command(source, "load")) {
+                if (load_set_list_file(
+                        *filename, std::cout, std::cerr)) {
+                    last_load_filename = *filename;
+                }
+                continue;
+            }
+            if (auto const filename =
+                    parse_filename_command(source, "save")) {
                 if (save_set_list(
                         *filename, std::cout, std::cerr)) {
                     last_save_filename = *filename;

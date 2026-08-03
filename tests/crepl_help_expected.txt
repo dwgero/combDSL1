@@ -8,6 +8,7 @@ define <name> <xyz...> = <expression> | compute and store a series of combinator
 exit                                  | end the program
 help [brief | full]                   | display help information
 key step [on | off]                   | after each step, wait for a keypress to continue
+load <filename>                       | load user-defined combinators from a file
 quit                                  | end the program
 save <filename>                       | save user-defined combinators to a file
 set <name> = [number] <expression>    | store <expression> as <name> with arity <number> or 0
@@ -23,6 +24,7 @@ define <name> <xyz...> = <expression> | compute and store a series of combinator
 exit                                  | end the program
 help [brief | full]                   | display help information
 key step [on | off]                   | after each step, wait for a keypress to continue
+load <filename>                       | load user-defined combinators from a file
 quit                                  | end the program
 save <filename>                       | save user-defined combinators to a file
 set <name> = [number] <expression>    | store <expression> as <name> with arity <number> or 0

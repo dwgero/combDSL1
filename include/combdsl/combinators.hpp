@@ -5101,6 +5101,7 @@ private:
             name == "about" ||
             name == "birds" ||
             name == "help" ||
+            name == "load" ||
             name == "save" ||
             name == "quit" ||
             name == "exit") {
