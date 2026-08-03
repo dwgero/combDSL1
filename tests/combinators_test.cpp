@@ -1173,6 +1173,146 @@ int main() {
              std::cout << set_list();
          },
          expected_definition_list);
+
+    test("remove inspection accepts a user basis",
+         parse("set RemoveInspect = 0 I"), "RemoveInspect");
+    test("remove inspection does not change the registry",
+         [] {
+             auto inspected = combdsl::detail::parse_input(
+                 "remove RemoveInspect",
+                 combdsl::detail::parser_definition_mode::
+                     inspect_definitions);
+             std::cout << (inspected.is_definition
+                 ? "definition/"
+                 : "expression/");
+             parse("show RemoveInspect").print_to(std::cout);
+         },
+         "definition/arity:0 I");
+    test("remove returns the removed basis snapshot",
+         parse("remove RemoveInspect"), "RemoveInspect");
+    test_parse_failure(
+        "show rejects a removed basis",
+        "show RemoveInspect",
+        5,
+        "RemoveInspect is not a defined name");
+    test("an unreferenced removed basis leaves no saved commands",
+         [] {
+             std::cout << (set_list().find("RemoveInspect") ==
+                     std::string::npos
+                 ? "omitted"
+                 : "retained");
+         },
+         "omitted");
+
+    test("remove can discard an unreferenced self-history",
+         [] {
+             static_cast<void>(parse("set RemoveSolo = 0 I"));
+             static_cast<void>(
+                 parse("set RemoveSolo = 0 RemoveSolo"));
+             static_cast<void>(parse("remove RemoveSolo"));
+             std::cout << (set_list().find("RemoveSolo") ==
+                     std::string::npos
+                 ? "omitted"
+                 : "retained");
+         },
+         "omitted");
+
+    test("set registers a basis that will be referred to",
+         parse("set RemoveBase = 0 I"), "RemoveBase");
+    auto remove_base_snapshot = parse("RemoveBase x");
+    test("set records a reference to another user basis",
+         parse("set RemoveUse = 0 RemoveBase"), "RemoveUse");
+    test("remove accepts a referred-to basis",
+         parse("remove RemoveBase"), "RemoveBase");
+    test("a removed basis snapshot remains usable",
+         single_step(single_step(remove_base_snapshot)), "x");
+    test("a dependent basis keeps the removed snapshot",
+         parse("show RemoveUse"), "arity:0 RemoveBase");
+    test("set list keeps a referred definition and its removal",
+         [] {
+             constexpr std::string_view suffix =
+                 "set RemoveBase = 0 I\n"
+                 "set RemoveUse = 0 RemoveBase\n"
+                 "remove RemoveBase";
+             std::cout << (set_list().ends_with(suffix)
+                 ? "retained"
+                 : "missing");
+         },
+         "retained");
+    test("a removed name can be defined again",
+         parse("set RemoveBase = 0 K"), "RemoveBase");
+    test("an unreferenced later definition is omitted when removed",
+         [] {
+             static_cast<void>(parse("remove RemoveBase"));
+             auto const definitions = set_list();
+             auto const first = definitions.find("remove RemoveBase");
+             auto const second = first == std::string::npos
+                 ? std::string::npos
+                 : definitions.find("remove RemoveBase", first + 1);
+             std::cout <<
+                 (first != std::string::npos &&
+                  second == std::string::npos &&
+                  definitions.find("set RemoveBase = 0 K") ==
+                      std::string::npos
+                     ? "one retained removal"
+                     : "unexpected history");
+         },
+         "one retained removal");
+
+    test("a reference propagates through same-name history",
+         [] {
+             static_cast<void>(parse("set RemoveChain = 0 I"));
+             static_cast<void>(
+                 parse("set RemoveChain = 0 RemoveChain"));
+             static_cast<void>(
+                 parse("set RemoveChainUse = 0 RemoveChain"));
+             static_cast<void>(parse("remove RemoveChain"));
+             constexpr std::string_view suffix =
+                 "set RemoveChain = 0 I\n"
+                 "set RemoveChain = 0 RemoveChain\n"
+                 "set RemoveChainUse = 0 RemoveChain\n"
+                 "remove RemoveChain";
+             std::cout << (set_list().ends_with(suffix)
+                 ? "retained"
+                 : "missing");
+         },
+         "retained");
+
+    test("was referred to remains true after the referring basis is removed",
+         [] {
+             static_cast<void>(parse("set StickyA = 0 I"));
+             static_cast<void>(parse("set StickyB = 0 StickyA"));
+             static_cast<void>(parse("remove StickyB"));
+             static_cast<void>(parse("remove StickyA"));
+             auto const definitions = set_list();
+             std::cout <<
+                 (definitions.ends_with(
+                      "set StickyA = 0 I\nremove StickyA") &&
+                  definitions.find("StickyB") == std::string::npos
+                     ? "sticky"
+                     : "not sticky");
+         },
+         "sticky");
+
+    test_parse_failure(
+        "remove requires a name", "remove ", 7,
+        "expected a name");
+    test_parse_failure(
+        "remove rejects an undefined name", "remove RemoveMissing", 7,
+        "RemoveMissing is not a defined name");
+    test_parse_failure(
+        "remove rejects a primitive", "remove S", 7,
+        "S is a pre-defined basis and cannot be removed");
+    test_parse_failure(
+        "remove rejects a predefined basis", "remove M", 7,
+        "M is a pre-defined basis and cannot be removed");
+    test_parse_failure(
+        "remove rejects trailing input", "remove RemoveUse extra", 17,
+        "unexpected input after name");
+    test("remove without required whitespace remains symbols",
+         parse("removex"), "removex");
+    test("bare remove remains symbols", parse("remove"), "remove");
+
     test_parse_failure(
         "define cannot replace a predefined basis",
         "define M x = x",
@@ -2145,7 +2285,8 @@ int main() {
         "M) is not a defined name");
     constexpr std::string_view reserved_definition_names[] = {
         "set", "define", "show", "single", "key", "basis", "colorize",
-        "about", "birds", "help", "load", "save", "quit", "exit"};
+        "about", "birds", "help", "load", "remove", "save", "quit",
+        "exit"};
     for (auto const name : reserved_definition_names) {
         auto const detail =
             std::string(name) + " is a reserved word";
@@ -2341,6 +2482,17 @@ int main() {
          [&] { parse_eval("define EvalD x = x"); }, "");
     test("parse eval uses a silently registered define basis",
          [&] { parse_eval("EvalD y"); }, "y\n");
+    test("parse eval remove only changes its definition state",
+         [] {
+             parse_eval("set EvalRemove = 0 I");
+             parse_eval("remove EvalRemove");
+         },
+         "");
+    test_parse_failure(
+        "parse eval remove makes the name undefined",
+        "show EvalRemove",
+        5,
+        "EvalRemove is not a defined name");
     test("parse and step define only registers its definition",
          [] {
              std::istringstream input;

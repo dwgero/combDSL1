@@ -458,9 +458,9 @@ Undersaturated bases remain named, and preprocessing does not enter
 expression is `B`. If this preprocessing repeats an expression or exceeds its
 reduction limit, `define` safely abstracts the original body instead.
 
-The names `set`, `define`, `show`, `single`, `key`, `basis`, `colorize`,
-`about`, `birds`, `help`, `load`, `save`, `quit`, and `exit` are reserved
-words and cannot be used as names by either `set` or `define`.
+The names `set`, `define`, `show`, `remove`, `single`, `key`, `basis`,
+`colorize`, `about`, `birds`, `help`, `load`, `save`, `quit`, and `exit`
+are reserved words and cannot be used as names by either `set` or `define`.
 
 Occurrences of the defined name in the combinator expression are recursive
 references. If any remain after the argument symbols are abstracted, `define`
@@ -590,14 +590,33 @@ parse_eval("show x");   // parse error: x is not a defined name
 `quoted_expression`. `parse_eval`, `read_parse_eval`, `parse_and_step`, and
 `parse_and_key_step` print that result once without evaluating or stepping it.
 
+At the start of a line, optionally preceded by whitespace, `remove` followed
+by whitespace and a name removes a user-defined basis from future parsing.
+Previously parsed expressions and other bases that captured its definition
+keep their snapshots. Fundamental and pre-defined names cannot be removed,
+and removing an undefined name is a parse error. Like `set` and `define`, a
+successful `remove` command produces no output under the evaluation and
+stepping entry points:
+
+```cpp
+parse("set Saved = 0 I");
+parse("set User = 0 Saved");
+parse_eval("remove Saved"); // removes Saved; prints nothing
+parse_eval("User x");       // still prints: x
+```
+
 `set_list()` returns the chronological history of successful user definitions
-as newline-separated `set` or `define` declarations. Changed redefinitions are
-included so replay preserves definitions that captured earlier basis
-snapshots; equivalent repetitions are omitted. A `set` declaration always
-includes its arity, including `0`; a `define` declaration includes its defining
-symbols. Quotes and backslashes appear exactly as a user would enter them.
-Passing each line through `input_escape` and then to `parse` recreates the
-definitions:
+as newline-separated `set`, `define`, or retained `remove` declarations. Changed
+redefinitions are included so replay preserves definitions that captured
+earlier basis snapshots; equivalent repetitions are omitted. Each stored
+definition records whether another basis referred to it. Removing an
+unreferenced definition removes both its definition and the `remove` command
+from the list. If another basis referred to it, the required definition and a
+following `remove` command remain so replay can recreate the dependent basis
+without leaving the removed name defined. A `set` declaration always includes
+its arity, including `0`; a `define` declaration includes its defining symbols.
+Quotes and backslashes appear exactly as a user would enter them. Passing each
+line through `input_escape` and then to `parse` recreates the definitions:
 
 ```cpp
 auto definitions = set_list();
@@ -633,7 +652,7 @@ expression produces no output, while malformed or empty lines throw
 The `crepl` executable applies `input_escape` to each line before passing it to
 `parse_eval`, so ordinary quoted words and backslashes can be entered directly.
 When standard output is a terminal, it first prints
-`Combinator Read-Eval-Print Loop, version 2.1.3`. Long evaluations display
+`Combinator Read-Eval-Print Loop, version 2.1.4`. Long evaluations display
 the accumulated step count every 1,000 reductions by overwriting one status
 line; the line is cleared before evaluation output is printed. Its interactive
 prompt is `>`. Interactive input uses GNU Readline, so previous nonempty
@@ -673,6 +692,9 @@ the same format returned by `set_list()`. The filename is the remainder of the
 command after surrounding whitespace is removed, so it may contain spaces.
 The command replaces an existing file, writes no trailing newline, and reports
 `Nothing to save` without touching the file when no user definitions exist.
+Enter `remove <name>` to remove a user-defined combinator name. Retained
+definition and removal records remain saveable when another basis referred to
+that name; otherwise both are omitted. Pre-defined names cannot be removed.
 Enter `birds` to list every bird and its
 reduction rule. The list uses three
 columns when their
@@ -850,11 +872,11 @@ The Combinator Expression box is a scrollable history with the current editable
 input at the bottom. Successful commands and expressions that reach normal form
 remain visible in submission order. Cancelled and timed-out expressions are
 retained with ` [cancelled]` and ` [timed out]` appended, respectively. Parse
-errors are not added to the history. A successfully registered
-`set` command leaves only that submitted definition line, with no output
-beneath it. Press Tab to complete a unique prefix for the `set`, `define`, or
-`show` command; when no completion is available, Tab keeps its normal browser
-focus behavior.
+errors are not added to the history. A successfully registered `set`, `define`,
+or `remove` command leaves only that submitted command line, with no output
+beneath it. Press Tab to complete a unique prefix for the `set`, `define`,
+`remove`, or `show` command; when no completion is available, Tab keeps its
+normal browser focus behavior.
 
 The Single Step button switches between displaying only the evaluated result
 and displaying every reduction produced by
@@ -885,13 +907,16 @@ submitted starting expression immediately, then appends the output beneath it.
 The Cancel button is active when not stepping or when Single Step is on.
 Clicking on it aborts a long-running or infinite-looping reduction.
 
-The Save button downloads all successfully registered user
-definitions and redefinitions as `set_list.cmb`, with explicit arities and
-user-facing quoting that can be entered again. If there are no user-defined
-bases, Save opens a dialog that says `Nothing to save` instead. When a command
-entered in the browser would change a user definition, a confirmation dialog
-shows `About to replace name=arity expression`; Cancel preserves the existing
-definition, while Replace is initially focused so Enter confirms it.
+The Save button downloads all required user definitions, redefinitions, and
+removals as `set_list.cmb`, with explicit arities and user-facing quoting that
+can be entered again. An unreferenced removed definition leaves no saved
+definition or removal command; a referred-to definition retains both so its
+dependents replay correctly while its name stays removed. If there are no
+saved commands, Save opens a dialog that says `Nothing to save` instead. When
+a command entered in the browser would change a user definition, a
+confirmation dialog shows `About to replace name=arity expression`; Cancel
+preserves the existing definition, while Replace is initially focused so Enter
+confirms it.
 
 The Load
 button opens a file picker filtered for `.cmb` files and recreates those

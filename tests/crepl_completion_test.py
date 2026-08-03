@@ -165,6 +165,19 @@ def main():
             raise AssertionError(
                 f"expected Nothing to save; received {output!r}")
 
+        write_all(master, b"set CompleteGone = 1 I\n")
+        output = reader.read_until(b">")
+        require_completed_line(
+            output, b"set CompleteGone = 1 I\n")
+
+        write_all(master, b"rem\tCompleteGone\n")
+        output = reader.read_until(b">")
+        require_completed_line(
+            output, b"remove CompleteGone\n")
+        if b"Parse error" in normalized(output):
+            raise AssertionError(
+                f"expected successful remove; received {output!r}")
+
         write_all(master, b"set Remember = 1 I\n")
         output = reader.read_until(b">")
         require_completed_line(output, b"set Remember = 1 I\n")

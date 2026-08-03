@@ -53,7 +53,7 @@
 
 namespace {
 
-constexpr std::string_view crepl_version = "2.1.3";
+constexpr std::string_view crepl_version = "2.1.4";
 
 void print_crepl_banner(std::ostream& output) {
     output << "Combinator Read-Eval-Print Loop, version "
@@ -93,9 +93,10 @@ struct completion_candidates {
     std::size_t size = 0;
 };
 
-constexpr std::array<std::string_view, 14> command_completion_candidates = {
+constexpr std::array<std::string_view, 15> command_completion_candidates = {
     "about", "basis", "birds", "colorize", "define", "exit",
-    "help", "key", "load", "quit", "save", "set", "show", "single"};
+    "help", "key", "load", "quit", "remove", "save", "set", "show",
+    "single"};
 constexpr std::array<std::string_view, 1> step_completion_candidates = {
     "step"};
 constexpr std::array<std::string_view, 2> toggle_completion_candidates = {
@@ -447,6 +448,7 @@ void print_help_brief(std::ostream& output) {
         "key step [on | off]                   | after each step, wait for a keypress to continue\n"
         "load <filename>                       | load user-defined combinators from a file\n"
         "quit                                  | end the program\n"
+        "remove <name>                         | remove a user-defined combinator name\n"
         "save <filename>                       | save user-defined combinators to a file\n"
         "set <name> = [number] <expression>    | store <expression> as <name> with arity <number> or 0\n"
         "show <name>                           | display the arity and stored expression of <name>\n"
@@ -536,6 +538,15 @@ void print_help_full(std::ostream& output) {
         "The show command displays the arity and combinators stored for "
         "name. For example, \"show E\" for the Eagle bird would display "
         "\"arity:5 BDD\".");
+    output << '\n'
+           << "remove <name>\n";
+    write_wrapped_paragraph(
+        output,
+        "Removes a user-defined combinator name. If another basis referred "
+        "to the removed definition, its definition and the remove command "
+        "remain in the saved set list so dependent bases can be recreated. "
+        "Otherwise, neither command is saved. Pre-defined names cannot be "
+        "removed.");
 
     output << "\nCommand Entry\n\n";
     print_help_topic(

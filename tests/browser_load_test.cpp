@@ -181,6 +181,42 @@ int main() {
           format_file_load_diagnostics(
               "successful.cmb", successful).empty());
 
+    auto const unreferenced_removal = load_set_list(
+        "set FileGone = 0 I\n"
+        "remove FileGone\n");
+    check("a file can remove an unreferenced definition",
+          unreferenced_removal.success &&
+          unreferenced_removal.loaded == 2 &&
+          !defined_name("FileGone") &&
+          combdsl::set_list().find("FileGone") ==
+              std::string::npos);
+
+    auto const referred_removal = load_set_list(
+        "set FileBase = 0 I\n"
+        "set FileHolder = 0 FileBase\n"
+        "remove FileBase\n");
+    check("a file can remove a referred-to definition",
+          referred_removal.success &&
+          referred_removal.loaded == 3 &&
+          !defined_name("FileBase") &&
+          defined_name("FileHolder"));
+    check("a referred-to removal remains replayable",
+          combdsl::set_list().ends_with(
+              "set FileBase = 0 I\n"
+              "set FileHolder = 0 FileBase\n"
+              "remove FileBase"));
+
+    static_cast<void>(
+        combdsl::parse("set FileRollback = 0 I"));
+    auto const before_failed_removal = combdsl::set_list();
+    auto const failed_removal = load_set_list(
+        "remove FileRollback\n"
+        "@\n");
+    check("an error rolls back a file removal",
+          !failed_removal.success &&
+          defined_name("FileRollback") &&
+          combdsl::set_list() == before_failed_removal);
+
     static_cast<void>(
         combdsl::parse("set FileReplace = 0 I"));
     auto const replacement = load_set_list(

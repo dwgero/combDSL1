@@ -361,9 +361,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             color: #c33;
         }
     </style>
-    <script src="./evaluation_watchdog.js?v=2.1.3" defer></script>
-    <script src="./input_history.js?v=2.1.3" defer></script>
-    <script src="./app.js?v=2.1.3" defer></script>
+    <script src="./evaluation_watchdog.js?v=2.1.4" defer></script>
+    <script src="./input_history.js?v=2.1.4" defer></script>
+    <script src="./app.js?v=2.1.4" defer></script>
 </head>
 <body>
     <main aria-labelledby="studio-title">
@@ -486,7 +486,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
         <h2 class="help-subheading">Adding Combinators</h2>
         <div class="help-section">
             Press <kbd>Tab</kbd> to complete a unique prefix for
-            <code>set</code>, <code>define</code>, or <code>show</code>.
+            <code>set</code>, <code>define</code>, <code>remove</code>, or
+            <code>show</code>.
             <br><br>
             <code>set name = combinator_expression</code><br>
             In the first form, the expression always reduces immediately.
@@ -513,6 +514,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             The <code>show</code> command displays the arity and combinators stored
             for <code>name</code>. For example, <code>show E</code> for
             the Eagle bird would display <code>arity:5 BDD</code>.
+            <br><br>
+            <code>remove name</code><br>
+            The <code>remove</code> command removes a user-defined combinator
+            name. If another basis referred to the removed definition, its
+            definition and the <code>remove</code> command remain in the saved
+            set list so dependent bases can be recreated. Otherwise, neither
+            command is saved. Pre-defined names cannot be removed.
         </div>
         <h2 class="help-subheading">Saving and Loading Combinators</h2>
         <div class="help-section">
@@ -521,7 +529,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             <code>set_list.cmb</code>. Every saved definition includes its
             arity and defining combinator expression. Redefinitions are saved
             in chronological order so that old defined combinator expressions
-            referencing previous definitions still work the same.
+            referencing previous definitions still work the same. Retained
+            <code>remove</code> commands are also saved so removed names stay
+            unavailable after dependent definitions are recreated.
             The Load button reads a <code>.cmb</code> file from your computer
             and recreates its definitions in order, applying redefinitions
             without confirmation.
@@ -633,7 +643,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             data-dialog-initial-focus>About</h2>
         <div class="license-text">
             <!-- Keep this version and the app.js cache key in sync. -->
-            <p>Combinator Studio, version 2.1.3<br>
+            <p>Combinator Studio, version 2.1.4<br>
                 Part of the C++ Combinator DSL<br>
                 Copyright (C) 2026  David W. Gero</p>
             <p>This program is free software: you can redistribute it and/or modify

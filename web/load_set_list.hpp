@@ -61,7 +61,7 @@ inline constexpr std::size_t maximum_file_parse_errors = 15;
 [[nodiscard]] inline set_list_load_result load_set_list(
     std::string_view source) {
     detail::registered_parser_basis_table previous_bases;
-    std::vector<std::string> previous_definitions;
+    detail::parser_definition_history previous_definitions;
 
     try {
         std::lock_guard lock(

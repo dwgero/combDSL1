@@ -10,6 +10,7 @@ help [brief | full]                   | display help information
 key step [on | off]                   | after each step, wait for a keypress to continue
 load <filename>                       | load user-defined combinators from a file
 quit                                  | end the program
+remove <name>                         | remove a user-defined combinator name
 save <filename>                       | save user-defined combinators to a file
 set <name> = [number] <expression>    | store <expression> as <name> with arity <number> or 0
 show <name>                           | display the arity and stored expression of <name>
@@ -26,6 +27,7 @@ help [brief | full]                   | display help information
 key step [on | off]                   | after each step, wait for a keypress to continue
 load <filename>                       | load user-defined combinators from a file
 quit                                  | end the program
+remove <name>                         | remove a user-defined combinator name
 save <filename>                       | save user-defined combinators to a file
 set <name> = [number] <expression>    | store <expression> as <name> with arity <number> or 0
 show <name>                           | display the arity and stored expression of <name>

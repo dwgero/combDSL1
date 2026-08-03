@@ -26,6 +26,7 @@
     const inputHistory = inputHistoryTools.create();
     const completeCommand = inputHistoryTools.createCommandCompleter([
         "define",
+        "remove",
         "set",
         "show",
     ], {appendSpaceToExact: true});
