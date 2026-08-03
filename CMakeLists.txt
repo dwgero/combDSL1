@@ -217,7 +217,7 @@ if(COMBDSL_BUILD_EXAMPLES)
     ExternalProject_Add(
         combdsl_readline
         GIT_REPOSITORY
-            "git://git.git.savannah.gnu.org/readline.git"
+            "https://github.com/sailfishos-mirror/readline.git"
         GIT_TAG 553d6bb272f26400d6d4d1cac7c1df84c447449b
         GIT_PROGRESS TRUE
         SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/readline"
