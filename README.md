@@ -459,8 +459,8 @@ expression is `B`. If this preprocessing repeats an expression or exceeds its
 reduction limit, `define` safely abstracts the original body instead.
 
 The names `set`, `define`, `show`, `single`, `key`, `basis`, `colorize`,
-`about`, `birds`, `help`, `quit`, and `exit` are reserved words and cannot be
-used as names by either `set` or `define`.
+`about`, `birds`, `help`, `save`, `quit`, and `exit` are reserved words and
+cannot be used as names by either `set` or `define`.
 
 Occurrences of the defined name in the combinator expression are recursive
 references. If any remain after the argument symbols are abstracted, `define`
@@ -660,6 +660,11 @@ basis name before the step and its stored contents after the step, both red;
 all arguments remain uncolored. Ordinary evaluation ignores this setting.
 The mode commands themselves produce no output. Enter `help` or `help brief`
 to display the command summary; enter `help full` to display detailed help.
+Enter `save <filename>` to write all user-defined combinators to that file in
+the same format returned by `set_list()`. The filename is the remainder of the
+command after surrounding whitespace is removed, so it may contain spaces.
+The command replaces an existing file, writes no trailing newline, and reports
+`Nothing to save` without touching the file when no user definitions exist.
 Enter `birds` to list every bird and its
 reduction rule. The list uses three
 columns when their

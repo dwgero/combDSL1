@@ -57,6 +57,12 @@ options. Existing whitespace between words is preserved.
 
 Other Commands
 
+save <filename>
+Saves all user-defined combinators to filename, replacing any existing file. The
+filename is the rest of the command after surrounding whitespace is removed, so
+it may contain spaces. If there are no user-defined combinators, displays
+"Nothing to save" and leaves any existing file untouched.
+
 birds
 Displays the list of pre-defined bird combinators, defined in the system by
 their capitalized first letter, and what they reduce to.

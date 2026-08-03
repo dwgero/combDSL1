@@ -9,6 +9,7 @@ exit                                  | end the program
 help [brief | full]                   | display help information
 key step [on | off]                   | after each step, wait for a keypress to continue
 quit                                  | end the program
+save <filename>                       | save user-defined combinators to a file
 set <name> = [number] <expression>    | store <expression> as <name> with arity <number> or 0
 show <name>                           | display the arity and stored expression of <name>
 single step [on | off]                | display each step of the reduction without pause
@@ -23,6 +24,7 @@ exit                                  | end the program
 help [brief | full]                   | display help information
 key step [on | off]                   | after each step, wait for a keypress to continue
 quit                                  | end the program
+save <filename>                       | save user-defined combinators to a file
 set <name> = [number] <expression>    | store <expression> as <name> with arity <number> or 0
 show <name>                           | display the arity and stored expression of <name>
 single step [on | off]                | display each step of the reduction without pause

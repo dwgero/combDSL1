@@ -144,6 +144,13 @@ def main():
         output = reader.read_until(b">")
         require_completed_line(output, b"key   step   off \n")
 
+        write_all(master, b"sav\tcompletion.cmb\n")
+        output = reader.read_until(b">")
+        require_completed_line(output, b"save completion.cmb\n")
+        if b"Nothing to save\n" not in normalized(output):
+            raise AssertionError(
+                f"expected Nothing to save; received {output!r}")
+
         write_all(master, b"exi\t\n")
         output = reader.read_to_end()
         require_completed_line(output, b"exit \n")

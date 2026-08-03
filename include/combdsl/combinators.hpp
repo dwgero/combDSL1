@@ -5101,6 +5101,7 @@ private:
             name == "about" ||
             name == "birds" ||
             name == "help" ||
+            name == "save" ||
             name == "quit" ||
             name == "exit") {
             auto message = std::string(name);

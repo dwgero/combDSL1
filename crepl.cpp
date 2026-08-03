@@ -27,6 +27,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <fstream>
 #include <iostream>
 #include <optional>
 #include <sstream>
@@ -90,9 +91,9 @@ struct completion_candidates {
     std::size_t size = 0;
 };
 
-constexpr std::array<std::string_view, 12> command_completion_candidates = {
+constexpr std::array<std::string_view, 13> command_completion_candidates = {
     "about", "basis", "birds", "colorize", "define", "exit",
-    "help", "key", "quit", "set", "show", "single"};
+    "help", "key", "quit", "save", "set", "show", "single"};
 constexpr std::array<std::string_view, 1> step_completion_candidates = {
     "step"};
 constexpr std::array<std::string_view, 2> toggle_completion_candidates = {
@@ -335,6 +336,42 @@ parse_help_command(std::string_view source) {
         option_position, "expected 'brief' or 'full'");
 }
 
+[[nodiscard]] std::optional<std::string>
+parse_save_command(std::string_view source) {
+    std::size_t position = 0;
+    while (position < source.size() &&
+           is_command_whitespace(source[position])) {
+        ++position;
+    }
+
+    auto const command_start = position;
+    while (position < source.size() &&
+           !is_command_whitespace(source[position])) {
+        ++position;
+    }
+    if (source.substr(command_start, position - command_start) !=
+        "save") {
+        return std::nullopt;
+    }
+
+    while (position < source.size() &&
+           is_command_whitespace(source[position])) {
+        ++position;
+    }
+    auto const filename_start = position;
+    auto filename_end = source.size();
+    while (filename_end > filename_start &&
+           is_command_whitespace(source[filename_end - 1])) {
+        --filename_end;
+    }
+    if (filename_start == filename_end) {
+        throw combdsl::parse_error(
+            filename_start, "expected a filename");
+    }
+    return std::string(
+        source.substr(filename_start, filename_end - filename_start));
+}
+
 void write_wrapped_paragraph(
     std::ostream& output,
     std::string_view paragraph,
@@ -389,6 +426,7 @@ void print_help_brief(std::ostream& output) {
         "help [brief | full]                   | display help information\n"
         "key step [on | off]                   | after each step, wait for a keypress to continue\n"
         "quit                                  | end the program\n"
+        "save <filename>                       | save user-defined combinators to a file\n"
         "set <name> = [number] <expression>    | store <expression> as <name> with arity <number> or 0\n"
         "show <name>                           | display the arity and stored expression of <name>\n"
         "single step [on | off]                | display each step of the reduction without pause\n";
@@ -486,6 +524,15 @@ void print_help_full(std::ostream& output) {
         "supported options. Existing whitespace between words is preserved.");
 
     output << "Other Commands\n\n"
+           << "save <filename>\n";
+    write_wrapped_paragraph(
+        output,
+        "Saves all user-defined combinators to filename, replacing any "
+        "existing file. The filename is the rest of the command after "
+        "surrounding whitespace is removed, so it may contain spaces. If "
+        "there are no user-defined combinators, displays \"Nothing to save\" "
+        "and leaves any existing file untouched.");
+    output << '\n'
            << "birds\n";
     write_wrapped_paragraph(
         output,
@@ -674,6 +721,41 @@ void print_birds(std::ostream& output) {
         }
         output.put('\n');
     }
+    output.flush();
+}
+
+void save_set_list(
+    std::string_view filename,
+    std::ostream& output,
+    std::ostream& error_output) {
+    auto const definitions = combdsl::set_list();
+    if (definitions.empty()) {
+        output << "Nothing to save\n";
+        output.flush();
+        return;
+    }
+
+    std::ofstream file(
+        std::string(filename),
+        std::ios::binary | std::ios::trunc);
+    if (!file) {
+        error_output << "Could not open " << filename
+                     << " for writing\n";
+        error_output.flush();
+        return;
+    }
+
+    file.write(
+        definitions.data(),
+        static_cast<std::streamsize>(definitions.size()));
+    file.close();
+    if (!file) {
+        error_output << "Could not write " << filename << '\n';
+        error_output.flush();
+        return;
+    }
+
+    output << "Saved " << filename << '\n';
     output.flush();
 }
 
@@ -1311,6 +1393,10 @@ int main(int argc, char* argv[]) {
             }
             if (is_exact_command(source, "birds")) {
                 print_birds(std::cout);
+                continue;
+            }
+            if (auto const filename = parse_save_command(source)) {
+                save_set_list(*filename, std::cout, std::cerr);
                 continue;
             }
             if (auto const detail = parse_help_command(source)) {

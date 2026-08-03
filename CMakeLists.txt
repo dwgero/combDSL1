@@ -534,6 +534,15 @@ if(COMBDSL_BUILD_TESTS)
                 "${CMAKE_CURRENT_SOURCE_DIR}/tests/crepl_command_test.cmake"
         )
         add_test(
+            NAME crepl_save
+            COMMAND
+                "${CMAKE_COMMAND}"
+                "-DCREPL_EXECUTABLE=$<TARGET_FILE:crepl>"
+                "-DCREPL_WORKING_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR}/crepl-save-test"
+                -P
+                "${CMAKE_CURRENT_SOURCE_DIR}/tests/crepl_save_test.cmake"
+        )
+        add_test(
             NAME crepl_exit_commands
             COMMAND
                 "${CMAKE_COMMAND}"
