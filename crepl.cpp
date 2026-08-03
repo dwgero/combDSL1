@@ -100,6 +100,8 @@ constexpr std::array<std::string_view, 2> toggle_completion_candidates = {
     "off", "on"};
 constexpr std::array<std::string_view, 2> help_completion_candidates = {
     "brief", "full"};
+std::string last_save_filename = "set_list.cmb";
+std::array<std::string_view, 1> save_filename_completion_candidates;
 
 template<std::size_t Size>
 [[nodiscard]] constexpr completion_candidates make_completion_candidates(
@@ -145,6 +147,12 @@ template<std::size_t Size>
         }
         if (words[0] == "help") {
             return make_completion_candidates(help_completion_candidates);
+        }
+        if (words[0] == "save") {
+            save_filename_completion_candidates[0] =
+                last_save_filename;
+            return make_completion_candidates(
+                save_filename_completion_candidates);
         }
         return {};
     }
@@ -724,7 +732,7 @@ void print_birds(std::ostream& output) {
     output.flush();
 }
 
-void save_set_list(
+[[nodiscard]] bool save_set_list(
     std::string_view filename,
     std::ostream& output,
     std::ostream& error_output) {
@@ -732,7 +740,7 @@ void save_set_list(
     if (definitions.empty()) {
         output << "Nothing to save\n";
         output.flush();
-        return;
+        return false;
     }
 
     std::ofstream file(
@@ -742,7 +750,7 @@ void save_set_list(
         error_output << "Could not open " << filename
                      << " for writing\n";
         error_output.flush();
-        return;
+        return false;
     }
 
     file.write(
@@ -752,11 +760,12 @@ void save_set_list(
     if (!file) {
         error_output << "Could not write " << filename << '\n';
         error_output.flush();
-        return;
+        return false;
     }
 
     output << "Saved " << filename << '\n';
     output.flush();
+    return true;
 }
 
 [[nodiscard]] bool same_expression(
@@ -1396,7 +1405,10 @@ int main(int argc, char* argv[]) {
                 continue;
             }
             if (auto const filename = parse_save_command(source)) {
-                save_set_list(*filename, std::cout, std::cerr);
+                if (save_set_list(
+                        *filename, std::cout, std::cerr)) {
+                    last_save_filename = *filename;
+                }
                 continue;
             }
             if (auto const detail = parse_help_command(source)) {

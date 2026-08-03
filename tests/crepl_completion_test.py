@@ -19,6 +19,7 @@ import os
 import select
 import signal
 import sys
+import tempfile
 import time
 
 
@@ -124,11 +125,14 @@ def main():
         raise SystemExit("usage: crepl_completion_test.py CREPL_EXECUTABLE")
 
     executable = os.path.abspath(sys.argv[1])
+    working_directory = tempfile.TemporaryDirectory(
+        prefix="crepl-completion-")
     child, master = os.forkpty()
     if child == 0:
         environment = os.environ.copy()
         environment["INPUTRC"] = os.devnull
         environment["TERM"] = "xterm-256color"
+        os.chdir(working_directory.name)
         os.execve(executable, [executable], environment)
 
     child_reaped = False
@@ -144,12 +148,32 @@ def main():
         output = reader.read_until(b">")
         require_completed_line(output, b"key   step   off \n")
 
-        write_all(master, b"sav\tcompletion.cmb\n")
+        write_all(master, b"sav\t\t\n")
         output = reader.read_until(b">")
-        require_completed_line(output, b"save completion.cmb\n")
+        require_completed_line(output, b"save set_list.cmb \n")
         if b"Nothing to save\n" not in normalized(output):
             raise AssertionError(
                 f"expected Nothing to save; received {output!r}")
+
+        write_all(master, b"set Remember = 1 I\n")
+        output = reader.read_until(b">")
+        require_completed_line(output, b"set Remember = 1 I\n")
+
+        write_all(master, b"save remembered definitions.cmb\n")
+        output = reader.read_until(b">")
+        require_completed_line(
+            output, b"save remembered definitions.cmb\n")
+        if b"Saved remembered definitions.cmb\n" not in normalized(output):
+            raise AssertionError(
+                f"expected successful save; received {output!r}")
+
+        write_all(master, b"save \t\n")
+        output = reader.read_until(b">")
+        require_completed_line(
+            output, b"save remembered definitions.cmb \n")
+        if b"Saved remembered definitions.cmb\n" not in normalized(output):
+            raise AssertionError(
+                f"expected remembered save; received {output!r}")
 
         write_all(master, b"exi\t\n")
         output = reader.read_to_end()
@@ -171,6 +195,7 @@ def main():
                 os.waitpid(child, 0)
             except ChildProcessError:
                 pass
+        working_directory.cleanup()
 
 
 if __name__ == "__main__":
