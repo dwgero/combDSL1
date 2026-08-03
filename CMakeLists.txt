@@ -173,6 +173,10 @@ if(COMBDSL_BUILD_EXAMPLES)
 
     include(ExternalProject)
     find_program(COMBDSL_MAKE_EXECUTABLE NAMES make gmake REQUIRED)
+    set(
+        COMBDSL_NCURSES_INCLUDE_DIRECTORY
+        "${CMAKE_CURRENT_SOURCE_DIR}/include/ncurses"
+    )
     ExternalProject_Add(
         combdsl_ncurses
         URL
@@ -184,7 +188,7 @@ if(COMBDSL_BUILD_EXAMPLES)
             <SOURCE_DIR>/configure
             "--bindir=${CMAKE_CURRENT_SOURCE_DIR}/bin"
             "--libdir=${CMAKE_CURRENT_SOURCE_DIR}/lib"
-            "--includedir=${CMAKE_CURRENT_SOURCE_DIR}/include"
+            "--includedir=${COMBDSL_NCURSES_INCLUDE_DIRECTORY}"
             --without-manpages
             --enable-termcap
             --enable-ext-colors
@@ -201,6 +205,10 @@ if(COMBDSL_BUILD_EXAMPLES)
 
     set(COMBDSL_READLINE_LDFLAGS
         "-L${CMAKE_CURRENT_SOURCE_DIR}/lib")
+    set(
+        COMBDSL_READLINE_CPPFLAGS
+        "-I${COMBDSL_NCURSES_INCLUDE_DIRECTORY} -I${CMAKE_CURRENT_SOURCE_DIR}/include"
+    )
     if(APPLE)
         string(APPEND COMBDSL_READLINE_LDFLAGS
             " -Wl,-search_paths_first")
@@ -216,7 +224,7 @@ if(COMBDSL_BUILD_EXAMPLES)
         CONFIGURE_COMMAND
             "${CMAKE_COMMAND}" -E env
             "PATH=${CMAKE_CURRENT_SOURCE_DIR}/bin:$ENV{PATH}"
-            "CPPFLAGS=-I${CMAKE_CURRENT_SOURCE_DIR}/include"
+            "CPPFLAGS=${COMBDSL_READLINE_CPPFLAGS}"
             "LDFLAGS=${COMBDSL_READLINE_LDFLAGS}"
             "bash_cv_termcap_lib=libncursesw"
             <SOURCE_DIR>/configure
@@ -240,6 +248,10 @@ if(COMBDSL_BUILD_EXAMPLES)
     )
 
     add_executable(crepl crepl.cpp)
+    target_include_directories(
+        crepl
+        PRIVATE "${COMBDSL_NCURSES_INCLUDE_DIRECTORY}"
+    )
     target_link_directories(crepl PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/lib")
     target_link_libraries(
         crepl
