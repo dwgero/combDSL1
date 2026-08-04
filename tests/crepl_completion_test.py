@@ -140,6 +140,7 @@ def main():
     child, master = os.forkpty()
     if child == 0:
         environment = os.environ.copy()
+        environment["HOME"] = working_directory.name
         environment["INPUTRC"] = os.devnull
         environment["TERM"] = "xterm-256color"
         os.chdir(working_directory.name)

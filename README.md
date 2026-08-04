@@ -663,11 +663,15 @@ When standard output is a terminal, it first prints
 the accumulated step count every 1,000 reductions by overwriting one status
 line; the line is cleared before evaluation output is printed. Its interactive
 prompt is `>`. Interactive input uses GNU Readline, so previous nonempty
-commands can be recalled with Up Arrow or Ctrl-P. Press Tab to complete command
-words and supported options; whitespace already entered between words is
-preserved. Save and load each remember their own most recently successful
-filename, initially `set_list.cmb`; Tab at either filename position restores
-it. Redirected output contains no progress status. Enter
+commands can be recalled with Up Arrow or Ctrl-P, including commands from
+earlier interactive sessions. Press Tab to complete command words and supported
+options; whitespace already entered between words is preserved. Save and load
+each remember their own most recently successful filename across interactive
+sessions, initially `set_list.cmb`; Tab at either filename position restores
+it. Only command history and these two filenames persist; user definitions and
+mode settings do not. The two state files are `~/.crepl/history` and
+`~/.crepl/settings`. Redirected input does not read or change this state.
+Redirected output contains no progress status. Enter
 `single step` or `single step on` to print every subsequent reduction, and
 enter `single step off` to return to printing only the final result. Enter
 `key step` or `key step on` to display the starting expression and wait for

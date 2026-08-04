@@ -599,6 +599,17 @@ if(COMBDSL_BUILD_TESTS)
                     crepl_completion
                     PROPERTIES TIMEOUT 30
                 )
+                add_test(
+                    NAME crepl_persistence
+                    COMMAND
+                        "${Python3_EXECUTABLE}"
+                        "${CMAKE_CURRENT_SOURCE_DIR}/tests/crepl_persistence_test.py"
+                        "$<TARGET_FILE:crepl>"
+                )
+                set_tests_properties(
+                    crepl_persistence
+                    PROPERTIES TIMEOUT 30
+                )
             endif()
         endif()
     endif()

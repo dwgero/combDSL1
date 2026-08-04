@@ -62,9 +62,9 @@ Command Entry
 
 Tab completion
 Press Tab while entering a command to complete command words and supported
-options. Save and load each remember their own most recently successful
-filename, initially "set_list.cmb"; Tab at either filename position restores it.
-Existing whitespace between words is preserved.
+options. Save and load each remember their own most recently successful filename
+across interactive sessions, initially "set_list.cmb"; Tab at either filename
+position restores it. Existing whitespace between words is preserved.
 
 Other Commands
 

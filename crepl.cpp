@@ -29,7 +29,9 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
 #include <fstream>
+#include <iomanip>
 #include <iostream>
 #include <optional>
 #include <sstream>
@@ -44,6 +46,8 @@
 #if defined(_WIN32)
 #include <conio.h>
 #include <io.h>
+#include <process.h>
+#include <windows.h>
 #elif defined(__unix__) || defined(__APPLE__)
 #include <poll.h>
 #include <signal.h>
@@ -109,6 +113,152 @@ std::string last_save_filename = "set_list.cmb";
 std::array<std::string_view, 1> save_filename_completion_candidates;
 std::string last_load_filename = "set_list.cmb";
 std::array<std::string_view, 1> load_filename_completion_candidates;
+
+constexpr int persistent_history_limit = 500;
+constexpr std::string_view settings_header = "crepl-settings 1";
+
+struct crepl_persistence_paths {
+    std::string history;
+    std::filesystem::path settings;
+};
+
+[[nodiscard]] std::optional<std::filesystem::path> environment_path(
+    char const* name) {
+    auto const* value = std::getenv(name);
+    if (value == nullptr || *value == '\0') {
+        return std::nullopt;
+    }
+    return std::filesystem::path(value);
+}
+
+[[nodiscard]] std::optional<crepl_persistence_paths>
+make_crepl_persistence_paths() noexcept {
+    try {
+        auto home = environment_path("HOME");
+#if defined(_WIN32)
+        if (!home) {
+            home = environment_path("USERPROFILE");
+        }
+#endif
+        if (!home) {
+            return std::nullopt;
+        }
+        auto const directory = *home / ".crepl";
+
+        std::error_code error;
+        std::filesystem::create_directories(directory, error);
+        if (error) {
+            return std::nullopt;
+        }
+        std::filesystem::permissions(
+            directory,
+            std::filesystem::perms::owner_all,
+            std::filesystem::perm_options::replace,
+            error);
+        if (error) {
+            return std::nullopt;
+        }
+
+        return crepl_persistence_paths{
+            (directory / "history").string(),
+            directory / "settings"};
+    } catch (...) {
+        return std::nullopt;
+    }
+}
+
+void load_persistent_history(
+    crepl_persistence_paths const& paths) noexcept {
+    stifle_history(persistent_history_limit);
+    read_history(paths.history.c_str());
+}
+
+void append_persistent_history(
+    crepl_persistence_paths const& paths) noexcept {
+    auto result = append_history(1, paths.history.c_str());
+    if (result != 0) {
+        result = write_history(paths.history.c_str());
+    }
+    if (result == 0) {
+        history_truncate_file(
+            paths.history.c_str(), persistent_history_limit);
+    }
+}
+
+void load_persistent_filenames(
+    crepl_persistence_paths const& paths) noexcept {
+    try {
+        std::ifstream input(paths.settings);
+        std::string header;
+        std::string save_key;
+        std::string save_filename;
+        std::string load_key;
+        std::string load_filename;
+        if (!std::getline(input, header) || header != settings_header ||
+            !(input >> save_key >> std::quoted(save_filename)) ||
+            !(input >> load_key >> std::quoted(load_filename)) ||
+            save_key != "save" || load_key != "load" ||
+            save_filename.empty() || load_filename.empty()) {
+            return;
+        }
+        input >> std::ws;
+        if (!input.eof()) {
+            return;
+        }
+
+        last_save_filename = std::move(save_filename);
+        last_load_filename = std::move(load_filename);
+    } catch (...) {
+    }
+}
+
+void save_persistent_filenames(
+    crepl_persistence_paths const& paths) noexcept {
+    try {
+        auto temporary = paths.settings;
+#if defined(_WIN32)
+        auto const process_id = _getpid();
+#else
+        auto const process_id = getpid();
+#endif
+        temporary += "." + std::to_string(process_id) + ".tmp";
+        {
+            std::ofstream output(
+                temporary, std::ios::out | std::ios::trunc);
+            output << settings_header << '\n'
+                   << "save " << std::quoted(last_save_filename) << '\n'
+                   << "load " << std::quoted(last_load_filename) << '\n';
+            output.close();
+            if (!output) {
+                std::error_code ignored;
+                std::filesystem::remove(temporary, ignored);
+                return;
+            }
+        }
+
+        std::error_code ignored;
+        std::filesystem::permissions(
+            temporary,
+            std::filesystem::perms::owner_read |
+                std::filesystem::perms::owner_write,
+            std::filesystem::perm_options::replace,
+            ignored);
+
+#if defined(_WIN32)
+        auto const installed = MoveFileExW(
+            temporary.c_str(), paths.settings.c_str(),
+            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) != 0;
+#else
+        std::error_code error;
+        std::filesystem::rename(temporary, paths.settings, error);
+        auto const installed = !error;
+#endif
+        if (!installed) {
+            std::filesystem::remove(temporary, ignored);
+        }
+    } catch (...) {
+    }
+}
 
 template<std::size_t Size>
 [[nodiscard]] constexpr completion_candidates make_completion_candidates(
@@ -562,9 +712,9 @@ void print_help_full(std::ostream& output) {
         "Tab completion",
         "Press Tab while entering a command to complete command words and "
         "supported options. Save and load each remember their own most "
-        "recently successful filename, initially \"set_list.cmb\"; Tab at "
-        "either filename position restores it. Existing whitespace between "
-        "words is preserved.");
+        "recently successful filename across interactive sessions, initially "
+        "\"set_list.cmb\"; Tab at either filename position restores it. "
+        "Existing whitespace between words is preserved.");
 
     output << "Other Commands\n\n"
            << "load <filename>\n";
@@ -1445,8 +1595,14 @@ int main(int argc, char* argv[]) {
         std::cout << '\n';
     }
 
+    std::optional<crepl_persistence_paths> persistence;
     if (interactive_input) {
         using_history();
+        persistence = make_crepl_persistence_paths();
+        if (persistence) {
+            load_persistent_history(*persistence);
+            load_persistent_filenames(*persistence);
+        }
         rl_attempted_completion_function = crepl_attempted_completion;
     }
     std::string source;
@@ -1463,6 +1619,9 @@ int main(int argc, char* argv[]) {
             std::free(line);
             if (!source.empty()) {
                 add_history(source.c_str());
+                if (persistence) {
+                    append_persistent_history(*persistence);
+                }
             }
         } else if (!std::getline(std::cin, source)) {
             break;
@@ -1492,6 +1651,9 @@ int main(int argc, char* argv[]) {
                 if (load_set_list_file(
                         *filename, std::cout, std::cerr)) {
                     last_load_filename = *filename;
+                    if (persistence) {
+                        save_persistent_filenames(*persistence);
+                    }
                 }
                 continue;
             }
@@ -1500,6 +1662,9 @@ int main(int argc, char* argv[]) {
                 if (save_set_list(
                         *filename, std::cout, std::cerr)) {
                     last_save_filename = *filename;
+                    if (persistence) {
+                        save_persistent_filenames(*persistence);
+                    }
                 }
                 continue;
             }
