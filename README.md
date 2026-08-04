@@ -659,7 +659,7 @@ expression produces no output, while malformed or empty lines throw
 The `crepl` executable applies `input_escape` to each line before passing it to
 `parse_eval`, so ordinary quoted words and backslashes can be entered directly.
 When standard output is a terminal, it first prints
-`Combinator Read-Eval-Print Loop, version 2.2.1`. Long evaluations display
+`Combinator Read-Eval-Print Loop, version 2.2.3`. Long evaluations display
 the accumulated step count every 1,000 reductions by overwriting one status
 line; the line is cleared before evaluation output is printed. Its interactive
 prompt is `>`. Interactive input uses GNU Readline, so previous nonempty
@@ -879,13 +879,19 @@ recreates the worker, so a non-normalizing expression does not freeze the page.
 
 The Combinator Expression box is a scrollable history with the current editable
 input at the bottom. Successful commands and expressions that reach normal form
-remain visible in submission order. Cancelled and timed-out expressions are
-retained with ` [cancelled]` and ` [timed out]` appended, respectively. Parse
-errors are not added to the history. A successfully registered `set`, `define`,
-or `remove` command leaves only that submitted command line, with no output
-beneath it. Press Tab to complete a unique prefix for the `set`, `define`,
-`remove`, or `show` command; when no completion is available, Tab keeps its
-normal browser focus behavior.
+remain visible in submission order and are saved in the browser's local storage,
+so they return when Studio is reloaded on the same site and browser profile.
+Cancelled and timed-out expressions are retained with ` [cancelled]` and
+` [timed out]` appended, respectively; recalling them restores only the original
+expression. Parse errors are not added to the history. Press Up Arrow or Ctrl-P
+to recall older entries, and Down Arrow or Ctrl-N to move toward newer entries
+and eventually restore the draft that was being edited. Ctrl-O submits the
+current input and, after successful completion, recalls the next history entry
+for editing. A successfully registered `set`, `define`, or `remove` command
+leaves only that submitted command line, with no output beneath it. Press Tab
+to complete a unique prefix for the `set`, `define`, `remove`, or `show`
+command; when no completion is available, Tab keeps its normal browser focus
+behavior.
 
 The Single Step button switches between displaying only the evaluated result
 and displaying every reduction produced by

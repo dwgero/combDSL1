@@ -182,3 +182,178 @@ test("returns immutable history snapshots", () => {
     assert.deepEqual([...snapshot], ["Ix"]);
     assert.deepEqual([...history.values()], ["Ix", "Kx"]);
 });
+
+test("persists and restores structured history entries", () => {
+    let stored = null;
+    const storage = {
+        getItem(key) {
+            assert.equal(
+                key, "combdsl.studio.input-history.v1");
+            return stored;
+        },
+        setItem(key, value) {
+            assert.equal(
+                key, "combdsl.studio.input-history.v1");
+            stored = value;
+        },
+    };
+    const history = createHistory({
+        storage,
+        maximumStoredEntries: 2,
+    });
+    history.record("Ix");
+    history.record("YI", "cancelled");
+    history.record("BKM(BKM)", "timed out");
+
+    assert.deepEqual(JSON.parse(stored), {
+        version: 1,
+        entries: [
+            {source: "YI", outcome: "cancelled"},
+            {source: "BKM(BKM)", outcome: "timed out"},
+        ],
+    });
+    assert.deepEqual(
+        [...createHistory({
+            storage,
+            maximumStoredEntries: 2,
+        }).values()],
+        ["YI [cancelled]", "BKM(BKM) [timed out]"],
+    );
+});
+
+test("recalls raw sources and restores the editable draft", () => {
+    const history = createHistory();
+    history.record("Ix");
+    history.record("YI", "cancelled");
+    history.record("BKM(BKM)", "timed out");
+
+    assert.equal(history.previous("draft"), "BKM(BKM)");
+    assert.equal(history.previous("ignored"), "YI");
+    assert.equal(history.previous("ignored"), "Ix");
+    assert.equal(history.previous("ignored"), undefined);
+    assert.equal(history.next(), "YI");
+    assert.equal(history.next(), "BKM(BKM)");
+    assert.equal(history.next(), "draft");
+    assert.equal(history.next(), undefined);
+
+    history.resetNavigation();
+    assert.equal(history.next(), undefined);
+    assert.equal(history.previous("new draft"), "BKM(BKM)");
+    assert.equal(history.next(), "new draft");
+});
+
+test("operates on a line and resumes at its next history entry", () => {
+    const history = createHistory();
+    history.record("A");
+    history.record("B");
+    history.record("C");
+    assert.equal(history.previous("draft"), "C");
+    assert.equal(history.previous("ignored"), "B");
+
+    const afterB = history.prepareOperateAndGetNext();
+    history.record("B");
+    assert.equal(history.resumeOperateAndGetNext(afterB), "C");
+
+    const afterC = history.prepareOperateAndGetNext();
+    history.record("C");
+    assert.equal(history.resumeOperateAndGetNext(afterC), "B");
+    assert.equal(
+        history.resumeOperateAndGetNext(afterC), undefined);
+});
+
+test("operate and get next returns blank from a live draft", () => {
+    const history = createHistory();
+    history.record("A");
+    history.resetNavigation();
+
+    const operation = history.prepareOperateAndGetNext();
+    history.record("draft");
+    assert.equal(history.resumeOperateAndGetNext(operation), "");
+});
+
+test("operate and get next recalls an unannotated source", () => {
+    const history = createHistory();
+    history.record("A");
+    history.record("B", "timed out");
+    assert.equal(history.previous("draft"), "B");
+    assert.equal(history.previous("ignored"), "A");
+
+    const operation = history.prepareOperateAndGetNext();
+    history.record("A");
+    assert.equal(history.resumeOperateAndGetNext(operation), "B");
+});
+
+test("ignores malformed or unsupported stored history", () => {
+    const from = value => createHistory({
+        storage: {
+            getItem() {
+                return value;
+            },
+            setItem() {},
+        },
+    });
+
+    assert.deepEqual([...from("not json").values()], []);
+    assert.deepEqual([
+        ...from(JSON.stringify({version: 2, entries: []})).values(),
+    ], []);
+    assert.deepEqual([
+        ...from(JSON.stringify({
+            version: 1,
+            entries: [
+                {source: "Ix", outcome: ""},
+                {source: 17, outcome: "cancelled"},
+                {source: "Kx", outcome: "invented"},
+                null,
+            ],
+        })).values(),
+    ], ["Ix"]);
+});
+
+test("repairs malformed stored history on the next record", () => {
+    let stored = "not json";
+    const storage = {
+        getItem() {
+            return stored;
+        },
+        setItem(_key, value) {
+            stored = value;
+        },
+    };
+    const history = createHistory({storage});
+    history.record("Ix");
+
+    assert.deepEqual(
+        [...createHistory({storage}).values()],
+        ["Ix"],
+    );
+});
+
+test("continues in memory when browser storage throws", () => {
+    const blockedRead = createHistory({
+        storage: {
+            getItem() {
+                throw new Error("blocked");
+            },
+            setItem() {
+                throw new Error("unexpected write");
+            },
+        },
+    });
+    assert.equal(blockedRead.record("Ix"), "Ix");
+    assert.deepEqual([...blockedRead.values()], ["Ix"]);
+
+    const fullStorage = createHistory({
+        storage: {
+            getItem() {
+                return null;
+            },
+            setItem() {
+                throw new Error("quota exceeded");
+            },
+        },
+    });
+    assert.equal(fullStorage.record("Kx"), "Kx");
+    assert.equal(fullStorage.record("Sxyz"), "Sxyz");
+    assert.deepEqual([...fullStorage.values()], ["Kx", "Sxyz"]);
+});

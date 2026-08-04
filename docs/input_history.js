@@ -87,24 +87,162 @@ globalThis.combdslInputHistory = (() => {
         };
     };
 
-    const create = () => {
-        const entries = [];
+    const historyStorageVersion = 1;
+    const defaultStorageKey =
+        "combdsl.studio.input-history.v1";
+    const defaultMaximumStoredEntries = 500;
+    const storedOutcomes = new Set([
+        "", "cancelled", "timed out",
+    ]);
 
-        const record = (source, outcome = "") => {
-            const outcomeText = String(outcome);
-            const entry =
-                String(source) +
-                (outcomeText === ""
-                    ? ""
-                    : ` [${outcomeText}]`);
-            entries.push(entry);
-            return entry;
+    const create = ({
+        storage,
+        storageKey = defaultStorageKey,
+        maximumStoredEntries = defaultMaximumStoredEntries,
+    } = {}) => {
+        const storedEntryLimit =
+            Number.isSafeInteger(maximumStoredEntries) &&
+                maximumStoredEntries > 0
+                ? maximumStoredEntries
+                : defaultMaximumStoredEntries;
+        let persistentStorage = storage;
+
+        const loadEntries = () => {
+            if (persistentStorage === undefined) {
+                return [];
+            }
+
+            let text;
+            try {
+                text = persistentStorage.getItem(storageKey);
+            } catch {
+                persistentStorage = undefined;
+                return [];
+            }
+            if (text === null) {
+                return [];
+            }
+
+            let stored;
+            try {
+                stored = JSON.parse(text);
+            } catch {
+                return [];
+            }
+            if (stored?.version !== historyStorageVersion ||
+                !Array.isArray(stored.entries)) {
+                return [];
+            }
+            return stored.entries
+                .filter(entry =>
+                    entry !== null &&
+                    typeof entry === "object" &&
+                    typeof entry.source === "string" &&
+                    typeof entry.outcome === "string" &&
+                    storedOutcomes.has(entry.outcome))
+                .slice(-storedEntryLimit)
+                .map(entry => ({
+                    source: entry.source,
+                    outcome: entry.outcome,
+                }));
         };
 
-        const values = () => Object.freeze([...entries]);
+        const entries = loadEntries();
+        let position = entries.length;
+        let draft;
+        const operateAndGetNextPositions = new WeakMap();
+
+        const displayEntry = entry =>
+            entry.source +
+            (entry.outcome === ""
+                ? ""
+                : ` [${entry.outcome}]`);
+
+        const persist = () => {
+            if (persistentStorage === undefined) {
+                return;
+            }
+            try {
+                persistentStorage.setItem(
+                    storageKey,
+                    JSON.stringify({
+                        version: historyStorageVersion,
+                        entries: entries.slice(-storedEntryLimit),
+                    }),
+                );
+            } catch {
+                persistentStorage = undefined;
+            }
+        };
+
+        const resetNavigation = () => {
+            position = entries.length;
+            draft = undefined;
+        };
+
+        const record = (source, outcome = "") => {
+            const entry = {
+                source: String(source),
+                outcome: String(outcome),
+            };
+            entries.push(entry);
+            resetNavigation();
+            persist();
+            return displayEntry(entry);
+        };
+
+        const values = () =>
+            Object.freeze(entries.map(displayEntry));
+
+        const previous = currentDraft => {
+            if (entries.length === 0 || position === 0) {
+                return undefined;
+            }
+            if (position === entries.length) {
+                draft = String(currentDraft);
+            }
+            --position;
+            return entries[position].source;
+        };
+
+        const next = () => {
+            if (position === entries.length) {
+                return undefined;
+            }
+            ++position;
+            return position === entries.length
+                ? draft ?? ""
+                : entries[position].source;
+        };
+
+        const prepareOperateAndGetNext = () => {
+            const operation = Object.freeze({});
+            operateAndGetNextPositions.set(
+                operation, position + 1);
+            return operation;
+        };
+
+        const resumeOperateAndGetNext = operation => {
+            const savedPosition =
+                operateAndGetNextPositions.get(operation);
+            if (savedPosition === undefined) {
+                return undefined;
+            }
+            operateAndGetNextPositions.delete(operation);
+            position = Math.min(savedPosition, entries.length);
+            draft = undefined;
+            return position === entries.length
+                ? ""
+                : entries[position].source;
+        };
 
         return Object.freeze({
+            next,
+            prepareOperateAndGetNext,
+            previous,
             record,
+            resetNavigation,
+            resumeOperateAndGetNext,
             values,
         });
     };

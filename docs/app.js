@@ -23,7 +23,16 @@
     const evaluationWatchdog =
         globalThis.combdslEvaluationWatchdog;
     const inputHistoryTools = globalThis.combdslInputHistory;
-    const inputHistory = inputHistoryTools.create();
+    const inputHistoryStorage = (() => {
+        try {
+            return window.localStorage;
+        } catch {
+            return undefined;
+        }
+    })();
+    const inputHistory = inputHistoryTools.create({
+        storage: inputHistoryStorage,
+    });
     const completeTopLevelCommand =
         inputHistoryTools.createCommandCompleter([
         "define",
@@ -78,6 +87,7 @@
     let saveInProgress = false;
     let savedSetList = "";
     let saveDownloadUrl;
+    let pendingOperateAndGetNext;
     let singleStepEnabled = false;
     let basisStepEnabled = false;
     let keyStepEnabled = false;
@@ -162,18 +172,29 @@
         scrollToNewestSource();
     };
 
-    const appendSourceHistory = (
-        sourceText,
-        outcome = "",
-    ) => {
-        const entry = inputHistory.record(
-            sourceText, outcome);
+    const setSourceText = text => {
+        source.value = text;
+        source.setSelectionRange(text.length, text.length);
+        resizeSourceEditor();
+    };
+
+    const appendSourceHistoryEntry = entry => {
         const historyEntry =
             document.createElement("div");
         historyEntry.textContent = entry;
         sourceHistory.append(historyEntry);
         scrollToNewestSource();
     };
+
+    const appendSourceHistory = (
+        sourceText,
+        outcome = "",
+    ) => {
+        appendSourceHistoryEntry(
+            inputHistory.record(sourceText, outcome));
+    };
+
+    inputHistory.values().forEach(appendSourceHistoryEntry);
 
     const afterNextPaint = callback => {
         requestAnimationFrame(() => requestAnimationFrame(callback));
@@ -370,8 +391,11 @@
     const completeSuccessfulSource = request => {
         appendSourceHistory(request.source);
         if (source.value === request.source) {
-            source.value = "";
-            resizeSourceEditor();
+            const nextSource = request.operateAndGetNext === undefined
+                ? ""
+                : inputHistory.resumeOperateAndGetNext(
+                    request.operateAndGetNext) ?? "";
+            setSourceText(nextSource);
         }
     };
 
@@ -858,12 +882,15 @@
 
     form.addEventListener("submit", event => {
         event.preventDefault();
+        const operateAndGetNext = pendingOperateAndGetNext;
+        pendingOperateAndGetNext = undefined;
         if (!ready || activeRequest !== undefined ||
             loadRequest !== undefined) {
             return;
         }
 
         const startingExpression = source.value;
+        inputHistory.resetNavigation();
         activeRequest = {
             id: ++nextRequestId,
             source: startingExpression,
@@ -875,6 +902,7 @@
             stepPending: false,
             displayedSteps: 0,
             awaitingReplacement: false,
+            operateAndGetNext,
             outputEntry: beginEvaluationOutput(startingExpression),
         };
         status.textContent = "Scanning…";
@@ -1100,6 +1128,37 @@
     }, {once: true});
 
     source.addEventListener("keydown", event => {
+        if (event.ctrlKey && event.key.toLowerCase() === "o" &&
+            !event.isComposing && !event.shiftKey &&
+            !event.metaKey && !event.altKey && !source.readOnly &&
+            ready && activeRequest === undefined &&
+            loadRequest === undefined) {
+            event.preventDefault();
+            pendingOperateAndGetNext =
+                inputHistory.prepareOperateAndGetNext();
+            form.requestSubmit();
+            return;
+        }
+
+        const previousHistory =
+            (!event.ctrlKey && event.key === "ArrowUp") ||
+            (event.ctrlKey && event.key.toLowerCase() === "p");
+        const nextHistory =
+            (!event.ctrlKey && event.key === "ArrowDown") ||
+            (event.ctrlKey && event.key.toLowerCase() === "n");
+        if (!event.isComposing && !event.shiftKey &&
+            !event.metaKey && !event.altKey && !source.readOnly &&
+            (previousHistory || nextHistory)) {
+            event.preventDefault();
+            const recalled = previousHistory
+                ? inputHistory.previous(source.value)
+                : inputHistory.next();
+            if (recalled !== undefined) {
+                setSourceText(recalled);
+            }
+            return;
+        }
+
         if (event.key === "Tab" && !event.isComposing &&
             !event.shiftKey && !event.ctrlKey && !event.metaKey &&
             !event.altKey && !source.readOnly &&
@@ -1108,10 +1167,8 @@
             const completed = completeCommand(source.value);
             if (completed !== undefined) {
                 event.preventDefault();
-                source.value = completed;
-                source.setSelectionRange(
-                    completed.length, completed.length);
-                resizeSourceEditor();
+                inputHistory.resetNavigation();
+                setSourceText(completed);
             }
             return;
         }
@@ -1128,7 +1185,10 @@
         }
     });
 
-    source.addEventListener("input", resizeSourceEditor);
+    source.addEventListener("input", () => {
+        inputHistory.resetNavigation();
+        resizeSourceEditor();
+    });
     sourceBox.addEventListener("click", event => {
         if (event.target !== source) {
             focusSource();
