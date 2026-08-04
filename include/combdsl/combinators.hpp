@@ -3515,6 +3515,11 @@ single_step(quoted_expression expression, bool basis_step = false) {
 using evaluation_progress_callback =
     std::function<void(std::size_t)>;
 
+enum class evaluation_outcome {
+    completed,
+    cancelled
+};
+
 namespace detail {
 
 inline std::atomic_flag evaluation_not_interrupted = ATOMIC_FLAG_INIT;
@@ -3602,7 +3607,7 @@ private:
 
 } // namespace detail
 
-inline void eval(
+inline evaluation_outcome eval_with_outcome(
     quoted_expression expression,
     std::ostream& output,
     std::istream& input,
@@ -3630,7 +3635,7 @@ inline void eval(
     for (;;) {
         auto const before_step = wait_after_interrupt(expression);
         if (before_step == detail::evaluation_interrupt_result::quit) {
-            return;
+            return evaluation_outcome::cancelled;
         }
         if (before_step == detail::evaluation_interrupt_result::resumed) {
             expression_was_printed = true;
@@ -3653,7 +3658,7 @@ inline void eval(
         }
         auto const after_step = wait_after_interrupt(next);
         if (after_step == detail::evaluation_interrupt_result::quit) {
-            return;
+            return evaluation_outcome::cancelled;
         }
         auto const next_was_printed =
             after_step == detail::evaluation_interrupt_result::resumed;
@@ -3662,12 +3667,26 @@ inline void eval(
             if (!expression_was_printed && !next_was_printed) {
                 print_expression(expression);
             }
-            return;
+            return evaluation_outcome::completed;
         }
 
         expression = std::move(next);
         expression_was_printed = next_was_printed;
     }
+}
+
+inline void eval(
+    quoted_expression expression,
+    std::ostream& output,
+    std::istream& input,
+    bool basis_step,
+    evaluation_progress_callback const& progress_callback) {
+    static_cast<void>(eval_with_outcome(
+        std::move(expression),
+        output,
+        input,
+        basis_step,
+        progress_callback));
 }
 
 inline void eval(
@@ -3730,6 +3749,13 @@ inline void single_step_run(
     bool basis_step,
     evaluation_progress_callback const& progress_callback);
 
+inline evaluation_outcome single_step_run_with_outcome(
+    quoted_expression expression,
+    std::ostream& output,
+    std::istream& input,
+    bool basis_step,
+    evaluation_progress_callback const& progress_callback);
+
 namespace detail {
 
 [[nodiscard]] inline bool wait_after_single_step_run_interrupt(
@@ -3743,7 +3769,7 @@ namespace detail {
 
 } // namespace detail
 
-inline void single_step_run(
+inline evaluation_outcome single_step_run_with_outcome(
     quoted_expression expression,
     std::ostream& output,
     std::istream& input,
@@ -3756,7 +3782,7 @@ inline void single_step_run(
 
     for (;;) {
         if (!detail::wait_after_single_step_run_interrupt(input, output)) {
-            return;
+            return evaluation_outcome::cancelled;
         }
 
         auto next = single_step(expression, basis_step);
@@ -3767,11 +3793,11 @@ inline void single_step_run(
             progress.completed_reduction();
         }
         if (!detail::wait_after_single_step_run_interrupt(input, output)) {
-            return;
+            return evaluation_outcome::cancelled;
         }
 
         if (no_reduction) {
-            return;
+            return evaluation_outcome::completed;
         }
 
         expression = std::move(next);
@@ -3779,6 +3805,20 @@ inline void single_step_run(
         detail::print_layout(output, "\n");
         output.flush();
     }
+}
+
+inline void single_step_run(
+    quoted_expression expression,
+    std::ostream& output,
+    std::istream& input,
+    bool basis_step,
+    evaluation_progress_callback const& progress_callback) {
+    static_cast<void>(single_step_run_with_outcome(
+        std::move(expression),
+        output,
+        input,
+        basis_step,
+        progress_callback));
 }
 
 inline void single_step_run(
@@ -5956,7 +5996,7 @@ private:
     return std::move(detail::parse_input(source).expression);
 }
 
-inline void parse_eval(
+inline evaluation_outcome parse_eval_with_outcome(
     std::string_view source,
     std::ostream& output,
     std::istream& input,
@@ -5964,20 +6004,30 @@ inline void parse_eval(
     evaluation_progress_callback const& progress_callback) {
     auto parsed = detail::parse_input(source);
     if (parsed.is_definition) {
-        return;
+        return evaluation_outcome::completed;
     }
     if (parsed.is_display_only) {
         parsed.expression.print_to(output);
         detail::print_layout(output, "\n");
         output.flush();
-        return;
+        return evaluation_outcome::completed;
     }
-    eval(
+    return eval_with_outcome(
         std::move(parsed.expression),
         output,
         input,
         basis_step,
         progress_callback);
+}
+
+inline void parse_eval(
+    std::string_view source,
+    std::ostream& output,
+    std::istream& input,
+    bool basis_step,
+    evaluation_progress_callback const& progress_callback) {
+    static_cast<void>(parse_eval_with_outcome(
+        source, output, input, basis_step, progress_callback));
 }
 
 inline void parse_eval(
@@ -6003,23 +6053,36 @@ inline void read_parse_eval(
     }
 }
 
-inline void parse_and_step(
+inline evaluation_outcome parse_and_step_with_outcome(
     std::string_view source,
     std::ostream& output = std::cout,
     std::istream& input = std::cin,
     bool basis_step = false) {
     auto parsed = detail::parse_input(source);
     if (parsed.is_definition) {
-        return;
+        return evaluation_outcome::completed;
     }
     if (parsed.is_display_only) {
         parsed.expression.print_to(output);
         detail::print_layout(output, "\n");
         output.flush();
-        return;
+        return evaluation_outcome::completed;
     }
-    single_step_run(
-        std::move(parsed.expression), output, input, basis_step);
+    return single_step_run_with_outcome(
+        std::move(parsed.expression),
+        output,
+        input,
+        basis_step,
+        evaluation_progress_callback{});
+}
+
+inline void parse_and_step(
+    std::string_view source,
+    std::ostream& output = std::cout,
+    std::istream& input = std::cin,
+    bool basis_step = false) {
+    static_cast<void>(parse_and_step_with_outcome(
+        source, output, input, basis_step));
 }
 
 inline void parse_and_key_step(

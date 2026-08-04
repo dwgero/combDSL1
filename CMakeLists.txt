@@ -248,6 +248,7 @@ if(COMBDSL_BUILD_EXAMPLES)
     )
 
     add_executable(crepl crepl.cpp)
+    target_compile_definitions(crepl PRIVATE FMT_HEADER_ONLY=1)
     target_include_directories(
         crepl
         PRIVATE "${COMBDSL_NCURSES_INCLUDE_DIRECTORY}"
@@ -608,6 +609,17 @@ if(COMBDSL_BUILD_TESTS)
                 )
                 set_tests_properties(
                     crepl_persistence
+                    PROPERTIES TIMEOUT 30
+                )
+                add_test(
+                    NAME crepl_terminal_color
+                    COMMAND
+                        "${Python3_EXECUTABLE}"
+                        "${CMAKE_CURRENT_SOURCE_DIR}/tests/crepl_terminal_color_test.py"
+                        "$<TARGET_FILE:crepl>"
+                )
+                set_tests_properties(
+                    crepl_terminal_color
                     PROPERTIES TIMEOUT 30
                 )
             endif()

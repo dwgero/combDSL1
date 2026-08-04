@@ -16,6 +16,7 @@
 
 import errno
 import os
+import re
 import select
 import signal
 import sys
@@ -86,7 +87,9 @@ class PtyReader:
 
 
 def normalized(output):
-    return output.replace(b"\r", b"")
+    without_ansi = re.sub(
+        rb"\x1b\[[0-?]*[ -/]*[@-~]", b"", output)
+    return without_ansi.replace(b"\r", b"")
 
 
 def require_completed_line(output, expected):

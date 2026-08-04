@@ -20,6 +20,8 @@
 #include <combdsl/combinators.hpp>
 #include <combdsl/color_step_ansi.hpp>
 
+#include <fmt/color.h>
+
 #include "web/load_set_list.hpp"
 
 #include <array>
@@ -58,6 +60,56 @@
 namespace {
 
 constexpr std::string_view crepl_version = "2.3.0";
+
+[[nodiscard]] bool stream_is_terminal(std::FILE* stream) noexcept {
+#if defined(_WIN32)
+    return ::_isatty(::_fileno(stream)) != 0;
+#elif defined(__unix__) || defined(__APPLE__)
+    return ::isatty(::fileno(stream)) != 0;
+#else
+    static_cast<void>(stream);
+    return false;
+#endif
+}
+
+void write_red_message(
+    std::ostream& output,
+    std::string_view message,
+    bool use_terminal_color) {
+    if (!output.good()) {
+        return;
+    }
+    if (use_terminal_color) {
+        auto const rendered = fmt::format(
+            fmt::fg(fmt::color::red), "{}", message);
+        output.write(
+            rendered.data(),
+            static_cast<std::streamsize>(rendered.size()));
+        return;
+    }
+    output.write(
+        message.data(),
+        static_cast<std::streamsize>(message.size()));
+}
+
+void print_red_message_line(
+    std::ostream& output,
+    std::string_view message,
+    bool use_terminal_color) {
+    write_red_message(output, message, use_terminal_color);
+    output.put('\n');
+    output.flush();
+}
+
+void report_evaluation_outcome(
+    combdsl::evaluation_outcome outcome,
+    std::ostream& output,
+    bool use_terminal_color) {
+    if (outcome == combdsl::evaluation_outcome::cancelled) {
+        print_red_message_line(
+            output, "[cancelled]", use_terminal_color);
+    }
+}
 
 void print_crepl_banner(std::ostream& output) {
     output << "Combinator Read-Eval-Print Loop, version "
@@ -399,6 +451,32 @@ completion_candidates active_completion_candidates;
            is_command_whitespace(source[position])) {
         ++position;
     }
+    return position == source.size();
+}
+
+[[nodiscard]] bool is_show_all_command(
+    std::string_view source) noexcept {
+    std::size_t position = 0;
+    auto skip_whitespace = [&] {
+        while (position < source.size() &&
+               is_command_whitespace(source[position])) {
+            ++position;
+        }
+    };
+    auto next_word = [&]() {
+        skip_whitespace();
+        auto const start = position;
+        while (position < source.size() &&
+               !is_command_whitespace(source[position])) {
+            ++position;
+        }
+        return source.substr(start, position - start);
+    };
+
+    if (next_word() != "show" || next_word() != "all") {
+        return false;
+    }
+    skip_whitespace();
     return position == source.size();
 }
 
@@ -930,7 +1008,8 @@ void print_birds(std::ostream& output) {
 [[nodiscard]] bool save_set_list(
     std::string_view filename,
     std::ostream& output,
-    std::ostream& error_output) {
+    std::ostream& error_output,
+    bool color_errors) {
     auto const definitions = combdsl::set_list();
     if (definitions.empty()) {
         output << "Nothing to save\n";
@@ -942,9 +1021,11 @@ void print_birds(std::ostream& output) {
         std::string(filename),
         std::ios::binary | std::ios::trunc);
     if (!file) {
-        error_output << "Could not open " << filename
-                     << " for writing\n";
-        error_output.flush();
+        auto const message =
+            "Could not open " + std::string(filename) +
+            " for writing";
+        print_red_message_line(
+            error_output, message, color_errors);
         return false;
     }
 
@@ -953,8 +1034,10 @@ void print_birds(std::ostream& output) {
         static_cast<std::streamsize>(definitions.size()));
     file.close();
     if (!file) {
-        error_output << "Could not write " << filename << '\n';
-        error_output.flush();
+        auto const message =
+            "Could not write " + std::string(filename);
+        print_red_message_line(
+            error_output, message, color_errors);
         return false;
     }
 
@@ -966,20 +1049,25 @@ void print_birds(std::ostream& output) {
 [[nodiscard]] bool load_set_list_file(
     std::string_view filename,
     std::ostream& output,
-    std::ostream& error_output) {
+    std::ostream& error_output,
+    bool color_errors) {
     std::ifstream file(std::string(filename), std::ios::binary);
     if (!file) {
-        error_output << "Could not open " << filename
-                     << " for reading\n";
-        error_output.flush();
+        auto const message =
+            "Could not open " + std::string(filename) +
+            " for reading";
+        print_red_message_line(
+            error_output, message, color_errors);
         return false;
     }
 
     std::ostringstream contents;
     contents << file.rdbuf();
     if (file.bad()) {
-        error_output << "Could not read " << filename << '\n';
-        error_output.flush();
+        auto const message =
+            "Could not read " + std::string(filename);
+        print_red_message_line(
+            error_output, message, color_errors);
         return false;
     }
 
@@ -990,8 +1078,8 @@ void print_birds(std::ostream& output) {
             combdsl::web_detail::format_file_load_diagnostics(
                 filename, load_result);
         if (!diagnostics.empty()) {
-            error_output << diagnostics << '\n';
-            error_output.flush();
+            print_red_message_line(
+                error_output, diagnostics, color_errors);
         }
         return false;
     }
@@ -1333,7 +1421,7 @@ private:
     return action == keypress_action::step;
 }
 
-void terminal_key_step_loop(
+[[nodiscard]] combdsl::evaluation_outcome terminal_key_step_loop(
     combdsl::quoted_expression expression,
     std::ostream& output,
     bool basis_step) {
@@ -1344,12 +1432,12 @@ void terminal_key_step_loop(
 
     for (;;) {
         if (!terminal_key_requests_step()) {
-            return;
+            return combdsl::evaluation_outcome::cancelled;
         }
 
         auto next = combdsl::single_step(expression, basis_step);
         if (same_expression(next, expression)) {
-            return;
+            return combdsl::evaluation_outcome::completed;
         }
 
         expression = std::move(next);
@@ -1357,12 +1445,12 @@ void terminal_key_step_loop(
 
         auto following = combdsl::single_step(expression, basis_step);
         if (same_expression(following, expression)) {
-            return;
+            return combdsl::evaluation_outcome::completed;
         }
     }
 }
 
-void colorized_single_step_run(
+[[nodiscard]] combdsl::evaluation_outcome colorized_single_step_run(
     combdsl::quoted_expression expression,
     std::ostream& output,
     std::istream& input,
@@ -1374,7 +1462,7 @@ void colorized_single_step_run(
     for (;;) {
         if (!combdsl::detail::wait_after_single_step_run_interrupt(
                 input, output)) {
-            return;
+            return combdsl::evaluation_outcome::cancelled;
         }
 
         std::ostringstream step_output;
@@ -1385,14 +1473,14 @@ void colorized_single_step_run(
 
         if (!combdsl::detail::wait_after_single_step_run_interrupt(
                 input, output)) {
-            return;
+            return combdsl::evaluation_outcome::cancelled;
         }
 
         if (no_reduction) {
             if (reduced) {
                 print_expression_line(output, expression);
             }
-            return;
+            return combdsl::evaluation_outcome::completed;
         }
 
         write_step_output(output, step_output);
@@ -1401,7 +1489,7 @@ void colorized_single_step_run(
     }
 }
 
-void colorized_key_step_loop(
+[[nodiscard]] combdsl::evaluation_outcome colorized_key_step_loop(
     combdsl::quoted_expression expression,
     std::ostream& output,
     bool basis_step) {
@@ -1412,7 +1500,7 @@ void colorized_key_step_loop(
 
     for (;;) {
         if (!terminal_key_requests_step()) {
-            return;
+            return combdsl::evaluation_outcome::cancelled;
         }
 
         std::ostringstream step_output;
@@ -1420,7 +1508,7 @@ void colorized_key_step_loop(
         auto next = combdsl::color_step_ansi(
             expression, step_output, basis_step);
         if (same_expression(next, expression)) {
-            return;
+            return combdsl::evaluation_outcome::completed;
         }
 
         write_step_output(output, step_output);
@@ -1429,12 +1517,12 @@ void colorized_key_step_loop(
         auto following = combdsl::single_step(expression, basis_step);
         if (same_expression(following, expression)) {
             print_expression_line(output, expression);
-            return;
+            return combdsl::evaluation_outcome::completed;
         }
     }
 }
 
-void parse_and_color_step_ansi(
+[[nodiscard]] combdsl::evaluation_outcome parse_and_color_step_ansi(
     std::string_view source,
     std::ostream& output,
     std::istream& input,
@@ -1442,61 +1530,52 @@ void parse_and_color_step_ansi(
     bool key_step) {
     auto parsed = combdsl::detail::parse_input(source);
     if (parsed.is_definition) {
-        return;
+        return combdsl::evaluation_outcome::completed;
     }
     if (parsed.is_display_only) {
         print_expression_line(output, parsed.expression);
-        return;
+        return combdsl::evaluation_outcome::completed;
     }
 
     if (key_step) {
-        colorized_key_step_loop(
+        return colorized_key_step_loop(
             std::move(parsed.expression),
             output,
             basis_step);
-        return;
     }
-    colorized_single_step_run(
+    return colorized_single_step_run(
         std::move(parsed.expression),
         output,
         input,
         basis_step);
 }
 
-void parse_and_terminal_key_step(
+[[nodiscard]] combdsl::evaluation_outcome parse_and_terminal_key_step(
     std::string_view source,
     std::ostream& output,
     bool basis_step) {
     auto parsed = combdsl::detail::parse_input(source);
     if (parsed.is_definition) {
-        return;
+        return combdsl::evaluation_outcome::completed;
     }
     if (parsed.is_display_only) {
         print_expression_line(output, parsed.expression);
-        return;
+        return combdsl::evaluation_outcome::completed;
     }
-    terminal_key_step_loop(
+    return terminal_key_step_loop(
         std::move(parsed.expression), output, basis_step);
 }
 
 [[nodiscard]] bool standard_output_is_terminal() noexcept {
-#if defined(_WIN32)
-    return ::_isatty(::_fileno(stdout)) != 0;
-#elif defined(__unix__) || defined(__APPLE__)
-    return ::isatty(::fileno(stdout)) != 0;
-#else
-    return false;
-#endif
+    return stream_is_terminal(stdout);
 }
 
 [[nodiscard]] bool standard_input_is_terminal() noexcept {
-#if defined(_WIN32)
-    return ::_isatty(::_fileno(stdin)) != 0;
-#elif defined(__unix__) || defined(__APPLE__)
-    return ::isatty(::fileno(stdin)) != 0;
-#else
-    return false;
-#endif
+    return stream_is_terminal(stdin);
+}
+
+[[nodiscard]] bool standard_error_is_terminal() noexcept {
+    return stream_is_terminal(stderr);
 }
 
 class progress_output_buffer final : public std::streambuf {
@@ -1583,6 +1662,8 @@ int main(int argc, char* argv[]) {
 
     auto const interactive_output = standard_output_is_terminal();
     auto const interactive_input = standard_input_is_terminal();
+    auto const interactive_error_output =
+        standard_error_is_terminal();
 #if defined(__unix__) || defined(__APPLE__)
     scoped_terminal_sigwinch_handler sigwinch_handler(
         interactive_input);
@@ -1649,7 +1730,10 @@ int main(int argc, char* argv[]) {
             if (auto const filename =
                     parse_filename_command(source, "load")) {
                 if (load_set_list_file(
-                        *filename, std::cout, std::cerr)) {
+                        *filename,
+                        std::cout,
+                        std::cerr,
+                        interactive_error_output)) {
                     last_load_filename = *filename;
                     if (persistence) {
                         save_persistent_filenames(*persistence);
@@ -1660,7 +1744,10 @@ int main(int argc, char* argv[]) {
             if (auto const filename =
                     parse_filename_command(source, "save")) {
                 if (save_set_list(
-                        *filename, std::cout, std::cerr)) {
+                        *filename,
+                        std::cout,
+                        std::cerr,
+                        interactive_error_output)) {
                     last_save_filename = *filename;
                     if (persistence) {
                         save_persistent_filenames(*persistence);
@@ -1703,19 +1790,29 @@ int main(int argc, char* argv[]) {
                 continue;
             }
 
+            if (is_show_all_command(source) &&
+                combdsl::set_list().empty()) {
+                print_red_message_line(
+                    std::cout,
+                    "Nothing to show",
+                    interactive_output);
+                continue;
+            }
+
             auto const escaped_source =
                 combdsl::input_escape(source);
             if (!interactive_output) {
+                auto outcome = combdsl::evaluation_outcome::completed;
                 if (active_stepping_mode == stepping_mode::single) {
                     if (colorize_mode) {
-                        parse_and_color_step_ansi(
+                        outcome = parse_and_color_step_ansi(
                             escaped_source,
                             std::cout,
                             std::cin,
                             basis_step_mode,
                             false);
                     } else {
-                        combdsl::parse_and_step(
+                        outcome = combdsl::parse_and_step_with_outcome(
                             escaped_source,
                             std::cout,
                             std::cin,
@@ -1724,57 +1821,70 @@ int main(int argc, char* argv[]) {
                 } else if (
                     active_stepping_mode == stepping_mode::key) {
                     if (colorize_mode) {
-                        parse_and_color_step_ansi(
+                        outcome = parse_and_color_step_ansi(
                             escaped_source,
                             std::cout,
                             std::cin,
                             basis_step_mode,
                             true);
                     } else {
-                        parse_and_terminal_key_step(
+                        outcome = parse_and_terminal_key_step(
                             escaped_source,
                             std::cout,
                             basis_step_mode);
                     }
                 } else {
-                    combdsl::parse_eval(escaped_source);
+                    outcome = combdsl::parse_eval_with_outcome(
+                        escaped_source,
+                        std::cout,
+                        std::cin,
+                        false,
+                        combdsl::evaluation_progress_callback{});
                 }
+                report_evaluation_outcome(
+                    outcome, std::cout, false);
                 continue;
             }
 
             progress_output_buffer output_buffer(std::cout.rdbuf());
             std::ostream evaluation_output(&output_buffer);
             if (active_stepping_mode == stepping_mode::single) {
+                auto outcome = combdsl::evaluation_outcome::completed;
                 if (colorize_mode) {
-                    parse_and_color_step_ansi(
+                    outcome = parse_and_color_step_ansi(
                         escaped_source,
                         evaluation_output,
                         std::cin,
                         basis_step_mode,
                         false);
                 } else {
-                    combdsl::parse_and_step(
+                    outcome = combdsl::parse_and_step_with_outcome(
                         escaped_source,
                         evaluation_output,
                         std::cin,
                         basis_step_mode);
                 }
+                report_evaluation_outcome(
+                    outcome, evaluation_output, true);
                 continue;
             }
             if (active_stepping_mode == stepping_mode::key) {
+                auto outcome = combdsl::evaluation_outcome::completed;
                 if (colorize_mode) {
-                    parse_and_color_step_ansi(
+                    outcome = parse_and_color_step_ansi(
                         escaped_source,
                         evaluation_output,
                         std::cin,
                         basis_step_mode,
                         true);
                 } else {
-                    parse_and_terminal_key_step(
+                    outcome = parse_and_terminal_key_step(
                         escaped_source,
                         evaluation_output,
                         basis_step_mode);
                 }
+                report_evaluation_outcome(
+                    outcome, evaluation_output, true);
                 continue;
             }
 
@@ -1784,14 +1894,19 @@ int main(int argc, char* argv[]) {
                     output_buffer.show_progress(reductions);
                 }
             };
-            combdsl::parse_eval(
+            auto const outcome = combdsl::parse_eval_with_outcome(
                 escaped_source,
                 evaluation_output,
                 std::cin,
                 false,
                 progress);
+            report_evaluation_outcome(
+                outcome, evaluation_output, true);
         } catch (combdsl::parse_error const& error) {
-            std::cerr << error.what() << '\n';
+            print_red_message_line(
+                std::cerr,
+                error.what(),
+                interactive_error_output);
         }
     }
 }
