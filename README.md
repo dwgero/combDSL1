@@ -568,7 +568,10 @@ expression trees. Emscripten builds retain the single-threaded searches.
 Names created with `set` or `define` may be redefined. A changed definition
 replaces the user-defined basis for future parsing; expressions parsed earlier
 retain the basis snapshot they already contain. Repeating an equivalent arity
-and stored expression makes no change. The fundamental names `S`, `K`, `I`,
+and stored expression makes no change. A changed redefinition removes its
+unreferenced old definition from `set_list()` and appends the new definition.
+An old definition remains when another saved basis, including a same-name
+replacement, needs its captured snapshot. The fundamental names `S`, `K`, `I`,
 and `Y`, and every pre-defined basis registered by C++ `basis(...)`, are
 immutable; attempting to redefine one is a parse error. A later C++ basis
 registration cannot take a name that is already user-defined.
@@ -605,18 +608,19 @@ parse_eval("remove Saved"); // removes Saved; prints nothing
 parse_eval("User x");       // still prints: x
 ```
 
-`set_list()` returns the chronological history of successful user definitions
-as newline-separated `set`, `define`, or retained `remove` declarations. Changed
-redefinitions are included so replay preserves definitions that captured
-earlier basis snapshots; equivalent repetitions are omitted. Each stored
-definition records whether another basis referred to it. Removing an
-unreferenced definition removes both its definition and the `remove` command
-from the list. If another basis referred to it, the required definition and a
-following `remove` command remain so replay can recreate the dependent basis
-without leaving the removed name defined. A `set` declaration always includes
-its arity, including `0`; a `define` declaration includes its defining symbols.
-Quotes and backslashes appear exactly as a user would enter them. Passing each
-line through `input_escape` and then to `parse` recreates the definitions:
+`set_list()` returns the replayable history of user definitions as
+newline-separated `set`, `define`, or retained `remove` declarations. A changed
+redefinition replaces an unreferenced old record, while an old record needed by
+a captured basis snapshot remains in chronological order. Equivalent
+repetitions are omitted. Each stored definition records whether another basis
+referred to it. Removing an unreferenced definition removes both its definition
+and the `remove` command from the list. If another basis referred to it, the
+required definition and a following `remove` command remain so replay can
+recreate the dependent basis without leaving the removed name defined. A `set`
+declaration always includes its arity, including `0`; a `define` declaration
+includes its defining symbols. Quotes and backslashes appear exactly as a user
+would enter them. Passing each line through `input_escape` and then to `parse`
+recreates the definitions:
 
 ```cpp
 auto definitions = set_list();
@@ -652,7 +656,7 @@ expression produces no output, while malformed or empty lines throw
 The `crepl` executable applies `input_escape` to each line before passing it to
 `parse_eval`, so ordinary quoted words and backslashes can be entered directly.
 When standard output is a terminal, it first prints
-`Combinator Read-Eval-Print Loop, version 2.1.4`. Long evaluations display
+`Combinator Read-Eval-Print Loop, version 2.1.7`. Long evaluations display
 the accumulated step count every 1,000 reductions by overwriting one status
 line; the line is cleared before evaluation output is printed. Its interactive
 prompt is `>`. Interactive input uses GNU Readline, so previous nonempty

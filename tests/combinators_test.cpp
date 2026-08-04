@@ -1119,8 +1119,14 @@ int main() {
     test("set list accepts a later duplicate definition",
          parse(input_escape("set LPair = 1 I")), "LPair");
     const std::string expected_redefined_set_list =
-        expected_set_list + "\nset LPair = 1 I";
-    test("set list records a later changed definition",
+        "set LZero = 0 I\n"
+        "set LUse = 1 LZero\n"
+        "set Q\\R = 1 I\n"
+        "set LSlash = 1 Q\\R\n"
+        "set LMulti = 1 Cstar x\n"
+        "set LRaw = 1 K \"a b()\\c\"\n"
+        "set LPair = 1 I";
+    test("set list replaces an unreferenced old definition",
          [] { std::cout << set_list(); },
          expected_redefined_set_list);
     test_parse_failure(
@@ -1173,6 +1179,52 @@ int main() {
              std::cout << set_list();
          },
          expected_definition_list);
+
+    test("set registers a self-redefinition base",
+         parse("set SelfReplay = 0 I"), "SelfReplay");
+    test("set may capture its previous definition",
+         parse("set SelfReplay = 0 SelfReplay"), "SelfReplay");
+    test("set list retains a required same-name snapshot",
+         [] {
+             constexpr std::string_view suffix =
+                 "set SelfReplay = 0 I\n"
+                 "set SelfReplay = 0 SelfReplay";
+             std::cout << (set_list().ends_with(suffix)
+                 ? "retained"
+                 : "missing");
+         },
+         "retained");
+    test("a retained same-name snapshot remains usable",
+         single_step(single_step(single_step(
+             parse("SelfReplay x")))),
+         "x");
+    test("an otherwise unused self-history can still be removed",
+         [] {
+             static_cast<void>(parse("remove SelfReplay"));
+             std::cout << (set_list().find("SelfReplay") ==
+                     std::string::npos
+                 ? "omitted"
+                 : "retained");
+         },
+         "omitted");
+
+    test("define registers an initial replaceable definition",
+         parse("define DefReplace x = x"), "DefReplace");
+    test("define replaces the unreferenced definition",
+         parse("define DefReplace x = Kx"), "DefReplace");
+    test("set list keeps only the current unreferenced define",
+         [] {
+             auto const definitions = set_list();
+             auto const replacement = definitions.find(
+                 "define DefReplace x = Kx");
+             std::cout <<
+                 (replacement != std::string::npos &&
+                  definitions.find("define DefReplace x = x") ==
+                      std::string::npos
+                     ? "compacted"
+                     : "not compacted");
+         },
+         "compacted");
 
     test("remove inspection accepts a user basis",
          parse("set RemoveInspect = 0 I"), "RemoveInspect");
@@ -1296,7 +1348,7 @@ int main() {
 
     test_parse_failure(
         "remove requires a name", "remove ", 7,
-        "expected a name");
+        "missing combinator name");
     test_parse_failure(
         "remove rejects an undefined name", "remove RemoveMissing", 7,
         "RemoveMissing is not a defined name");
@@ -1311,7 +1363,30 @@ int main() {
         "unexpected input after name");
     test("remove without required whitespace remains symbols",
          parse("removex"), "removex");
-    test("bare remove remains symbols", parse("remove"), "remove");
+    test_parse_failure(
+        "bare set requires a combinator name", "set", 3,
+        "missing combinator name");
+    test_parse_failure(
+        "bare define requires a combinator name", "define", 6,
+        "missing combinator name");
+    test_parse_failure(
+        "bare show requires a combinator name", "show", 4,
+        "missing combinator name");
+    test_parse_failure(
+        "bare remove requires a combinator name", "remove", 6,
+        "missing combinator name");
+    test_parse_failure(
+        "bare load requires a filename", "load", 4,
+        "missing filename");
+    test_parse_failure(
+        "bare save requires a filename", "save", 4,
+        "missing filename");
+    test_parse_failure(
+        "whitespace-only load argument is missing", "load  ", 6,
+        "missing filename");
+    test_parse_failure(
+        "whitespace-only save argument is missing", "save  ", 6,
+        "missing filename");
 
     test_parse_failure(
         "define cannot replace a predefined basis",
@@ -1943,7 +2018,6 @@ int main() {
          single_step(parse("WsAr2 x y")), "x");
     test("set without required whitespace remains symbols",
          parse("setx"), "setx");
-    test("bare set remains symbols", parse("set"), "set");
     test("first set definition",
          parse("set DynDup=I"), "DynDup");
     test("identical set definition needs no replacement",
@@ -2276,7 +2350,8 @@ int main() {
     test_parse_failure("parse invalid backslash escape", "\\q", 0);
     test_parse_failure("parse bare quote", "\"word\"", 0);
     test_parse_failure(
-        "show requires a name", "show ", 5);
+        "show requires a combinator name", "show ", 5,
+        "missing combinator name");
     test_parse_failure(
         "show rejects an invalid name", "show @", 5,
         "@ is not a defined name");
@@ -2506,8 +2581,15 @@ int main() {
          [&] { parse_eval("StepD z"); }, "z\n");
     test("parse eval does not mistake definex for a definition",
          [&] { parse_eval("definex"); }, "definex\n");
-    test("parse eval treats bare define as symbols",
-         [&] { parse_eval("define"); }, "define\n");
+    test("parse eval reports a missing define name",
+         [&] {
+             try {
+                 parse_eval("define");
+             } catch (parse_error const& error) {
+                 std::cout << error.what();
+             }
+         },
+         "Parse error at position 7: missing combinator name");
     test("parse eval show displays a definition without reducing it",
          [&] { parse_eval("show ShRed"); }, "arity:0 Kxy\n");
     test("parse eval show identifies a fundamental name",
@@ -2525,8 +2607,15 @@ int main() {
         "Parse error at position 6: Ix is not a defined name");
     test("parse eval does not mistake showx for a command",
          [&] { parse_eval("showx"); }, "showx\n");
-    test("parse eval treats bare show as symbols",
-         [&] { parse_eval("show"); }, "show\n");
+    test("parse eval reports a missing show name",
+         [&] {
+             try {
+                 parse_eval("show");
+             } catch (parse_error const& error) {
+                 std::cout << error.what();
+             }
+         },
+         "Parse error at position 5: missing combinator name");
     test("parse eval uses a set basis",
          [&] { parse_eval("SetK x y"); }, "x\n");
     test("parse eval treats q as a symbol", [&] { parse_eval("q"); }, "q\n");

@@ -42,8 +42,10 @@ that will reproduce the combinator_expression. For a one-character name, the
 space before the symbols may be omitted. For example, to add the Eagle bird:
 define Exyzwv = xy(zwv)
 
-User-defined combinator names created by "set" or "define" may be redefined.
-Pre-defined bird combinator names are immutable and cannot be redefined.
+User-defined combinator names created by "set" or "define" may be redefined. An
+unreferenced old definition is replaced in the saved set list; a definition
+needed by another saved basis remains for replay. Pre-defined bird combinator
+names are immutable and cannot be redefined.
 
 show <name>
 The show command displays the arity and combinators stored for name. For

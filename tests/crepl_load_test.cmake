@@ -37,7 +37,7 @@ if(NOT missing_output STREQUAL "")
         "unexpected missing-filename output:\n${missing_output}")
 endif()
 set(expected_missing_error
-    "Parse error at position 5: expected a filename\n")
+    "Parse error at position 5: missing filename\n")
 if(NOT missing_error STREQUAL expected_missing_error)
     message(FATAL_ERROR
         "unexpected missing-filename error\n"
@@ -82,11 +82,14 @@ set(round_trip_file
     "${CREPL_WORKING_DIRECTORY}/loaded round trip.cmb")
 set(success_input
     "${CREPL_WORKING_DIRECTORY}/successful-load-input.cmb")
-string(CONCAT expected_definitions
+string(CONCAT loaded_definitions
     "set LoadI = 1 I\n"
     "define LoadFlip xy = yx\n"
     "set LoadI = 1 K")
-file(WRITE "${load_file}" "${expected_definitions}")
+string(CONCAT expected_definitions
+    "define LoadFlip xy = yx\n"
+    "set LoadI = 1 K")
+file(WRITE "${load_file}" "${loaded_definitions}")
 file(REMOVE "${round_trip_file}")
 file(WRITE "${success_input}"
     "load loaded definitions.cmb\n"

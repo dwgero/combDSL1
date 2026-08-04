@@ -361,9 +361,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             color: #c33;
         }
     </style>
-    <script src="./evaluation_watchdog.js?v=2.1.4" defer></script>
-    <script src="./input_history.js?v=2.1.4" defer></script>
-    <script src="./app.js?v=2.1.4" defer></script>
+    <script src="./evaluation_watchdog.js?v=2.1.7" defer></script>
+    <script src="./input_history.js?v=2.1.7" defer></script>
+    <script src="./app.js?v=2.1.7" defer></script>
 </head>
 <body>
     <main aria-labelledby="studio-title">
@@ -508,7 +508,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             <br><br>
             User-defined combinator names created by <code>set</code> or
             <code>define</code> may be redefined. Pre-defined names are
-            immutable and cannot be redefined.
+            immutable and cannot be redefined. A changed redefinition replaces
+            its unreferenced old saved definition; an old definition needed by
+            another saved basis remains available for replay.
             <br><br>
             <code>show name</code><br>
             The <code>show</code> command displays the arity and combinators stored
@@ -527,9 +529,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             The Save button downloads to your computer the combinators added by
             <code>set</code> or <code>define</code>, with default filename
             <code>set_list.cmb</code>. Every saved definition includes its
-            arity and defining combinator expression. Redefinitions are saved
-            in chronological order so that old defined combinator expressions
-            referencing previous definitions still work the same. Retained
+            arity and defining combinator expression. An unreferenced old
+            definition is replaced by its redefinition. Earlier definitions
+            needed by saved combinator expressions remain in chronological
+            order so their captured snapshots still work the same. Retained
             <code>remove</code> commands are also saved so removed names stay
             unavailable after dependent definitions are recreated.
             The Load button reads a <code>.cmb</code> file from your computer
@@ -643,7 +646,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             data-dialog-initial-focus>About</h2>
         <div class="license-text">
             <!-- Keep this version and the app.js cache key in sync. -->
-            <p>Combinator Studio, version 2.1.4<br>
+            <p>Combinator Studio, version 2.1.7<br>
                 Part of the C++ Combinator DSL<br>
                 Copyright (C) 2026  David W. Gero</p>
             <p>This program is free software: you can redistribute it and/or modify

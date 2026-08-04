@@ -53,7 +53,7 @@
 
 namespace {
 
-constexpr std::string_view crepl_version = "2.1.4";
+constexpr std::string_view crepl_version = "2.1.7";
 
 void print_crepl_banner(std::ostream& output) {
     output << "Combinator Read-Eval-Print Loop, version "
@@ -387,7 +387,7 @@ parse_filename_command(
     }
     if (filename_start == filename_end) {
         throw combdsl::parse_error(
-            filename_start, "expected a filename");
+            filename_start, "missing filename");
     }
     return std::string(
         source.substr(filename_start, filename_end - filename_start));
@@ -529,8 +529,10 @@ void print_help_full(std::ostream& output) {
     write_wrapped_paragraph(
         output,
         "User-defined combinator names created by \"set\" or \"define\" "
-        "may be redefined. Pre-defined bird combinator names are immutable "
-        "and cannot be redefined.");
+        "may be redefined. An unreferenced old definition is replaced in the "
+        "saved set list; a definition needed by another saved basis remains "
+        "for replay. Pre-defined bird combinator names are immutable and "
+        "cannot be redefined.");
     output << '\n'
            << "show <name>\n";
     write_wrapped_paragraph(

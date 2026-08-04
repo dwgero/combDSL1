@@ -221,11 +221,16 @@ int main() {
         combdsl::parse("set FileReplace = 0 I"));
     auto const replacement = load_set_list(
         "set FileReplace = 1 K\n");
+    auto const replacement_list = combdsl::set_list();
     check("a file silently replaces a user definition",
           replacement.success &&
           replacement.loaded == 1 &&
           replacement.diagnostics.empty() &&
-          shown_definition("FileReplace") == "arity:1 K");
+          shown_definition("FileReplace") == "arity:1 K" &&
+          replacement_list.find("set FileReplace = 0 I") ==
+              std::string::npos &&
+          replacement_list.find("set FileReplace = 1 K") !=
+              std::string::npos);
 
     auto const before_failed_replacement = combdsl::set_list();
     auto const failed_replacement = load_set_list(
@@ -239,10 +244,15 @@ int main() {
     auto const repeated_replacement = load_set_list(
         "set FileTwice = 0 I\n"
         "set FileTwice = 0 K\n");
-    check("redefinitions within a file are silent and ordered",
+    auto const repeated_replacement_list = combdsl::set_list();
+    check("redefinitions within a file are silent and compacted",
           repeated_replacement.success &&
           repeated_replacement.loaded == 2 &&
-          shown_definition("FileTwice") == "arity:0 K");
+          shown_definition("FileTwice") == "arity:0 K" &&
+          repeated_replacement_list.find("set FileTwice = 0 I") ==
+              std::string::npos &&
+          repeated_replacement_list.find("set FileTwice = 0 K") !=
+              std::string::npos);
 
     static_cast<void>(
         combdsl::parse("set FileCycle = 0 K"));

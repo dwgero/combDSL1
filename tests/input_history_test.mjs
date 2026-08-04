@@ -73,6 +73,20 @@ test("can append a command delimiter to an exact match", () => {
     assert.equal(complete("show M"), undefined);
 });
 
+test("completes the remove command with its delimiter", () => {
+    const complete = createCommandCompleter([
+        "define",
+        "remove",
+        "set",
+        "show",
+    ], {appendSpaceToExact: true});
+
+    assert.equal(complete("rem"), "remove ");
+    assert.equal(complete("remove"), "remove ");
+    assert.equal(complete("  rem"), "  remove ");
+    assert.equal(complete("remove "), undefined);
+});
+
 test("completes phrases while preserving multiple whitespace", () => {
     const complete = createCommandCompleter([
         "basis step",

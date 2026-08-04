@@ -4303,13 +4303,38 @@ register_parser_definition_basis(
         auto const referred_indices =
             referred_parser_definition_indices(
                 definitions, name, dependencies);
-        definitions.push_back({
+        auto updated_definitions = definitions;
+        for (auto const index : referred_indices) {
+            updated_definitions[index].was_referred_to = true;
+        }
+
+        auto const old_registration = existing->second;
+        auto const replacement_uses_old_registration =
+            std::ranges::any_of(
+                dependencies,
+                [&old_registration](auto const& dependency) {
+                    return dependency == old_registration;
+                });
+        auto const old_definition = std::ranges::find_if(
+            updated_definitions,
+            [&old_registration](
+                stored_parser_definition const& definition) {
+                return definition.basis == old_registration;
+            });
+        if (old_definition == updated_definitions.end()) {
+            throw std::logic_error(
+                "combdsl::current user basis has no stored definition");
+        }
+        if (!old_definition->was_referred_to &&
+            !replacement_uses_old_registration) {
+            updated_definitions.erase(old_definition);
+        }
+
+        updated_definitions.push_back({
             std::move(user_source), std::string(name), registration,
             std::move(dependencies), false});
+        definitions.swap(updated_definitions);
         existing->second = std::move(registration);
-        for (auto const index : referred_indices) {
-            definitions[index].was_referred_to = true;
-        }
         return parser_definition_change::replaced;
     }
 
@@ -4576,6 +4601,11 @@ public:
             fail("unexpected ')'");
         }
 
+        if (is_argumentless_command("load") ||
+            is_argumentless_command("save")) {
+            throw parse_error(source_.size(), "missing filename");
+        }
+
         auto const is_set_definition =
             begins_command("set");
         auto const is_define_definition =
@@ -4612,14 +4642,32 @@ private:
         std::string_view keyword) const noexcept {
         auto const remaining = source_.substr(position_);
         return remaining.starts_with(keyword) &&
-               remaining.size() > keyword.size() &&
-               is_whitespace(remaining[keyword.size()]);
+               (remaining.size() == keyword.size() ||
+                (remaining.size() > keyword.size() &&
+                 is_whitespace(remaining[keyword.size()])));
+    }
+
+    [[nodiscard]] bool is_argumentless_command(
+        std::string_view keyword) const noexcept {
+        auto const remaining = source_.substr(position_);
+        if (!remaining.starts_with(keyword)) {
+            return false;
+        }
+        auto offset = keyword.size();
+        while (offset < remaining.size() &&
+               is_whitespace(remaining[offset])) {
+            ++offset;
+        }
+        return offset == remaining.size();
     }
 
     [[nodiscard]] quoted_expression parse_set_definition() {
         constexpr std::size_t keyword_size = 3;
         position_ += keyword_size;
         skip_whitespace();
+        if (at_end()) {
+            fail("missing combinator name");
+        }
 
         auto const name_position = position_;
         auto name = parse_definition_basis_name();
@@ -4665,7 +4713,7 @@ private:
             --name_end;
         }
         if (name_end == name_position) {
-            fail("expected a name");
+            fail("missing combinator name");
         }
 
         auto const name =
@@ -4709,7 +4757,7 @@ private:
 
         auto const name_position = position_;
         if (at_end()) {
-            fail("expected a name");
+            fail("missing combinator name");
         }
         auto const [name_text, parsed_name_position] =
             parse_definition_basis_name_token();
@@ -4773,6 +4821,9 @@ private:
         constexpr std::size_t keyword_size = 6;
         position_ += keyword_size;
         skip_whitespace();
+        if (at_end()) {
+            fail("missing combinator name");
+        }
 
         auto const name_position = position_;
         auto [name, symbols] = parse_define_signature();

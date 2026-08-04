@@ -37,7 +37,7 @@ if(NOT missing_output STREQUAL "")
         "unexpected missing-filename output:\n${missing_output}")
 endif()
 set(expected_missing_error
-    "Parse error at position 5: expected a filename\n")
+    "Parse error at position 5: missing filename\n")
 if(NOT missing_error STREQUAL expected_missing_error)
     message(FATAL_ERROR
         "unexpected missing-filename error\n"
