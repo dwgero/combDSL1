@@ -813,7 +813,8 @@
                                 ? "notice"
                                 : "output",
                             Boolean(message.html));
-                        if (completedRequest.showAll) {
+                        if (completedRequest.showAll &&
+                            !nothingToShow) {
                             completeEvaluationOutput(
                                 completedRequest,
                                 "[Show end]",
