@@ -4580,6 +4580,7 @@ struct parsed_input {
     quoted_expression expression;
     bool is_definition;
     bool is_display_only;
+    bool is_show_all;
     std::string replaced_definition;
 };
 
@@ -4634,6 +4635,7 @@ public:
             std::move(result),
             is_definition,
             is_show_command,
+            is_show_all_,
             std::move(replaced_definition_)};
     }
 
@@ -4721,6 +4723,7 @@ private:
         position_ = source_.size();
 
         if (name == "all") {
+            is_show_all_ = true;
             auto definitions = set_list();
             if (definitions.empty()) {
                 return quote(std::string("Nothing to show"));
@@ -5935,6 +5938,7 @@ private:
     registered_parser_basis_table registered_bases_;
     std::optional<quoted_expression> recursive_function_;
     parser_definition_mode definition_mode_;
+    bool is_show_all_ = false;
     std::string replaced_definition_;
 };
 

@@ -1086,6 +1086,14 @@ int main() {
          [] { std::cout << set_list(); }, "");
     test("show all reports an empty set list",
          parse("show all"), "Nothing to show");
+    test("show commands identify show all separately",
+         [] {
+             auto const all = combdsl::detail::parse_input("show all");
+             auto const one = combdsl::detail::parse_input("show M");
+             std::cout << (all.is_show_all ? "all" : "name") << ' '
+                       << (one.is_show_all ? "all" : "name");
+         },
+         "all name");
     test("set list registers a default zero arity",
          parse(input_escape("set LZero = I")), "LZero");
     test("set list shows a default zero arity",

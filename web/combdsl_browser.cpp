@@ -61,6 +61,8 @@ struct load_result {
 struct definition_inspection_result {
     bool success;
     bool definition;
+    bool display_only;
+    bool show_all;
     std::string replacement;
     std::string error;
 };
@@ -91,12 +93,16 @@ std::optional<combdsl::quoted_expression> stepped_expression;
         return {
             true,
             parsed.is_definition,
+            parsed.is_display_only,
+            parsed.is_show_all,
             std::move(parsed.replaced_definition),
             {}};
     } catch (std::exception const& error) {
-        return {false, false, {}, error.what()};
+        return {false, false, false, false, {}, error.what()};
     } catch (...) {
         return {
+            false,
+            false,
             false,
             false,
             {},
@@ -415,6 +421,10 @@ EMSCRIPTEN_BINDINGS(combdsl_browser) {
         "DefinitionInspectionResult")
         .field("success", &definition_inspection_result::success)
         .field("definition", &definition_inspection_result::definition)
+        .field(
+            "displayOnly",
+            &definition_inspection_result::display_only)
+        .field("showAll", &definition_inspection_result::show_all)
         .field(
             "replacement",
             &definition_inspection_result::replacement)

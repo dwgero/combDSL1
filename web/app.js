@@ -271,12 +271,23 @@
 
     const createOutputEntry = () => {
         if (output.childNodes.length !== 0) {
-            output.append("\n\n");
+            output.append(
+                output.lastElementChild?.dataset.compactAfter === "true"
+                    ? "\n"
+                    : "\n\n");
         }
 
         const entry = document.createElement("span");
         output.append(entry);
         return entry;
+    };
+
+    const ensureBlankLineBeforeOutputEntry = entry => {
+        const separator = entry.previousSibling;
+        if (separator?.nodeType === Node.TEXT_NODE &&
+            separator.textContent === "\n") {
+            separator.textContent = "\n\n";
+        }
     };
 
     const appendOutput = (text, kind = "output") => {
@@ -285,6 +296,9 @@
         content.textContent = outputText(text);
         content.dataset.kind = kind;
         entry.append(content);
+        if (kind === "error") {
+            entry.dataset.compactAfter = "true";
+        }
         scrollToNewestOutput();
     };
 
@@ -320,6 +334,9 @@
                 beginEvaluationOutput(request.source);
         }
         request.outputEntry.append("\n", result);
+        if (kind === "error" || kind === "notice") {
+            request.outputEntry.dataset.compactAfter = "true";
+        }
         scrollToNewestOutput();
     };
 
@@ -642,6 +659,14 @@
                     updateControls();
                     return;
                 }
+                request.displayOnly =
+                    Boolean(message.result.displayOnly);
+                request.showAll = Boolean(message.result.showAll);
+                if (!message.result.definition &&
+                    !request.displayOnly) {
+                    ensureBlankLineBeforeOutputEntry(
+                        request.outputEntry);
+                }
                 if (message.result.replacement !== "") {
                     request.awaitingReplacement = true;
                     replacementRequest = request;
@@ -774,12 +799,30 @@
                 if (message.result.success) {
                     if (message.result.definition) {
                         updateSavedSetList(message.setList);
+                        completedRequest.outputEntry.dataset.compactAfter =
+                            "true";
                     } else {
+                        const nothingToShow =
+                            completedRequest.showAll &&
+                            outputText(message.result.output) ===
+                                "Nothing to show";
                         completeEvaluationOutput(
                             completedRequest,
                             message.result.output,
-                            "output",
+                            nothingToShow
+                                ? "notice"
+                                : "output",
                             Boolean(message.html));
+                        if (completedRequest.showAll) {
+                            completeEvaluationOutput(
+                                completedRequest,
+                                "[Show end]",
+                                "notice");
+                        }
+                        if (completedRequest.displayOnly) {
+                            completedRequest.outputEntry.dataset.compactAfter =
+                                "true";
+                        }
                     }
                     completeSuccessfulSource(completedRequest);
                 } else {
@@ -853,7 +896,7 @@
         terminateWorker();
         appendSourceHistory(
             request.source, historyOutcome);
-        completeEvaluationOutput(request, message);
+        completeEvaluationOutput(request, message, "error");
         startWorker(savedSetList);
     };
 
@@ -1112,7 +1155,8 @@
         }
 
         appendSourceHistory(request.source, "cancelled");
-        completeEvaluationOutput(request, "[cancelled]");
+        completeEvaluationOutput(
+            request, "[cancelled]", "error");
         activeRequest = undefined;
         status.textContent = "Ready";
         updateControls();
