@@ -643,6 +643,13 @@ if(COMBDSL_BUILD_TESTS)
                 "${CMAKE_CURRENT_SOURCE_DIR}/tests/input_history_test.mjs"
         )
         add_test(
+            NAME studio_cancel_restart
+            COMMAND
+                "${COMBDSL_NODE_EXECUTABLE}"
+                --test
+                "${CMAKE_CURRENT_SOURCE_DIR}/tests/studio_cancel_restart_test.mjs"
+        )
+        add_test(
             NAME worker_single_step
             COMMAND
                 "${COMBDSL_NODE_EXECUTABLE}"

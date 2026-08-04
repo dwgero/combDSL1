@@ -84,6 +84,8 @@
     let replacementRequest;
     let loadRequest;
     let ready = false;
+    let workerStarting = false;
+    let submitWhenReady = false;
     let saveInProgress = false;
     let savedSetList = "";
     let saveDownloadUrl;
@@ -104,7 +106,7 @@
     const updateControls = () => {
         const evaluating = activeRequest !== undefined;
         const busy = evaluating || saveInProgress ||
-            loadRequest !== undefined;
+            loadRequest !== undefined || submitWhenReady;
         singleStep.disabled = !ready || busy;
         basisStep.disabled = !ready || busy;
         keyStep.disabled = !ready || busy;
@@ -178,10 +180,30 @@
         resizeSourceEditor();
     };
 
+    const redNoticePattern =
+        /\[(?:cancelled|timed out[^\]\r\n]*)\]/g;
+
+    const appendTextWithRedNotices = (parent, text) => {
+        const content = String(text);
+        let end = 0;
+        for (const match of content.matchAll(redNoticePattern)) {
+            parent.append(content.slice(end, match.index));
+            const notice = document.createElement("span");
+            notice.textContent = match[0];
+            notice.dataset.kind = "error";
+            // Source history is outside the Results <pre>, whose stylesheet
+            // normally supplies this color for error and notice spans.
+            notice.style.color = "#c33";
+            parent.append(notice);
+            end = match.index + match[0].length;
+        }
+        parent.append(content.slice(end));
+    };
+
     const appendSourceHistoryEntry = entry => {
         const historyEntry =
             document.createElement("div");
-        historyEntry.textContent = entry;
+        appendTextWithRedNotices(historyEntry, entry);
         sourceHistory.append(historyEntry);
         scrollToNewestSource();
     };
@@ -293,7 +315,7 @@
     const appendOutput = (text, kind = "output") => {
         const entry = createOutputEntry();
         const content = document.createElement("span");
-        content.textContent = outputText(text);
+        appendTextWithRedNotices(content, outputText(text));
         content.dataset.kind = kind;
         entry.append(content);
         if (kind === "error") {
@@ -326,7 +348,7 @@
             // color markup.
             result.innerHTML = content;
         } else {
-            result.textContent = content;
+            appendTextWithRedNotices(result, content);
         }
         result.dataset.kind = kind;
         if (request.outputEntry === undefined) {
@@ -434,6 +456,20 @@
         updateControls();
     };
 
+    const completeWorkerStartup = setList => {
+        updateSavedSetList(setList);
+        workerStarting = false;
+        ready = true;
+        status.textContent = "Ready";
+        if (submitWhenReady) {
+            submitWhenReady = false;
+            form.requestSubmit();
+            return;
+        }
+        updateControls();
+        focusSourceAfterNextPaint();
+    };
+
     const beginRequestEvaluation = request => {
         if (activeRequest !== request) {
             return;
@@ -533,6 +569,8 @@
 
     const showStartupError = message => {
         dismissReplacementDialog();
+        workerStarting = false;
+        submitWhenReady = false;
         ready = false;
         activeRequest = undefined;
         loadRequest = undefined;
@@ -545,8 +583,10 @@
         clearEvaluationWatchdog(activeRequest);
         dismissReplacementDialog();
         const currentGeneration = ++generation;
+        let currentWorker;
         let terminationExpected = false;
         let restoreRequestId;
+        workerStarting = true;
         ready = false;
         activeRequest = undefined;
         loadRequest = undefined;
@@ -556,8 +596,8 @@
         try {
             const workerUrl = new URL("./worker.js", document.baseURI);
             workerUrl.searchParams.set("v", Date.now().toString());
-            worker = new Worker(workerUrl);
-            const currentWorker = worker;
+            currentWorker = new Worker(workerUrl);
+            worker = currentWorker;
             terminateWorker = () => {
                 terminationExpected = true;
                 currentWorker.terminate();
@@ -617,11 +657,7 @@
                     });
                     return;
                 }
-                updateSavedSetList(message.setList);
-                ready = true;
-                status.textContent = "Ready";
-                updateControls();
-                focusSourceAfterNextPaint();
+                completeWorkerStartup(message.setList);
                 return;
             }
 
@@ -629,6 +665,8 @@
                 message.id === restoreRequestId) {
                 restoreRequestId = undefined;
                 if (!message.result.success) {
+                    workerStarting = false;
+                    submitWhenReady = false;
                     ready = false;
                     status.textContent = "Could not restore definitions";
                     appendOutput(
@@ -640,11 +678,7 @@
                     return;
                 }
 
-                updateSavedSetList(message.setList);
-                ready = true;
-                status.textContent = "Ready";
-                updateControls();
-                focusSourceAfterNextPaint();
+                completeWorkerStartup(message.setList);
                 return;
             }
 
@@ -841,6 +875,8 @@
                     return;
                 }
                 dismissReplacementDialog();
+                workerStarting = false;
+                submitWhenReady = false;
                 activeRequest = undefined;
                 loadRequest = undefined;
                 ready = false;
@@ -870,6 +906,8 @@
                 return;
             }
             dismissReplacementDialog();
+            workerStarting = false;
+            submitWhenReady = false;
             activeRequest = undefined;
             loadRequest = undefined;
             ready = false;
@@ -926,12 +964,18 @@
 
     form.addEventListener("submit", event => {
         event.preventDefault();
-        const operateAndGetNext = pendingOperateAndGetNext;
-        pendingOperateAndGetNext = undefined;
-        if (!ready || activeRequest !== undefined ||
-            loadRequest !== undefined) {
+        if (activeRequest !== undefined || loadRequest !== undefined) {
             return;
         }
+        if (!ready) {
+            if (workerStarting) {
+                submitWhenReady = true;
+                updateControls();
+            }
+            return;
+        }
+        const operateAndGetNext = pendingOperateAndGetNext;
+        pendingOperateAndGetNext = undefined;
 
         const startingExpression = source.value;
         inputHistory.resetNavigation();
