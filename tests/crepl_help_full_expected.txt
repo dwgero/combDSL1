@@ -47,9 +47,10 @@ unreferenced old definition is replaced in the saved set list; a definition
 needed by another saved basis remains for replay. Pre-defined bird combinator
 names are immutable and cannot be redefined.
 
-show <name>
+show <name | all>
 The show command displays the arity and combinators stored for name. For
-example, "show E" for the Eagle bird would display "arity:5 BDD".
+example, "show E" for the Eagle bird would display "arity:5 BDD". The "show all"
+form displays the entire saved set list, or "Nothing to show" when it is empty.
 
 remove <name>
 Removes a user-defined combinator name. If another basis referred to the removed

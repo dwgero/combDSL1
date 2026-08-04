@@ -458,7 +458,7 @@ Undersaturated bases remain named, and preprocessing does not enter
 expression is `B`. If this preprocessing repeats an expression or exceeds its
 reduction limit, `define` safely abstracts the original body instead.
 
-The names `set`, `define`, `show`, `remove`, `single`, `key`, `basis`,
+The names `all`, `set`, `define`, `show`, `remove`, `single`, `key`, `basis`,
 `colorize`, `about`, `birds`, `help`, `load`, `save`, `quit`, and `exit`
 are reserved words and cannot be used as names by either `set` or `define`.
 
@@ -579,13 +579,16 @@ registration cannot take a name that is already user-defined.
 At the start of a line, optionally preceded by whitespace, `show` followed by
 whitespace and a name displays the basis's arity followed by one level of its
 stored definition, without reducing it. For `S`, `K`, `I`, or `Y`, it reports
-that the name is fundamental and also gives its arity.
+that the name is fundamental and also gives its arity. `show all` displays the
+entire string returned by `set_list()`, or `Nothing to show` when the list is
+empty.
 Anything other than a named basis or one of those four fundamental names is a
 parse error:
 
 ```cpp
 parse_eval("show M");   // prints: arity:1 SII
 parse_eval("show S");   // prints: S is a fundamental name with arity:3
+parse_eval("show all"); // prints the entire set_list()
 parse_eval("show x");   // parse error: x is not a defined name
 ```
 
@@ -656,7 +659,7 @@ expression produces no output, while malformed or empty lines throw
 The `crepl` executable applies `input_escape` to each line before passing it to
 `parse_eval`, so ordinary quoted words and backslashes can be entered directly.
 When standard output is a terminal, it first prints
-`Combinator Read-Eval-Print Loop, version 2.2.0`. Long evaluations display
+`Combinator Read-Eval-Print Loop, version 2.2.1`. Long evaluations display
 the accumulated step count every 1,000 reductions by overwriting one status
 line; the line is cleared before evaluation output is printed. Its interactive
 prompt is `>`. Interactive input uses GNU Readline, so previous nonempty
@@ -699,6 +702,8 @@ The command replaces an existing file, writes no trailing newline, and reports
 Enter `remove <name>` to remove a user-defined combinator name. Retained
 definition and removal records remain saveable when another basis referred to
 that name; otherwise both are omitted. Pre-defined names cannot be removed.
+Enter `show all` to display the entire saved definition list, or
+`Nothing to show` when it is empty.
 Enter `birds` to list every bird and its
 reduction rule. The list uses three
 columns when their

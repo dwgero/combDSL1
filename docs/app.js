@@ -24,12 +24,17 @@
         globalThis.combdslEvaluationWatchdog;
     const inputHistoryTools = globalThis.combdslInputHistory;
     const inputHistory = inputHistoryTools.create();
-    const completeCommand = inputHistoryTools.createCommandCompleter([
+    const completeTopLevelCommand =
+        inputHistoryTools.createCommandCompleter([
         "define",
         "remove",
         "set",
         "show",
     ], {appendSpaceToExact: true});
+    const completeShowAll =
+        inputHistoryTools.createCommandCompleter(["show all"]);
+    const completeCommand = source =>
+        completeTopLevelCommand(source) ?? completeShowAll(source);
     const form = document.querySelector("#evaluation-form");
     const sourceBox = document.querySelector("#source-box");
     const sourceHistory = document.querySelector("#source-history");

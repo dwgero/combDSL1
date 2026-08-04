@@ -99,6 +99,13 @@ test("completes phrases while preserving multiple whitespace", () => {
     assert.equal(complete("key   "), "key   step");
 });
 
+test("completes the show all command form", () => {
+    const complete = createCommandCompleter(["show all"]);
+
+    assert.equal(complete("show a"), "show all");
+    assert.equal(complete("show   "), "show   all");
+});
+
 test("normalizes extensible command phrase definitions", () => {
     const complete = createCommandCompleter([
         "  key    step  ",

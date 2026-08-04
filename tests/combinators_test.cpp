@@ -1084,6 +1084,8 @@ int main() {
         "\"word\" is not a defined name");
     test("set list initially excludes C++ bases",
          [] { std::cout << set_list(); }, "");
+    test("show all reports an empty set list",
+         parse("show all"), "Nothing to show");
     test("set list registers a default zero arity",
          parse(input_escape("set LZero = I")), "LZero");
     test("set list shows a default zero arity",
@@ -1111,6 +1113,8 @@ int main() {
         "set LRaw = 1 K \"a b()\\c\"";
     test("set list preserves definitions in replay order",
          [] { std::cout << set_list(); }, expected_set_list);
+    test("show all displays the entire set list",
+         parse("show all"), expected_set_list);
     test("set list double-backslash basis replays",
          single_step(parse(input_escape("Q\\R x"))), "x");
     test("set list raw word basis replays",
@@ -2359,9 +2363,9 @@ int main() {
         "show rejects a trailing close parenthesis", "show M)", 5,
         "M) is not a defined name");
     constexpr std::string_view reserved_definition_names[] = {
-        "set", "define", "show", "single", "key", "basis", "colorize",
-        "about", "birds", "help", "load", "remove", "save", "quit",
-        "exit"};
+        "all", "set", "define", "show", "single", "key", "basis",
+        "colorize", "about", "birds", "help", "load", "remove", "save",
+        "quit", "exit"};
     for (auto const name : reserved_definition_names) {
         auto const detail =
             std::string(name) + " is a reserved word";

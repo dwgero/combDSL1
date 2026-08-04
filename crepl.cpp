@@ -53,7 +53,7 @@
 
 namespace {
 
-constexpr std::string_view crepl_version = "2.2.0";
+constexpr std::string_view crepl_version = "2.2.1";
 
 void print_crepl_banner(std::ostream& output) {
     output << "Combinator Read-Eval-Print Loop, version "
@@ -103,6 +103,8 @@ constexpr std::array<std::string_view, 2> toggle_completion_candidates = {
     "off", "on"};
 constexpr std::array<std::string_view, 2> help_completion_candidates = {
     "brief", "full"};
+constexpr std::array<std::string_view, 1> show_completion_candidates = {
+    "all"};
 std::string last_save_filename = "set_list.cmb";
 std::array<std::string_view, 1> save_filename_completion_candidates;
 std::string last_load_filename = "set_list.cmb";
@@ -152,6 +154,9 @@ template<std::size_t Size>
         }
         if (words[0] == "help") {
             return make_completion_candidates(help_completion_candidates);
+        }
+        if (words[0] == "show") {
+            return make_completion_candidates(show_completion_candidates);
         }
         if (words[0] == "save") {
             save_filename_completion_candidates[0] =
@@ -451,7 +456,7 @@ void print_help_brief(std::ostream& output) {
         "remove <name>                         | remove a user-defined combinator name\n"
         "save <filename>                       | save user-defined combinators to a file\n"
         "set <name> = [number] <expression>    | store <expression> as <name> with arity <number> or 0\n"
-        "show <name>                           | display the arity and stored expression of <name>\n"
+        "show <name | all>                     | display one definition or the entire set list\n"
         "single step [on | off]                | display each step of the reduction without pause\n";
     output.flush();
 }
@@ -534,12 +539,13 @@ void print_help_full(std::ostream& output) {
         "for replay. Pre-defined bird combinator names are immutable and "
         "cannot be redefined.");
     output << '\n'
-           << "show <name>\n";
+           << "show <name | all>\n";
     write_wrapped_paragraph(
         output,
         "The show command displays the arity and combinators stored for "
         "name. For example, \"show E\" for the Eagle bird would display "
-        "\"arity:5 BDD\".");
+        "\"arity:5 BDD\". The \"show all\" form displays the entire saved "
+        "set list, or \"Nothing to show\" when it is empty.");
     output << '\n'
            << "remove <name>\n";
     write_wrapped_paragraph(

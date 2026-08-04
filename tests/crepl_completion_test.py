@@ -182,6 +182,13 @@ def main():
         output = reader.read_until(b">")
         require_completed_line(output, b"set Remember = 1 I\n")
 
+        write_all(master, b"sho\ta\t\n")
+        output = reader.read_until(b">")
+        require_completed_line(output, b"show all \n")
+        if b"set Remember = 1 I\n" not in normalized(output):
+            raise AssertionError(
+                f"expected show all output; received {output!r}")
+
         write_all(master, b"save remembered definitions.cmb\n")
         output = reader.read_until(b">")
         require_completed_line(

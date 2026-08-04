@@ -4720,6 +4720,14 @@ private:
             source_.substr(name_position, name_end - name_position);
         position_ = source_.size();
 
+        if (name == "all") {
+            auto definitions = set_list();
+            if (definitions.empty()) {
+                return quote(std::string("Nothing to show"));
+            }
+            return quote(std::move(definitions));
+        }
+
         if (is_primitive_name(name)) {
             auto message = std::string(name);
             message += " is a fundamental name";
@@ -5455,7 +5463,8 @@ private:
     [[nodiscard]] basis_label validated_definition_basis_name(
         std::string_view name,
         std::size_t name_position) const {
-        if (name == "set" ||
+        if (name == "all" ||
+            name == "set" ||
             name == "define" ||
             name == "show" ||
             name == "single" ||

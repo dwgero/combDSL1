@@ -13,7 +13,7 @@ quit                                  | end the program
 remove <name>                         | remove a user-defined combinator name
 save <filename>                       | save user-defined combinators to a file
 set <name> = [number] <expression>    | store <expression> as <name> with arity <number> or 0
-show <name>                           | display the arity and stored expression of <name>
+show <name | all>                     | display one definition or the entire set list
 single step [on | off]                | display each step of the reduction without pause
 Commands:
 about                                 | display copyright and redistribution information
@@ -30,5 +30,5 @@ quit                                  | end the program
 remove <name>                         | remove a user-defined combinator name
 save <filename>                       | save user-defined combinators to a file
 set <name> = [number] <expression>    | store <expression> as <name> with arity <number> or 0
-show <name>                           | display the arity and stored expression of <name>
+show <name | all>                     | display one definition or the entire set list
 single step [on | off]                | display each step of the reduction without pause
