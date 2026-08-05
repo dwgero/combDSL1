@@ -459,13 +459,15 @@ expression is `B`. If this preprocessing repeats an expression or exceeds its
 reduction limit, `define` safely abstracts the original body instead.
 
 At the start of a line, preceded by optional whitespace,
-`abstract [steps] symbol_list = combinator_expression` performs the same
+`abstract [steps] ?symbol_list = combinator_expression` performs the same
 nonrecursive preprocessing, right-to-left contextual `takeout` passes, and
 final optimization used by `define`, but does not create or store a name. The
-ordinary form displays only the final combinator expression and does not
-evaluate it. With `steps`, the output also shows preprocessing when it changes
-the input, every `takeout` pass, and each optimizer substitution before the
-final expression. Unchanged preprocessing and optimization passes are omitted.
+required `?` marks the unknown abstraction result. The ordinary form displays
+only `?=` followed by the final combinator expression and does not evaluate it.
+With `steps`, the output also shows preprocessing when it changes the input,
+every `takeout` pass, and each optimizer substitution before the final
+`?=<expression>` line. Unchanged preprocessing and optimization passes are
+omitted.
 
 The names `abstract`, `all`, `set`, `define`, `show`, `remove`, `single`,
 `key`, `basis`, `colorize`, `about`, `birds`, `find`, `help`, `load`, `save`,
@@ -697,7 +699,7 @@ expression produces no output, while malformed or empty lines throw
 The `crepl` executable applies `input_escape` to each line before passing it to
 `parse_eval`, so ordinary quoted words and backslashes can be entered directly.
 When standard output is a terminal, it first prints
-`Combinator Read-Eval-Print Loop, version 2.3.7`. Long evaluations display
+`Combinator Read-Eval-Print Loop, version 2.3.8`. Long evaluations display
 the accumulated step count every 1,000 reductions by overwriting one status
 line; the line is cleared before evaluation output is printed. Its interactive
 prompt is `>`. Interactive input uses GNU Readline, so previous nonempty
@@ -746,12 +748,13 @@ definition and removal records remain saveable when another basis referred to
 that name; otherwise both are omitted. Pre-defined names cannot be removed.
 Enter `show all` to display the entire saved definition list, or
 `Nothing to show` when it is empty.
-Enter `abstract [steps] <symbol_list> = <combinator_expression>` to perform
-`define`'s abstraction without creating a name. The ordinary form prints only
-the final combinator expression. With `steps`, CREPL also prints changed
-preprocessing, every right-to-left `takeout` pass, and every optimizer
-substitution before the final expression. The command does not evaluate its
-result and ignores the stepping and color modes.
+Enter `abstract [steps] ?<symbol_list> = <combinator_expression>` to perform
+`define`'s abstraction without creating a name. The required `?` marks the
+unknown result. The ordinary form prints only `?=<final_expression>`. With
+`steps`, CREPL also prints changed preprocessing, every right-to-left
+`takeout` pass, and every optimizer substitution before that same final line.
+The command does not evaluate its result and ignores the stepping and color
+modes.
 Enter `find [all] [num] ?<symbol_list> = <combinator_expression>` to search
 the pre-defined bird catalog. The `?` is required and marks the unknown
 combinator expression. The optional number must be from one through four and
@@ -959,7 +962,7 @@ when the Results area already contains output.
 Press Tab to complete a unique prefix for the `abstract`, `set`, `define`,
 `find`, `remove`, or `show` command; when no completion is available, Tab keeps
 its normal browser focus behavior. Studio accepts the same
-`abstract [steps] ...` and `find [all] [num] ?...` forms as `crepl`. Find has
+`abstract [steps] ?...` and `find [all] [num] ?...` forms as `crepl`. Find has
 a default limit of three. Without `all`, it stops at the first size with
 answers; with `all`, it continues through the full range. Every answer
 is shown as `?=<bird_expression>`, and a no-match message is red. A search

@@ -59,7 +59,7 @@
 
 namespace {
 
-constexpr std::string_view crepl_version = "2.3.7";
+constexpr std::string_view crepl_version = "2.3.8";
 
 [[nodiscard]] bool stream_is_terminal(std::FILE* stream) noexcept {
 #if defined(_WIN32)
@@ -159,8 +159,10 @@ constexpr std::array<std::string_view, 2> toggle_completion_candidates = {
     "off", "on"};
 constexpr std::array<std::string_view, 2> help_completion_candidates = {
     "brief", "full"};
-constexpr std::array<std::string_view, 1> abstract_completion_candidates = {
-    "steps"};
+constexpr std::array<std::string_view, 1>
+    abstract_question_completion_candidates = {"?"};
+constexpr std::array<std::string_view, 1>
+    abstract_steps_completion_candidates = {"steps"};
 constexpr std::array<std::string_view, 1> show_completion_candidates = {
     "all"};
 constexpr std::array<std::string_view, 5> find_completion_candidates = {
@@ -325,7 +327,8 @@ template<std::size_t Size>
 }
 
 [[nodiscard]] completion_candidates command_completions_after(
-    std::string_view prefix) noexcept {
+    std::string_view prefix,
+    std::string_view partial) noexcept {
     std::array<std::string_view, 3> words{};
     std::size_t word_count = 0;
     std::size_t position = 0;
@@ -364,8 +367,11 @@ template<std::size_t Size>
             return make_completion_candidates(help_completion_candidates);
         }
         if (words[0] == "abstract") {
-            return make_completion_candidates(
-                abstract_completion_candidates);
+            return partial.empty() || partial.starts_with('?')
+                ? make_completion_candidates(
+                    abstract_question_completion_candidates)
+                : make_completion_candidates(
+                    abstract_steps_completion_candidates);
         }
         if (words[0] == "show") {
             return make_completion_candidates(show_completion_candidates);
@@ -396,6 +402,11 @@ template<std::size_t Size>
         words[1] == "all") {
         return make_completion_candidates(
             find_after_all_completion_candidates);
+    }
+    if (word_count == 2 && words[0] == "abstract" &&
+        words[1] == "steps") {
+        return make_completion_candidates(
+            abstract_question_completion_candidates);
     }
     return {};
 }
@@ -438,16 +449,23 @@ completion_candidates active_completion_candidates;
     int start,
     int) noexcept {
     rl_attempted_completion_over = 1;
+    rl_completion_suppress_append = 0;
     if (rl_line_buffer == nullptr || start < 0) {
         return nullptr;
     }
 
+    auto const partial = std::string_view(
+        text == nullptr ? "" : text);
     active_completion_candidates = command_completions_after(
         std::string_view(
-            rl_line_buffer, static_cast<std::size_t>(start)));
+            rl_line_buffer, static_cast<std::size_t>(start)),
+        partial);
     if (active_completion_candidates.size == 0) {
         return nullptr;
     }
+    rl_completion_suppress_append =
+        active_completion_candidates.size == 1 &&
+        active_completion_candidates.data[0] == "?";
     return rl_completion_matches(text, crepl_completion_generator);
 }
 
@@ -706,7 +724,7 @@ void print_help_brief(std::ostream& output) {
     output <<
         "Commands:\n"
         "about                                 | display copyright and redistribution information\n"
-        "abstract [steps] <symbols> = <expression> | display combinator abstraction\n"
+        "abstract [steps] ?<symbols> = <expression> | display combinator abstraction\n"
         "basis step [on | off]                 | names are converted to their stored expressions as a step\n"
         "birds                                 | display the pre-defined bird combinators\n"
         "colorize [on | off]                   | add colors to arguments while stepping\n"
@@ -822,15 +840,16 @@ void print_help_full(std::ostream& output) {
         "removed.");
 
     output << "\nAbstracting Expressions\n\n"
-           << "abstract [steps] <symbol_list> = <combinator_expression>\n";
+           << "abstract [steps] ?<symbol_list> = <combinator_expression>\n";
     write_wrapped_paragraph(
         output,
         "Abstracts the listed lowercase symbols from the expression, from "
-        "right to left, and displays the resulting combinator expression "
-        "without evaluating it. The optional \"steps\" word also displays "
-        "changed preprocessing, each takeout, each optimizer substitution, "
-        "and the final expression. Abstract ignores the stepping and "
-        "colorize modes.");
+        "right to left, without evaluating it. A question mark must "
+        "immediately precede the symbols. The plain form displays only the "
+        "result as \"?=<expression>\". The optional \"steps\" word also "
+        "displays changed preprocessing, each takeout, and each optimizer "
+        "substitution, ending with the same \"?=\" result line. Abstract "
+        "ignores the stepping and colorize modes.");
 
     output << "\nFinding Combinators\n\n"
            << "find [all] [num] ?<symbol_list> = <combinator_expression>\n";

@@ -1,8 +1,8 @@
-A
+?=A
 takeout y: Bx(Tx)
 takeout x: SBT
 optimize: SBT -> A
-final: A
+?=A
 preprocess: Mx -> xx
 takeout x: M
-final: M
+?=M

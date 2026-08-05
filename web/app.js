@@ -44,8 +44,20 @@
     ], {appendSpaceToExact: true});
     const completeShowAll =
         inputHistoryTools.createCommandCompleter(["show all"]);
-    const completeAbstractSteps =
-        inputHistoryTools.createCommandCompleter(["abstract steps"]);
+    const abstractCommandCompleters = [
+        "abstract ?",
+        "abstract steps ?",
+    ].map(phrase =>
+        inputHistoryTools.createCommandCompleter([phrase]));
+    const completeAbstractCommand = source => {
+        for (const complete of abstractCommandCompleters) {
+            const completed = complete(source);
+            if (completed !== undefined) {
+                return completed;
+            }
+        }
+        return undefined;
+    };
     const findCommandCompleters = [
         "find ?",
         "find all ?",
@@ -70,7 +82,7 @@
     };
     const completeCommand = source =>
         completeTopLevelCommand(source) ??
-            completeAbstractSteps(source) ?? completeShowAll(source) ??
+            completeAbstractCommand(source) ?? completeShowAll(source) ??
             completeFindCommand(source);
     const form = document.querySelector("#evaluation-form");
     const sourceBox = document.querySelector("#source-box");

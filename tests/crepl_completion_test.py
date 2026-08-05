@@ -221,27 +221,27 @@ def main():
             raise AssertionError(
                 f"expected completed find all 4 no-match; received {output!r}")
 
-        write_all(master, b"abs\txy = x(yx)\n")
+        write_all(master, b"abs\t\txy = x(yx)\n")
         output = reader.read_until(b">")
         require_completed_line(
-            output, b"abstract xy = x(yx)\n")
+            output, b"abstract ?xy = x(yx)\n")
         if b"Parse error" in normalized(output):
             raise AssertionError(
                 f"expected completed abstract command; received {output!r}")
-        if b"A\n" not in normalized(output):
+        if b"?=A\n" not in normalized(output):
             raise AssertionError(
                 f"expected abstract result; received {output!r}")
 
-        write_all(master, b"abstract s\tx = x\n")
+        write_all(master, b"abstract   s\t  \tx = x\n")
         output = reader.read_until(b">")
         require_completed_line(
-            output, b"abstract steps x = x\n")
+            output, b"abstract   steps   ?x = x\n")
         if b"Parse error" in normalized(output):
             raise AssertionError(
                 f"expected completed abstract steps command; received {output!r}")
         normalized_output = normalized(output)
         if (b"takeout x: I\n" not in normalized_output or
-                b"final: I\n" not in normalized_output):
+                b"?=I\n" not in normalized_output):
             raise AssertionError(
                 f"expected abstract steps trace; received {output!r}")
 

@@ -488,7 +488,7 @@ test("routes abstract steps as display-only with modes enabled", () => {
         harness.element("basis-step").click();
         harness.element("colorize").click();
 
-        source.value = "abstract steps xy = x(yx)";
+        source.value = "abstract steps ?xy = x(yx)";
         harness.pressEnter();
         harness.flushAnimationFrames();
         const inspection = worker.messages.find(
@@ -511,7 +511,7 @@ test("routes abstract steps as display-only with modes enabled", () => {
             message => message.type === "evaluate");
         assert.equal(
             evaluation.source,
-            "abstract steps xy = x(yx)");
+            "abstract steps ?xy = x(yx)");
         assert.equal(evaluation.singleStep, false);
         assert.equal(evaluation.keyStep, false);
         assert.equal(evaluation.basisStep, false);

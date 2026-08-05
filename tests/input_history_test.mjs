@@ -110,13 +110,29 @@ test("completes the show all command form", () => {
     assert.equal(complete("show   "), "show   all");
 });
 
-test("completes the abstract steps command form", () => {
-    const complete = createCommandCompleter(["abstract steps"]);
+test("completes unambiguous abstract command forms", () => {
+    const completers = [
+        "abstract ?",
+        "abstract steps ?",
+    ].map(phrase => createCommandCompleter([phrase]));
+    const complete = source => {
+        for (const completer of completers) {
+            const completed = completer(source);
+            if (completed !== undefined) {
+                return completed;
+            }
+        }
+        return undefined;
+    };
 
-    assert.equal(complete("abstract s"), "abstract steps");
-    assert.equal(complete("abstract   "), "abstract   steps");
-    assert.equal(complete("  abstract\tst"), "  abstract\tsteps");
+    assert.equal(complete("abstract "), "abstract ?");
+    assert.equal(complete("abstract   "), "abstract   ?");
+    assert.equal(complete("abstract s"), "abstract steps ?");
+    assert.equal(
+        complete("  abstract\tsteps  "),
+        "  abstract\tsteps  ?");
     assert.equal(complete("abstract x"), undefined);
+    assert.equal(complete("abstract ?x"), undefined);
 });
 
 test("completes unambiguous find command forms", () => {

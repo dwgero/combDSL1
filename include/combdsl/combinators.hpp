@@ -4957,7 +4957,30 @@ private:
             skip_whitespace();
         }
 
-        auto const symbols = parse_definition_symbols();
+        if (at_end() || current() != '?') {
+            fail("expected '?'");
+        }
+        ++position_;
+
+        std::string symbols;
+        while (!at_end() &&
+               current() >= 'a' && current() <= 'z') {
+            symbols.push_back(current());
+            ++position_;
+        }
+        if (symbols.empty()) {
+            fail("expected at least one symbol");
+        }
+        if (!at_end() && !is_whitespace(current()) &&
+            current() != '=') {
+            fail("expected a lowercase symbol or '='");
+        }
+        skip_whitespace();
+        if (at_end() || current() != '=') {
+            fail("expected '='");
+        }
+        ++position_;
+
         auto body = parse_expression();
         skip_whitespace();
         if (!at_end()) {
@@ -5018,7 +5041,10 @@ private:
             std::move(body),
             show_steps ? std::addressof(substitutions) : nullptr);
         if (!show_steps) {
-            return body;
+            std::ostringstream output;
+            output << "?=";
+            body.print_to(output);
+            return quote(std::move(output).str());
         }
         for (auto const& substitution : substitutions) {
             if (!first_trace_line) {
@@ -5030,7 +5056,7 @@ private:
             substitution.after.print_to(trace);
             first_trace_line = false;
         }
-        append_expression("final: ", body);
+        append_expression("?=", body);
         return quote(std::move(trace).str());
     }
 
