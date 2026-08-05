@@ -247,11 +247,13 @@ if(COMBDSL_BUILD_EXAMPLES)
         EXCLUDE_FROM_ALL TRUE
     )
 
-    add_executable(crepl crepl.cpp)
+    add_executable(crepl src/crepl.cpp)
     target_compile_definitions(crepl PRIVATE FMT_HEADER_ONLY=1)
     target_include_directories(
         crepl
-        PRIVATE "${COMBDSL_NCURSES_INCLUDE_DIRECTORY}"
+        PRIVATE
+            "${CMAKE_CURRENT_SOURCE_DIR}"
+            "${COMBDSL_NCURSES_INCLUDE_DIRECTORY}"
     )
     target_link_directories(crepl PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/lib")
     target_link_libraries(
