@@ -469,10 +469,10 @@ every `takeout` pass, and each optimizer substitution before the final
 `?=<expression>` line. Unchanged preprocessing and optimization passes are
 omitted.
 
-The names `abstract`, `all`, `set`, `define`, `show`, `remove`, `single`,
-`key`, `basis`, `colorize`, `about`, `birds`, `find`, `help`, `load`, `save`,
-`quit`, and `exit` are reserved words and cannot be used as names by either
-`set` or `define`.
+The names `abstract`, `all`, `steps`, `set`, `define`, `show`, `remove`,
+`single`, `key`, `basis`, `colorize`, `about`, `birds`, `find`, `help`,
+`load`, `save`, `quit`, and `exit` are reserved words and cannot be used as
+names by either `set` or `define`.
 
 Occurrences of the defined name in the combinator expression are recursive
 references. If any remain after the argument symbols are abstracted, `define`
@@ -699,7 +699,7 @@ expression produces no output, while malformed or empty lines throw
 The `crepl` executable applies `input_escape` to each line before passing it to
 `parse_eval`, so ordinary quoted words and backslashes can be entered directly.
 When standard output is a terminal, it first prints
-`Combinator Read-Eval-Print Loop, version 2.3.8`. Long evaluations display
+`Combinator Read-Eval-Print Loop, version 2.3.9`. Long evaluations display
 the accumulated step count every 1,000 reductions by overwriting one status
 line; the line is cleared before evaluation output is printed. Its interactive
 prompt is `>`. Interactive input uses GNU Readline, so previous nonempty

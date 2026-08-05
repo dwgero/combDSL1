@@ -5775,6 +5775,7 @@ private:
         std::size_t name_position) const {
         if (name == "abstract" ||
             name == "all" ||
+            name == "steps" ||
             name == "set" ||
             name == "define" ||
             name == "show" ||

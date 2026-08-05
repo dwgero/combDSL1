@@ -2515,9 +2515,9 @@ int main() {
         "find all 10 ?x = x", 9,
         "find maximum size must be from 1 to 4");
     constexpr std::string_view reserved_definition_names[] = {
-        "abstract", "all", "set", "define", "show", "single", "key",
-        "basis", "colorize", "about", "birds", "find", "help", "load",
-        "remove", "save", "quit", "exit"};
+        "abstract", "all", "steps", "set", "define", "show", "single",
+        "key", "basis", "colorize", "about", "birds", "find", "help",
+        "load", "remove", "save", "quit", "exit"};
     for (auto const name : reserved_definition_names) {
         auto const detail =
             std::string(name) + " is a reserved word";
