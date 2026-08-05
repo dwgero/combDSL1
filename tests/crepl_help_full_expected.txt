@@ -58,6 +58,15 @@ definition, its definition and the remove command remain in the saved set list
 so dependent bases can be recreated. Otherwise, neither command is saved.
 Pre-defined names cannot be removed.
 
+Abstracting Expressions
+
+abstract [steps] <symbol_list> = <combinator_expression>
+Abstracts the listed lowercase symbols from the expression, from right to left,
+and displays the resulting combinator expression without evaluating it. The
+optional "steps" word also displays changed preprocessing, each takeout, each
+optimizer substitution, and the final expression. Abstract ignores the stepping
+and colorize modes.
+
 Finding Combinators
 
 find [all] [num] ?<symbol_list> = <combinator_expression>

@@ -1,5 +1,6 @@
 Commands:
 about                                 | display copyright and redistribution information
+abstract [steps] <symbols> = <expression> | display combinator abstraction
 basis step [on | off]                 | names are converted to their stored expressions as a step
 birds                                 | display the pre-defined bird combinators
 colorize [on | off]                   | add colors to arguments while stepping
@@ -18,6 +19,7 @@ show <name | all>                     | display one definition or the entire set
 single step [on | off]                | display each step of the reduction without pause
 Commands:
 about                                 | display copyright and redistribution information
+abstract [steps] <symbols> = <expression> | display combinator abstraction
 basis step [on | off]                 | names are converted to their stored expressions as a step
 birds                                 | display the pre-defined bird combinators
 colorize [on | off]                   | add colors to arguments while stepping

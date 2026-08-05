@@ -34,12 +34,14 @@ const createCommandCompleter =
 
 test("completes unique Studio command prefixes", () => {
     const complete = createCommandCompleter([
+        "abstract",
         "define",
         "find",
         "set",
         "show",
     ]);
 
+    assert.equal(complete("abs"), "abstract");
     assert.equal(complete("def"), "define");
     assert.equal(complete("fin"), "find");
     assert.equal(complete("se"), "set");
@@ -106,6 +108,15 @@ test("completes the show all command form", () => {
 
     assert.equal(complete("show a"), "show all");
     assert.equal(complete("show   "), "show   all");
+});
+
+test("completes the abstract steps command form", () => {
+    const complete = createCommandCompleter(["abstract steps"]);
+
+    assert.equal(complete("abstract s"), "abstract steps");
+    assert.equal(complete("abstract   "), "abstract   steps");
+    assert.equal(complete("  abstract\tst"), "  abstract\tsteps");
+    assert.equal(complete("abstract x"), undefined);
 });
 
 test("completes unambiguous find command forms", () => {

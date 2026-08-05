@@ -1453,6 +1453,53 @@ int main() {
     test("cross-form replacement uses its new arity",
          single_step(parse("DefReplace a b")), "ab");
 
+    test("abstract returns only its optimized expression",
+         parse("abstract xy = x(yx)"), "A");
+    test("abstract handles the Starling proposal example",
+         parse("abstract xyz = xz(yz)"), "S");
+    test("abstract takes symbols out from right to left",
+         parse("abstract x y z = exp"), "BK(BK(Cep))");
+    test("abstract preprocesses saturated bases",
+         parse("abstract xyz = C(CB)xyz"), "B");
+    test("abstract does not change stored definitions",
+         [] {
+             auto const before = combdsl::set_list();
+             static_cast<void>(parse("abstract xy = yx"));
+             std::cout << (before == combdsl::set_list());
+         },
+         "1");
+    test("abstract inspection stops before abstraction",
+         [] {
+             auto const parsed = combdsl::detail::parse_input(
+                 "abstract steps xy = x(yx)",
+                 combdsl::detail::parser_definition_mode::
+                     inspect_definitions);
+             parsed.expression.print_to(std::cout);
+             std::cout << ' ' << parsed.is_display_only
+                       << parsed.is_definition
+                       << parsed.is_find;
+         },
+         "x(yx) 100");
+    test("abstract steps traces reverse takeout and optimization",
+         parse("abstract steps xy = x(yx)"),
+         "takeout y: Bx(Tx)\n"
+         "takeout x: SBT\n"
+         "optimize: SBT -> A\n"
+         "final: A");
+    test("abstract steps traces changed preprocessing",
+         parse("abstract steps xyz = C(CB)xyz"),
+         "preprocess: C(CB)xyz -> x(yz)\n"
+         "takeout z: Bxy\n"
+         "takeout y: Bx\n"
+         "takeout x: B\n"
+         "final: B");
+    test("abstract steps traces each chained optimizer substitution",
+         parse("abstract steps x = C(Tx)"),
+         "takeout x: BCT\n"
+         "optimize: BC -> C*\n"
+         "optimize: C* T -> V\n"
+         "final: V");
+
     test("define infers arity from its symbols",
          parse("define Def3 xyz = xyz"), "Def3");
     test("define basis remains named while undersaturated",
@@ -2386,6 +2433,32 @@ int main() {
         "show rejects a trailing close parenthesis", "show M)", 5,
         "M) is not a defined name");
     test_parse_failure(
+        "abstract requires at least one symbol", "abstract", 8,
+        "expected at least one symbol");
+    test_parse_failure(
+        "abstract steps requires at least one symbol",
+        "abstract steps", 14, "expected at least one symbol");
+    constexpr std::string_view uppercase_abstract_symbol =
+        "abstract X = X";
+    test_parse_failure(
+        "abstract rejects an uppercase symbol",
+        uppercase_abstract_symbol,
+        uppercase_abstract_symbol.find('X'),
+        "expected a lowercase symbol or '='");
+    constexpr std::string_view abstract_without_equals =
+        "abstract xy";
+    test_parse_failure(
+        "abstract requires an equals sign",
+        abstract_without_equals,
+        abstract_without_equals.size(), "expected '='");
+    constexpr std::string_view abstract_without_expression =
+        "abstract xy = ";
+    test_parse_failure(
+        "abstract requires an expression",
+        abstract_without_expression,
+        abstract_without_expression.size(),
+        "expected an expression");
+    test_parse_failure(
         "find requires a question-mark marker", "find", 4,
         "expected '?'");
     test_parse_failure(
@@ -2433,9 +2506,9 @@ int main() {
         "find all 10 ?x = x", 9,
         "find maximum size must be from 1 to 4");
     constexpr std::string_view reserved_definition_names[] = {
-        "all", "set", "define", "show", "single", "key", "basis",
-        "colorize", "about", "birds", "find", "help", "load", "remove",
-        "save", "quit", "exit"};
+        "abstract", "all", "set", "define", "show", "single", "key",
+        "basis", "colorize", "about", "birds", "find", "help", "load",
+        "remove", "save", "quit", "exit"};
     for (auto const name : reserved_definition_names) {
         auto const detail =
             std::string(name) + " is a reserved word";
@@ -2631,6 +2704,29 @@ int main() {
          [&] { parse_eval("define EvalD x = x"); }, "");
     test("parse eval uses a silently registered define basis",
          [&] { parse_eval("EvalD y"); }, "y\n");
+    test("parse eval displays abstract without evaluating it",
+         [&] { parse_eval("abstract xyz = xz(yz)"); }, "S\n");
+    test("parse and step displays an abstract trace once",
+         [] {
+             std::istringstream input;
+             std::ostringstream output;
+             parse_and_step(
+                 "abstract steps xy = x(yx)", output, input);
+             std::cout << output.str();
+         },
+         "takeout y: Bx(Tx)\n"
+         "takeout x: SBT\n"
+         "optimize: SBT -> A\n"
+         "final: A\n");
+    test("parse and key step displays an abstract result without pausing",
+         [] {
+             std::istringstream input;
+             std::ostringstream output;
+             parse_and_key_step(
+                 "abstract xyz = xz(yz)", output, input);
+             std::cout << output.str();
+         },
+         "S\n");
     test("parse eval remove only changes its definition state",
          [] {
              parse_eval("set EvalRemove = 0 I");

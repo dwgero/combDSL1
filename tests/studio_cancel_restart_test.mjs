@@ -476,6 +476,49 @@ test("marks detailed timeout notices red in results and history", () => {
     );
 });
 
+test("routes abstract steps as display-only with modes enabled", () => {
+    for (const steppingMode of ["single-step", "key-step"]) {
+        const harness = createHarness();
+        const source = harness.element("source");
+        const worker = harness.workers[0];
+
+        worker.send({type: "ready", setList: ""});
+        harness.flushAnimationFrames();
+        harness.element(steppingMode).click();
+        harness.element("basis-step").click();
+        harness.element("colorize").click();
+
+        source.value = "abstract steps xy = x(yx)";
+        harness.pressEnter();
+        harness.flushAnimationFrames();
+        const inspection = worker.messages.find(
+            message => message.type === "inspect-definition");
+        worker.send({
+            type: "definition-inspection-result",
+            id: inspection.id,
+            result: {
+                success: true,
+                definition: false,
+                displayOnly: true,
+                showAll: false,
+                find: false,
+                replacement: "",
+            },
+        });
+        harness.flushAnimationFrames();
+
+        const evaluation = worker.messages.find(
+            message => message.type === "evaluate");
+        assert.equal(
+            evaluation.source,
+            "abstract steps xy = x(yx)");
+        assert.equal(evaluation.singleStep, false);
+        assert.equal(evaluation.keyStep, false);
+        assert.equal(evaluation.basisStep, false);
+        assert.equal(evaluation.colorize, false);
+    }
+});
+
 test("routes find as an unstepped cancellable search", () => {
     const harness = createHarness();
     const source = harness.element("source");

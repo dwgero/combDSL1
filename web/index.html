@@ -362,9 +362,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             color: #c33;
         }
     </style>
-    <script src="./evaluation_watchdog.js?v=2.3.6" defer></script>
-    <script src="./input_history.js?v=2.3.6" defer></script>
-    <script src="./app.js?v=2.3.6" defer></script>
+    <script src="./evaluation_watchdog.js?v=2.3.7" defer></script>
+    <script src="./input_history.js?v=2.3.7" defer></script>
+    <script src="./app.js?v=2.3.7" defer></script>
 </head>
 <body>
     <main aria-labelledby="studio-title">
@@ -499,8 +499,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
         <h2 class="help-subheading">Adding Combinators</h2>
         <div class="help-section">
             Press <kbd>Tab</kbd> to complete a unique prefix for
-            <code>set</code>, <code>define</code>, <code>find</code>,
-            <code>remove</code>, or <code>show</code>.
+            <code>abstract</code>, <code>set</code>, <code>define</code>,
+            <code>find</code>, <code>remove</code>, or <code>show</code>.
             <br><br>
             <code>set name = combinator_expression</code><br>
             In the first form, the expression always reduces immediately.
@@ -539,6 +539,18 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             definition and the <code>remove</code> command remain in the saved
             set list so dependent bases can be recreated. Otherwise, neither
             command is saved. Pre-defined names cannot be removed.
+        </div>
+        <h2 class="help-subheading">Abstracting Expressions</h2>
+        <div class="help-section">
+            <code>abstract [steps] symbol_list =
+                combinator_expression</code><br>
+            Performs the same abstraction as <code>define</code> without
+            creating or storing a name, and displays the resulting combinator
+            expression without evaluating it. With the optional
+            <code>steps</code>, it also displays preprocessing when that changes
+            the input, every right-to-left <code>takeout</code> pass, and each
+            optimizer substitution before displaying the final expression.
+            Unchanged preprocessing and optimization passes are omitted.
         </div>
         <h2 class="help-subheading">Finding Combinators</h2>
         <div class="help-section">
@@ -683,7 +695,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             data-dialog-initial-focus>About</h2>
         <div class="license-text">
             <!-- Keep this version and the app.js cache key in sync. -->
-            <p>Combinator Studio, version 2.3.6<br>
+            <p>Combinator Studio, version 2.3.7<br>
                 Part of the C++ Combinator DSL<br>
                 Copyright (C) 2026  David W. Gero</p>
             <p>This program is free software: you can redistribute it and/or modify

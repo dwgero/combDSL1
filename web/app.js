@@ -35,6 +35,7 @@
     });
     const completeTopLevelCommand =
         inputHistoryTools.createCommandCompleter([
+        "abstract",
         "define",
         "find",
         "remove",
@@ -43,6 +44,8 @@
     ], {appendSpaceToExact: true});
     const completeShowAll =
         inputHistoryTools.createCommandCompleter(["show all"]);
+    const completeAbstractSteps =
+        inputHistoryTools.createCommandCompleter(["abstract steps"]);
     const findCommandCompleters = [
         "find ?",
         "find all ?",
@@ -66,7 +69,8 @@
         return undefined;
     };
     const completeCommand = source =>
-        completeTopLevelCommand(source) ?? completeShowAll(source) ??
+        completeTopLevelCommand(source) ??
+            completeAbstractSteps(source) ?? completeShowAll(source) ??
             completeFindCommand(source);
     const form = document.querySelector("#evaluation-form");
     const sourceBox = document.querySelector("#source-box");
@@ -728,7 +732,7 @@
                     Boolean(message.result.displayOnly);
                 request.showAll = Boolean(message.result.showAll);
                 request.findCommand = Boolean(message.result.find);
-                if (request.findCommand) {
+                if (request.displayOnly) {
                     request.singleStep = false;
                     request.keyStep = false;
                     request.basisStep = false;

@@ -4677,6 +4677,8 @@ public:
             begins_command("show");
         auto const is_find_command =
             begins_command("find");
+        auto const is_abstract_command =
+            begins_command("abstract");
         auto const is_definition =
             is_set_definition || is_define_definition ||
             is_remove_definition;
@@ -4690,7 +4692,9 @@ public:
                         ? parse_show_command()
                         : is_find_command
                             ? parse_find_command()
-                            : parse_expression();
+                            : is_abstract_command
+                                ? parse_abstract_command()
+                                : parse_expression();
         skip_whitespace();
         if (!at_end()) {
             fail("unexpected ')'");
@@ -4698,7 +4702,8 @@ public:
         return {
             std::move(result),
             is_definition,
-            is_show_command || is_find_command,
+            is_show_command || is_find_command ||
+                is_abstract_command,
             is_show_all_,
             is_find_command,
             is_find_no_match_,
@@ -4706,6 +4711,11 @@ public:
     }
 
 private:
+    struct optimizer_substitution {
+        quoted_expression before;
+        quoted_expression after;
+    };
+
     [[nodiscard]] bool begins_command(
         std::string_view keyword) const noexcept {
         auto const remaining = source_.substr(position_);
@@ -4927,6 +4937,101 @@ private:
                 "No match within search bounds"));
         }
         return quote(std::move(output).str());
+    }
+
+    [[nodiscard]] quoted_expression parse_abstract_command() {
+        constexpr std::size_t keyword_size = 8;
+        position_ += keyword_size;
+        skip_whitespace();
+
+        bool show_steps = false;
+        auto const remaining = source_.substr(position_);
+        if (remaining.starts_with("steps") &&
+            (remaining.size() == 5 ||
+             is_whitespace(remaining[5]))) {
+            show_steps = true;
+            position_ += 5;
+            if (!at_end() && !is_whitespace(current())) {
+                fail("expected whitespace after 'steps'");
+            }
+            skip_whitespace();
+        }
+
+        auto const symbols = parse_definition_symbols();
+        auto body = parse_expression();
+        skip_whitespace();
+        if (!at_end()) {
+            fail("unexpected ')'");
+        }
+        if (definition_mode_ ==
+            parser_definition_mode::inspect_definitions) {
+            return body;
+        }
+
+        std::ostringstream trace;
+        bool first_trace_line = true;
+        auto append_expression = [&](std::string_view label,
+                                     quoted_expression const& value) {
+            if (!first_trace_line) {
+                trace << '\n';
+            }
+            trace << label;
+            value.print_to(trace);
+            first_trace_line = false;
+        };
+
+        auto const original_body = body;
+        body = reduce_saturated_bases(std::move(body));
+        if (show_steps &&
+            !same_parser_definition_expression(
+                original_body, body)) {
+            trace << "preprocess: ";
+            original_body.print_to(trace);
+            trace << " -> ";
+            body.print_to(trace);
+            first_trace_line = false;
+        }
+
+        std::vector<quoted_atomic> pending_atoms;
+        pending_atoms.reserve(symbols.size());
+        for (auto const symbol_name : symbols) {
+            pending_atoms.emplace_back(symbol(symbol_name));
+        }
+        for (auto symbol_position = symbols.rbegin();
+             symbol_position != symbols.rend();
+             ++symbol_position) {
+            pending_atoms.pop_back();
+            body = takeout_with_pending_atoms(
+                quoted_atomic{symbol(*symbol_position)},
+                std::move(body),
+                pending_atoms);
+            if (show_steps) {
+                std::string label = "takeout ";
+                label.push_back(*symbol_position);
+                label += ": ";
+                append_expression(label, body);
+            }
+        }
+
+        std::vector<optimizer_substitution> substitutions;
+        body = optimize_final_takeout(
+            std::move(body),
+            show_steps ? std::addressof(substitutions) : nullptr);
+        if (!show_steps) {
+            return body;
+        }
+        for (auto const& substitution : substitutions) {
+            if (!first_trace_line) {
+                trace << '\n';
+            }
+            trace << "optimize: ";
+            substitution.before.print_to(trace);
+            trace << " -> ";
+            substitution.after.print_to(trace);
+            first_trace_line = false;
+        }
+        append_expression("final: ", body);
+        return quote(std::move(trace).str());
     }
 
     [[nodiscard]] quoted_expression parse_remove_definition() {
@@ -5516,9 +5621,14 @@ private:
     }
 
     [[nodiscard]] quoted_expression optimize_final_takeout(
-        quoted_expression expression) const {
+        quoted_expression expression,
+        std::vector<optimizer_substitution>* substitutions =
+            nullptr) const {
         if (auto optimized =
                 optimize_final_takeout_at_root(expression)) {
+            if (substitutions != nullptr) {
+                substitutions->push_back({expression, *optimized});
+            }
             return *optimized;
         }
 
@@ -5527,10 +5637,10 @@ private:
             return expression;
         }
 
-        auto function =
-            optimize_final_takeout(application->function());
-        auto argument =
-            optimize_final_takeout(application->argument());
+        auto function = optimize_final_takeout(
+            application->function(), substitutions);
+        auto argument = optimize_final_takeout(
+            application->argument(), substitutions);
         if (quoted_access::root(function) !=
                 quoted_access::root(application->function()) ||
             quoted_access::root(argument) !=
@@ -5541,6 +5651,9 @@ private:
 
         if (auto optimized =
                 optimize_final_takeout_at_root(expression)) {
+            if (substitutions != nullptr) {
+                substitutions->push_back({expression, *optimized});
+            }
             return *optimized;
         }
         return expression;
@@ -5634,7 +5747,8 @@ private:
     [[nodiscard]] basis_label validated_definition_basis_name(
         std::string_view name,
         std::size_t name_position) const {
-        if (name == "all" ||
+        if (name == "abstract" ||
+            name == "all" ||
             name == "set" ||
             name == "define" ||
             name == "show" ||

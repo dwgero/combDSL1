@@ -59,7 +59,7 @@
 
 namespace {
 
-constexpr std::string_view crepl_version = "2.3.6";
+constexpr std::string_view crepl_version = "2.3.7";
 
 [[nodiscard]] bool stream_is_terminal(std::FILE* stream) noexcept {
 #if defined(_WIN32)
@@ -149,16 +149,18 @@ struct completion_candidates {
     std::size_t size = 0;
 };
 
-constexpr std::array<std::string_view, 16> command_completion_candidates = {
-    "about", "basis", "birds", "colorize", "define", "exit",
-    "find", "help", "key", "load", "quit", "remove", "save", "set",
-    "show", "single"};
+constexpr std::array<std::string_view, 17> command_completion_candidates = {
+    "about", "abstract", "basis", "birds", "colorize", "define",
+    "exit", "find", "help", "key", "load", "quit", "remove",
+    "save", "set", "show", "single"};
 constexpr std::array<std::string_view, 1> step_completion_candidates = {
     "step"};
 constexpr std::array<std::string_view, 2> toggle_completion_candidates = {
     "off", "on"};
 constexpr std::array<std::string_view, 2> help_completion_candidates = {
     "brief", "full"};
+constexpr std::array<std::string_view, 1> abstract_completion_candidates = {
+    "steps"};
 constexpr std::array<std::string_view, 1> show_completion_candidates = {
     "all"};
 constexpr std::array<std::string_view, 5> find_completion_candidates = {
@@ -360,6 +362,10 @@ template<std::size_t Size>
         }
         if (words[0] == "help") {
             return make_completion_candidates(help_completion_candidates);
+        }
+        if (words[0] == "abstract") {
+            return make_completion_candidates(
+                abstract_completion_candidates);
         }
         if (words[0] == "show") {
             return make_completion_candidates(show_completion_candidates);
@@ -700,6 +706,7 @@ void print_help_brief(std::ostream& output) {
     output <<
         "Commands:\n"
         "about                                 | display copyright and redistribution information\n"
+        "abstract [steps] <symbols> = <expression> | display combinator abstraction\n"
         "basis step [on | off]                 | names are converted to their stored expressions as a step\n"
         "birds                                 | display the pre-defined bird combinators\n"
         "colorize [on | off]                   | add colors to arguments while stepping\n"
@@ -813,6 +820,17 @@ void print_help_full(std::ostream& output) {
         "remain in the saved set list so dependent bases can be recreated. "
         "Otherwise, neither command is saved. Pre-defined names cannot be "
         "removed.");
+
+    output << "\nAbstracting Expressions\n\n"
+           << "abstract [steps] <symbol_list> = <combinator_expression>\n";
+    write_wrapped_paragraph(
+        output,
+        "Abstracts the listed lowercase symbols from the expression, from "
+        "right to left, and displays the resulting combinator expression "
+        "without evaluating it. The optional \"steps\" word also displays "
+        "changed preprocessing, each takeout, each optimizer substitution, "
+        "and the final expression. Abstract ignores the stepping and "
+        "colorize modes.");
 
     output << "\nFinding Combinators\n\n"
            << "find [all] [num] ?<symbol_list> = <combinator_expression>\n";
@@ -1850,6 +1868,13 @@ int main(int argc, char* argv[]) {
 
             auto const escaped_source =
                 combdsl::input_escape(source);
+            if (begins_command(source, "abstract")) {
+                auto const parsed =
+                    combdsl::detail::parse_input(escaped_source);
+                print_expression_line(
+                    std::cout, parsed.expression);
+                continue;
+            }
             if (begins_command(source, "find")) {
                 auto const parsed =
                     combdsl::detail::parse_input(escaped_source);
