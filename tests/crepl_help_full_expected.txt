@@ -58,6 +58,22 @@ definition, its definition and the remove command remain in the saved set list
 so dependent bases can be recreated. Otherwise, neither command is saved.
 Pre-defined names cannot be removed.
 
+Finding Combinators
+
+find [all] [num] ?<symbol_list> = <combinator_expression>
+Searches the pre-defined bird catalog for forms that reduce to
+combinator_expression when applied to symbol_list. A question mark must
+immediately precede one or more lowercase symbols. The optional num is a number
+from 1 through 4 and defaults to 3. Without "all", sizes are searched in order
+and the command stops after the first size with answers. With "all", every size
+through num is searched and every answer is displayed. For example, "find 3"
+stops after the one-bird answers for ?xy = x(yx), while "find all 3" also
+reports matching two- and three-bird forms. A four-bird search may take minutes.
+Each answer is printed as "?=<match>". J and Y are excluded from the search
+catalog. Find ignores the stepping and colorize modes. Matching uses bounded
+normalization, so the red response "No match within search bounds" does not
+prove that no equivalent expression exists.
+
 Command Entry
 
 Tab completion

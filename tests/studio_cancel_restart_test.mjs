@@ -476,6 +476,138 @@ test("marks detailed timeout notices red in results and history", () => {
     );
 });
 
+test("routes find as an unstepped cancellable search", () => {
+    const harness = createHarness();
+    const source = harness.element("source");
+    const worker = harness.workers[0];
+
+    worker.send({type: "ready", setList: ""});
+    harness.flushAnimationFrames();
+    harness.element("single-step").click();
+    harness.element("basis-step").click();
+    harness.element("colorize").click();
+
+    source.value = "find ?xy = x(yx)";
+    harness.pressEnter();
+    harness.flushAnimationFrames();
+    const inspection = worker.messages.find(
+        message => message.type === "inspect-definition");
+    worker.send({
+        type: "definition-inspection-result",
+        id: inspection.id,
+        result: {
+            success: true,
+            definition: false,
+            displayOnly: true,
+            showAll: false,
+            find: true,
+            replacement: "",
+        },
+    });
+    assert.equal(harness.element("status").textContent, "Searching…");
+    harness.flushAnimationFrames();
+
+    const evaluation = worker.messages.find(
+        message => message.type === "evaluate");
+    assert.equal(evaluation.source, "find ?xy = x(yx)");
+    assert.equal(evaluation.singleStep, false);
+    assert.equal(evaluation.keyStep, false);
+    assert.equal(evaluation.basisStep, false);
+    assert.equal(evaluation.colorize, false);
+    assert.equal(harness.element("cancel").disabled, false);
+});
+
+test("renders a find no-match response as a red notice", () => {
+    const harness = createHarness();
+    const source = harness.element("source");
+    const worker = harness.workers[0];
+
+    worker.send({type: "ready", setList: ""});
+    harness.flushAnimationFrames();
+    source.value = "find ?x = Y";
+    harness.pressEnter();
+    harness.flushAnimationFrames();
+
+    const inspection = worker.messages.find(
+        message => message.type === "inspect-definition");
+    worker.send({
+        type: "definition-inspection-result",
+        id: inspection.id,
+        result: {
+            success: true,
+            definition: false,
+            displayOnly: true,
+            showAll: false,
+            find: true,
+            replacement: "",
+        },
+    });
+    harness.flushAnimationFrames();
+    worker.send({
+        type: "result",
+        id: inspection.id,
+        result: {
+            success: true,
+            definition: false,
+            recoverWorker: false,
+            output: "No match within search bounds\n",
+            error: "",
+            reductions: 0,
+        },
+    });
+
+    const notice = childElements(harness.element("output")).find(
+        element =>
+            element.textContent === "No match within search bounds" &&
+            element.dataset.kind === "notice");
+    assert.ok(notice, "missing red find no-match notice");
+});
+
+test("uses a lowercase show end marker", () => {
+    const harness = createHarness();
+    const source = harness.element("source");
+    const worker = harness.workers[0];
+
+    worker.send({type: "ready", setList: "set Foo = 0 I\n"});
+    harness.flushAnimationFrames();
+    source.value = "show all";
+    harness.pressEnter();
+    harness.flushAnimationFrames();
+
+    const inspection = worker.messages.find(
+        message => message.type === "inspect-definition");
+    worker.send({
+        type: "definition-inspection-result",
+        id: inspection.id,
+        result: {
+            success: true,
+            definition: false,
+            displayOnly: true,
+            showAll: true,
+            find: false,
+            replacement: "",
+        },
+    });
+    harness.flushAnimationFrames();
+    worker.send({
+        type: "result",
+        id: inspection.id,
+        result: {
+            success: true,
+            definition: false,
+            recoverWorker: false,
+            output: "set Foo = 0 I\n",
+            error: "",
+            reductions: 0,
+        },
+    });
+
+    const marker = childElements(harness.element("output")).find(
+        element => element.textContent === "[show end]" &&
+            element.dataset.kind === "notice");
+    assert.ok(marker, "missing lowercase show end marker");
+});
+
 test("marks restored cancellation and timeout history notices red", () => {
     const harness = createHarness({
         historyValues: [

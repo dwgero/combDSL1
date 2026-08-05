@@ -59,7 +59,7 @@
 
 namespace {
 
-constexpr std::string_view crepl_version = "2.3.2";
+constexpr std::string_view crepl_version = "2.3.6";
 
 [[nodiscard]] bool stream_is_terminal(std::FILE* stream) noexcept {
 #if defined(_WIN32)
@@ -149,10 +149,10 @@ struct completion_candidates {
     std::size_t size = 0;
 };
 
-constexpr std::array<std::string_view, 15> command_completion_candidates = {
+constexpr std::array<std::string_view, 16> command_completion_candidates = {
     "about", "basis", "birds", "colorize", "define", "exit",
-    "help", "key", "load", "quit", "remove", "save", "set", "show",
-    "single"};
+    "find", "help", "key", "load", "quit", "remove", "save", "set",
+    "show", "single"};
 constexpr std::array<std::string_view, 1> step_completion_candidates = {
     "step"};
 constexpr std::array<std::string_view, 2> toggle_completion_candidates = {
@@ -161,6 +161,10 @@ constexpr std::array<std::string_view, 2> help_completion_candidates = {
     "brief", "full"};
 constexpr std::array<std::string_view, 1> show_completion_candidates = {
     "all"};
+constexpr std::array<std::string_view, 5> find_completion_candidates = {
+    "all", "1", "2", "3", "4"};
+constexpr std::array<std::string_view, 4>
+    find_after_all_completion_candidates = {"1", "2", "3", "4"};
 std::string last_save_filename = "set_list.cmb";
 std::array<std::string_view, 1> save_filename_completion_candidates;
 std::string last_load_filename = "set_list.cmb";
@@ -360,6 +364,9 @@ template<std::size_t Size>
         if (words[0] == "show") {
             return make_completion_candidates(show_completion_candidates);
         }
+        if (words[0] == "find") {
+            return make_completion_candidates(find_completion_candidates);
+        }
         if (words[0] == "save") {
             save_filename_completion_candidates[0] =
                 last_save_filename;
@@ -378,6 +385,11 @@ template<std::size_t Size>
         (words[0] == "basis" || words[0] == "key" ||
          words[0] == "single")) {
         return make_completion_candidates(toggle_completion_candidates);
+    }
+    if (word_count == 2 && words[0] == "find" &&
+        words[1] == "all") {
+        return make_completion_candidates(
+            find_after_all_completion_candidates);
     }
     return {};
 }
@@ -452,6 +464,23 @@ completion_candidates active_completion_candidates;
         ++position;
     }
     return position == source.size();
+}
+
+[[nodiscard]] bool begins_command(
+    std::string_view source,
+    std::string_view keyword) noexcept {
+    std::size_t position = 0;
+    while (position < source.size() &&
+           is_command_whitespace(source[position])) {
+        ++position;
+    }
+
+    if (!source.substr(position).starts_with(keyword)) {
+        return false;
+    }
+    position += keyword.size();
+    return position == source.size() ||
+           is_command_whitespace(source[position]);
 }
 
 [[nodiscard]] bool is_show_all_command(
@@ -677,6 +706,7 @@ void print_help_brief(std::ostream& output) {
         "define <name> <xyz...> = <expression> | compute and store a series of combinators such that\n"
         "                                      | <name> <xyz...> reduces to <expression>\n"
         "exit                                  | end the program\n"
+        "find [all] [num] ?<symbols> = <expression> | find matching pre-defined bird forms\n"
         "help [brief | full]                   | display help information\n"
         "key step [on | off]                   | after each step, wait for a keypress to continue\n"
         "load <filename>                       | load user-defined combinators from a file\n"
@@ -783,6 +813,25 @@ void print_help_full(std::ostream& output) {
         "remain in the saved set list so dependent bases can be recreated. "
         "Otherwise, neither command is saved. Pre-defined names cannot be "
         "removed.");
+
+    output << "\nFinding Combinators\n\n"
+           << "find [all] [num] ?<symbol_list> = <combinator_expression>\n";
+    write_wrapped_paragraph(
+        output,
+        "Searches the pre-defined bird catalog for forms that reduce to "
+        "combinator_expression when applied to symbol_list. A question mark "
+        "must immediately precede one or more lowercase symbols. The optional "
+        "num is a number from 1 through 4 and defaults to 3. Without \"all\", "
+        "sizes are searched in order and the command stops after the first "
+        "size with answers. With \"all\", every size through num is searched "
+        "and every answer is displayed. For example, \"find 3\" stops after "
+        "the one-bird answers for ?xy = x(yx), while \"find all 3\" also "
+        "reports matching two- and three-bird forms. A four-bird search may "
+        "take minutes. Each answer is printed as \"?=<match>\". J and Y are "
+        "excluded from the search catalog. Find ignores the stepping and "
+        "colorize modes. Matching uses bounded normalization, so the red "
+        "response \"No match within search bounds\" does not prove that no "
+        "equivalent expression exists.");
 
     output << "\nCommand Entry\n\n";
     print_help_topic(
@@ -1801,6 +1850,20 @@ int main(int argc, char* argv[]) {
 
             auto const escaped_source =
                 combdsl::input_escape(source);
+            if (begins_command(source, "find")) {
+                auto const parsed =
+                    combdsl::detail::parse_input(escaped_source);
+                if (parsed.is_find_no_match) {
+                    print_red_message_line(
+                        std::cout,
+                        "No match within search bounds",
+                        interactive_output);
+                } else {
+                    print_expression_line(
+                        std::cout, parsed.expression);
+                }
+                continue;
+            }
             if (!interactive_output) {
                 auto outcome = combdsl::evaluation_outcome::completed;
                 if (active_stepping_mode == stepping_mode::single) {

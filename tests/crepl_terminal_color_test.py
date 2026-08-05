@@ -67,6 +67,11 @@ def main():
         output = reader.read_until(b">")
         require_red_message(output, b"Nothing to show")
 
+        write_all(master, b"find ?x = MM\n")
+        output = reader.read_until(b">")
+        require_red_message(
+            output, b"No match within search bounds")
+
         write_all(master, b"show x\n")
         output = reader.read_until(b">")
         require_red_message(

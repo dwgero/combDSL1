@@ -184,6 +184,7 @@ self.addEventListener("message", async event => {
                     definition: false,
                     displayOnly: false,
                     showAll: false,
+                    find: false,
                     replacement: "",
                     error: errorMessage(error),
                 },

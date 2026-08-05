@@ -36,14 +36,38 @@
     const completeTopLevelCommand =
         inputHistoryTools.createCommandCompleter([
         "define",
+        "find",
         "remove",
         "set",
         "show",
     ], {appendSpaceToExact: true});
     const completeShowAll =
         inputHistoryTools.createCommandCompleter(["show all"]);
+    const findCommandCompleters = [
+        "find ?",
+        "find all ?",
+        "find 1 ?",
+        "find all 1 ?",
+        "find 2 ?",
+        "find all 2 ?",
+        "find 3 ?",
+        "find all 3 ?",
+        "find 4 ?",
+        "find all 4 ?",
+    ].map(phrase =>
+        inputHistoryTools.createCommandCompleter([phrase]));
+    const completeFindCommand = source => {
+        for (const complete of findCommandCompleters) {
+            const completed = complete(source);
+            if (completed !== undefined) {
+                return completed;
+            }
+        }
+        return undefined;
+    };
     const completeCommand = source =>
-        completeTopLevelCommand(source) ?? completeShowAll(source);
+        completeTopLevelCommand(source) ?? completeShowAll(source) ??
+            completeFindCommand(source);
     const form = document.querySelector("#evaluation-form");
     const sourceBox = document.querySelector("#source-box");
     const sourceHistory = document.querySelector("#source-history");
@@ -478,9 +502,11 @@
             request.outputEntry =
                 beginEvaluationOutput(request.source);
         }
-        status.textContent = request.keyStep
-            ? "Preparing…"
-            : "Evaluating…";
+        status.textContent = request.findCommand
+            ? "Searching…"
+            : request.keyStep
+                ? "Preparing…"
+                : "Evaluating…";
         updateControls();
 
         const evaluationWorker = worker;
@@ -489,7 +515,7 @@
                 worker !== evaluationWorker) {
                 return;
             }
-            if (!request.keyStep) {
+            if (!request.keyStep && !request.findCommand) {
                 request.evaluationWorker = evaluationWorker;
                 request.evaluationGeneration = generation;
                 request.evaluationStarted = false;
@@ -502,9 +528,13 @@
                 type: "evaluate",
                 id: request.id,
                 source: request.source,
-                singleStep: request.singleStep,
+                singleStep: request.findCommand
+                    ? false
+                    : request.singleStep,
                 basisStep: request.basisStep,
-                keyStep: request.keyStep,
+                keyStep: request.findCommand
+                    ? false
+                    : request.keyStep,
                 colorize: request.colorize,
             });
         });
@@ -616,6 +646,7 @@
             if (message.type === "eval-started" &&
                 message.id === activeRequest?.id &&
                 !activeRequest.keyStep &&
+                !activeRequest.findCommand &&
                 !activeRequest.evaluationStarted) {
                 const request = activeRequest;
                 request.evaluationStarted = true;
@@ -696,6 +727,13 @@
                 request.displayOnly =
                     Boolean(message.result.displayOnly);
                 request.showAll = Boolean(message.result.showAll);
+                request.findCommand = Boolean(message.result.find);
+                if (request.findCommand) {
+                    request.singleStep = false;
+                    request.keyStep = false;
+                    request.basisStep = false;
+                    request.colorize = false;
+                }
                 if (!message.result.definition &&
                     !request.displayOnly) {
                     ensureBlankLineBeforeOutputEntry(
@@ -821,7 +859,8 @@
                 }
                 if (message.result.success &&
                     !completedRequest.singleStep &&
-                    !completedRequest.keyStep) {
+                    !completedRequest.keyStep &&
+                    !completedRequest.findCommand) {
                     updateEvaluationProgress(
                         completedRequest,
                         message.result.reductions,
@@ -840,10 +879,14 @@
                             completedRequest.showAll &&
                             outputText(message.result.output) ===
                                 "Nothing to show";
+                        const noFindMatch =
+                            completedRequest.findCommand &&
+                            outputText(message.result.output) ===
+                                "No match within search bounds";
                         completeEvaluationOutput(
                             completedRequest,
                             message.result.output,
-                            nothingToShow
+                            nothingToShow || noFindMatch
                                 ? "notice"
                                 : "output",
                             Boolean(message.html));
@@ -851,7 +894,7 @@
                             !nothingToShow) {
                             completeEvaluationOutput(
                                 completedRequest,
-                                "[Show end]",
+                                "[show end]",
                                 "notice");
                         }
                         if (completedRequest.displayOnly) {

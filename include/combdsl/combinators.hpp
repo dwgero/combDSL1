@@ -4609,6 +4609,24 @@ private:
     std::string detail_;
 };
 
+struct combinator_find_result {
+    std::vector<quoted_expression> singles;
+    std::vector<quoted_expression> pairs;
+    std::vector<quoted_expression> triples;
+    std::vector<quoted_expression> quads;
+};
+
+struct combinator_find_options {
+    std::size_t maximum_size = 3;
+    bool all_sizes = false;
+};
+
+[[nodiscard]] inline combinator_find_result
+find_combinator_matches(
+    std::span<quoted_atomic const> symbol_list,
+    quoted_expression const& expression,
+    combinator_find_options options = {});
+
 namespace detail {
 
 enum class parser_definition_mode {
@@ -4621,6 +4639,8 @@ struct parsed_input {
     bool is_definition;
     bool is_display_only;
     bool is_show_all;
+    bool is_find;
+    bool is_find_no_match;
     std::string replaced_definition;
 };
 
@@ -4655,6 +4675,8 @@ public:
             begins_command("remove");
         auto const is_show_command =
             begins_command("show");
+        auto const is_find_command =
+            begins_command("find");
         auto const is_definition =
             is_set_definition || is_define_definition ||
             is_remove_definition;
@@ -4664,9 +4686,11 @@ public:
                 ? parse_define_definition()
                 : is_remove_definition
                     ? parse_remove_definition()
-                : is_show_command
-                    ? parse_show_command()
-                    : parse_expression();
+                    : is_show_command
+                        ? parse_show_command()
+                        : is_find_command
+                            ? parse_find_command()
+                            : parse_expression();
         skip_whitespace();
         if (!at_end()) {
             fail("unexpected ')'");
@@ -4674,8 +4698,10 @@ public:
         return {
             std::move(result),
             is_definition,
-            is_show_command,
+            is_show_command || is_find_command,
             is_show_all_,
+            is_find_command,
+            is_find_no_match_,
             std::move(replaced_definition_)};
     }
 
@@ -4798,6 +4824,108 @@ private:
         std::ostringstream output;
         output << "arity:" << basis.arity() << ' ';
         basis.body().print_to(output);
+        return quote(std::move(output).str());
+    }
+
+    [[nodiscard]] quoted_expression parse_find_command() {
+        constexpr std::size_t keyword_size = 4;
+        position_ += keyword_size;
+        skip_whitespace();
+
+        bool all_sizes = false;
+        auto const remaining = source_.substr(position_);
+        if (remaining.starts_with("all")) {
+            all_sizes = true;
+            position_ += 3;
+            if (!at_end() && !is_whitespace(current())) {
+                fail("expected whitespace after 'all'");
+            }
+            skip_whitespace();
+        }
+
+        std::size_t maximum_size = 3;
+        if (!at_end() && current() >= '0' && current() <= '9') {
+            auto const size_position = position_;
+            maximum_size = 0;
+            bool size_too_large = false;
+            while (!at_end() &&
+                   current() >= '0' && current() <= '9') {
+                auto const digit = static_cast<std::size_t>(
+                    current() - '0');
+                if (maximum_size != 0 || digit > 4) {
+                    size_too_large = true;
+                } else {
+                    maximum_size = digit;
+                }
+                ++position_;
+            }
+            if (size_too_large || maximum_size == 0) {
+                throw parse_error(
+                    size_position,
+                    "find maximum size must be from 1 to 4");
+            }
+            if (!at_end() && !is_whitespace(current())) {
+                fail("expected whitespace after find maximum size");
+            }
+            skip_whitespace();
+        }
+
+        if (at_end() || current() != '?') {
+            fail("expected '?'");
+        }
+        ++position_;
+
+        std::vector<quoted_atomic> symbols;
+        while (!at_end() &&
+               current() >= 'a' && current() <= 'z') {
+            symbols.emplace_back(symbol(current()));
+            ++position_;
+        }
+        if (symbols.empty()) {
+            fail("expected at least one symbol");
+        }
+        if (!at_end() && !is_whitespace(current()) &&
+            current() != '=') {
+            fail("expected a lowercase symbol or '='");
+        }
+        skip_whitespace();
+        if (at_end() || current() != '=') {
+            fail("expected '='");
+        }
+        ++position_;
+
+        auto target = parse_expression();
+        if (definition_mode_ ==
+            parser_definition_mode::inspect_definitions) {
+            return target;
+        }
+
+        auto matches = find_combinator_matches(
+            symbols,
+            target,
+            {.maximum_size = maximum_size,
+             .all_sizes = all_sizes});
+        std::ostringstream output;
+        bool first = true;
+        auto append_matches = [&](auto const& expressions) {
+            for (auto const& expression : expressions) {
+                if (!first) {
+                    output << '\n';
+                }
+                output << "?=";
+                expression.print_to(output);
+                first = false;
+            }
+        };
+        append_matches(matches.singles);
+        append_matches(matches.pairs);
+        append_matches(matches.triples);
+        append_matches(matches.quads);
+        if (first) {
+            is_find_no_match_ = true;
+            return quote(std::string(
+                "No match within search bounds"));
+        }
         return quote(std::move(output).str());
     }
 
@@ -5520,6 +5648,7 @@ private:
             name == "load" ||
             name == "remove" ||
             name == "save" ||
+            name == "find" ||
             name == "quit" ||
             name == "exit") {
             auto message = std::string(name);
@@ -5979,6 +6108,7 @@ private:
     std::optional<quoted_expression> recursive_function_;
     parser_definition_mode definition_mode_;
     bool is_show_all_ = false;
+    bool is_find_no_match_ = false;
     std::string replaced_definition_;
 };
 
@@ -7038,6 +7168,42 @@ template <class Combs, class Expression>
 }
 
 [[nodiscard]] inline std::vector<quoted_expression>
+check_for_singles_match(
+    std::span<quoted_atomic const> symbol_list,
+    quoted_expression const& expression) {
+    std::vector<quoted_expression> result;
+    auto normalized_expression =
+        detail::normalize_for_combinator_match(expression);
+    if (!normalized_expression) {
+        return result;
+    }
+
+    for (auto const& combinator :
+         detail::predefined_bird_combinators()) {
+        if (detail::check_normalized_match(
+                combinator,
+                symbol_list,
+                *normalized_expression)) {
+            result.push_back(combinator);
+        }
+    }
+    return result;
+}
+
+template <class Expression>
+    requires (!std::same_as<
+              std::remove_cvref_t<Expression>,
+              quoted_expression>)
+[[nodiscard]] inline std::vector<quoted_expression>
+check_for_singles_match(
+    std::span<quoted_atomic const> symbol_list,
+    Expression&& expression) {
+    return check_for_singles_match(
+        symbol_list,
+        quote(std::forward<Expression>(expression)));
+}
+
+[[nodiscard]] inline std::vector<quoted_expression>
 check_for_pairs_match(
     std::span<quoted_atomic const> symbol_list,
     quoted_expression const& expression) {
@@ -7336,6 +7502,40 @@ check_for_quads_match(
     return check_for_quads_match(
         symbol_list,
         quote(std::forward<Expression>(expression)));
+}
+
+[[nodiscard]] inline combinator_find_result
+find_combinator_matches(
+    std::span<quoted_atomic const> symbol_list,
+    quoted_expression const& expression,
+    combinator_find_options options) {
+    if (options.maximum_size < 1 || options.maximum_size > 4) {
+        throw std::invalid_argument(
+            "combdsl::find maximum size must be from 1 to 4");
+    }
+
+    combinator_find_result result;
+    result.singles = check_for_singles_match(
+        symbol_list, expression);
+    if (options.maximum_size == 1 ||
+        (!options.all_sizes && !result.singles.empty())) {
+        return result;
+    }
+    result.pairs = check_for_pairs_match(
+        symbol_list, expression);
+    if (options.maximum_size == 2 ||
+        (!options.all_sizes && !result.pairs.empty())) {
+        return result;
+    }
+    result.triples = check_for_trips_match(
+        symbol_list, expression);
+    if (options.maximum_size == 3 ||
+        (!options.all_sizes && !result.triples.empty())) {
+        return result;
+    }
+    result.quads = check_for_quads_match(
+        symbol_list, expression);
+    return result;
 }
 
 } // namespace combdsl

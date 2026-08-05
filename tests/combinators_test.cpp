@@ -302,6 +302,21 @@ static_assert(std::is_same_v<
                   std::declval<combdsl::quoted_expression const&>())),
               bool>);
 static_assert(std::is_same_v<
+              decltype(combdsl::check_for_singles_match(
+                  std::declval<combinator_match_symbol_span>(),
+                  std::declval<combdsl::quoted_expression const&>())),
+              std::vector<combdsl::quoted_expression>>);
+static_assert(std::is_same_v<
+              decltype(combdsl::find_combinator_matches(
+                  std::declval<combinator_match_symbol_span>(),
+                  std::declval<combdsl::quoted_expression const&>(),
+                  std::declval<combdsl::combinator_find_options>())),
+              combdsl::combinator_find_result>);
+static_assert(
+    combdsl::combinator_find_options{}.maximum_size == 3);
+static_assert(
+    !combdsl::combinator_find_options{}.all_sizes);
+static_assert(std::is_same_v<
               decltype(combdsl::check_for_pairs_match(
                   std::declval<combinator_match_symbol_span>(),
                   std::declval<combdsl::quoted_expression const&>())),
@@ -2370,10 +2385,57 @@ int main() {
     test_parse_failure(
         "show rejects a trailing close parenthesis", "show M)", 5,
         "M) is not a defined name");
+    test_parse_failure(
+        "find requires a question-mark marker", "find", 4,
+        "expected '?'");
+    test_parse_failure(
+        "find all requires a question-mark marker", "find all", 8,
+        "expected '?'");
+    test_parse_failure(
+        "find 4 requires a question-mark marker", "find 4", 6,
+        "expected '?'");
+    test_parse_failure(
+        "find requires symbols after its marker", "find ?", 6,
+        "expected at least one symbol");
+    test_parse_failure(
+        "find does not allow whitespace after its marker",
+        "find ? x = x", 6, "expected at least one symbol");
+    test_parse_failure(
+        "find rejects a missing marker", "find x = x", 5,
+        "expected '?'");
+    test_parse_failure(
+        "find requires an equals sign", "find ?xy", 8,
+        "expected '='");
+    test_parse_failure(
+        "find requires an expression", "find ?xy = ", 11,
+        "expected an expression");
+    test_parse_failure(
+        "find rejects uppercase symbols", "find ?xY = x", 7,
+        "expected a lowercase symbol or '='");
+    test_parse_failure(
+        "find size requires separating whitespace", "find 4?x = x", 6,
+        "expected whitespace after find maximum size");
+    test_parse_failure(
+        "find all requires separating whitespace",
+        "find all4 ?x = x", 8,
+        "expected whitespace after 'all'");
+    test_parse_failure(
+        "find options have a fixed order", "find 4 all ?x = x", 7,
+        "expected '?'");
+    test_parse_failure(
+        "find rejects a zero maximum", "find 0 ?x = x", 5,
+        "find maximum size must be from 1 to 4");
+    test_parse_failure(
+        "find rejects a maximum above four", "find 5 ?x = x", 5,
+        "find maximum size must be from 1 to 4");
+    test_parse_failure(
+        "find parses a multi-digit maximum before rejecting it",
+        "find all 10 ?x = x", 9,
+        "find maximum size must be from 1 to 4");
     constexpr std::string_view reserved_definition_names[] = {
         "all", "set", "define", "show", "single", "key", "basis",
-        "colorize", "about", "birds", "help", "load", "remove", "save",
-        "quit", "exit"};
+        "colorize", "about", "birds", "find", "help", "load", "remove",
+        "save", "quit", "exit"};
     for (auto const name : reserved_definition_names) {
         auto const detail =
             std::string(name) + " is a reserved word";
@@ -3363,6 +3425,103 @@ int main() {
     };
     auto const j_match_expression =
         quote(x)(y)(quote(x)(w)(z));
+    std::array const applicator_match_symbols{
+        quoted_atomic{x},
+        quoted_atomic{y},
+    };
+    auto const applicator_match_expression =
+        quote(x)(quote(y)(x));
+    auto const applicator_single_matches =
+        combdsl::check_for_singles_match(
+            applicator_match_symbols,
+            applicator_match_expression);
+    test("single matching finds the Applicator bird",
+         [&] {
+             for (auto const& match : applicator_single_matches) {
+                 match.print_to(std::cout);
+             }
+         },
+         "A");
+    test("find default stops at the first matching size",
+         parse("find ?xy = x(yx)"), "?=A");
+    test("find size one restricts results to singles",
+         parse("find 1 ?xy = x(yx)"), "?=A");
+    test("find size two still stops after a single match",
+         parse("find 2 ?xy = x(yx)"), "?=A");
+    test("find all size two includes singles and pairs",
+         [] {
+             std::ostringstream output;
+             parse("find all 2 ?xy = x(yx)").print_to(output);
+             auto const padded = '\n' + output.str() + '\n';
+             auto const contains_line = [&](std::string_view line) {
+                 return padded.find(
+                     '\n' + std::string(line) + '\n') !=
+                     std::string::npos;
+             };
+             std::cout << contains_line("?=A")
+                       << contains_line("?=CO")
+                       << contains_line("?=HB")
+                       << contains_line("?=SBT");
+         },
+         "1110");
+    test("find all default continues through size three",
+         [] {
+             std::ostringstream output;
+             parse("find all ?xy = x(yx)").print_to(output);
+             auto const padded = '\n' + output.str() + '\n';
+             auto const line_position = [&](std::string_view line) {
+                 return padded.find(
+                     '\n' + std::string(line) + '\n');
+             };
+             auto const single = line_position("?=A");
+             auto const pair = line_position("?=CO");
+             auto const triple = line_position("?=SBT");
+             std::cout
+                 << (single != std::string::npos)
+                 << (pair != std::string::npos)
+                 << (triple != std::string::npos)
+                 << (single < pair && pair < triple);
+         },
+         "1111");
+    test("find accepts a multi-digit maximum with leading zeros",
+         [] {
+             std::ostringstream ordinary;
+             std::ostringstream leading_zeros;
+             parse("find 2 ?xy = x(yx)").print_to(ordinary);
+             parse("find 0002 ?xy = x(yx)").print_to(
+                 leading_zeros);
+             std::cout << (ordinary.str() == leading_zeros.str());
+         },
+         "1");
+    test("find command accepts leading whitespace and size four",
+         [] {
+             auto const parsed = combdsl::detail::parse_input(
+                 " \tfind 4 ?xy = x(yx)",
+                 combdsl::detail::parser_definition_mode::
+                     inspect_definitions);
+             parsed.expression.print_to(std::cout);
+         },
+         "x(yx)");
+    test("find command is display only",
+         [] {
+             auto const parsed = combdsl::detail::parse_input(
+                 "find ?xy = x(yx)",
+                 combdsl::detail::parser_definition_mode::
+                     inspect_definitions);
+             std::cout << parsed.is_display_only
+                       << parsed.is_find
+                       << parsed.is_find_no_match
+                       << parsed.is_definition;
+         },
+         "1100");
+    test("find exposes no-match metadata",
+         [] {
+             auto const parsed = combdsl::detail::parse_input(
+                 "find all 4 ?x = MM");
+             parsed.expression.print_to(std::cout);
+             std::cout << ' ' << parsed.is_find_no_match;
+         },
+         "No match within search bounds 1");
     test("check for match appends symbols in order",
          [&] {
              std::cout << combdsl::check_for_match(

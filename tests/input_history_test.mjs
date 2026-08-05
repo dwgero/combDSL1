@@ -35,11 +35,13 @@ const createCommandCompleter =
 test("completes unique Studio command prefixes", () => {
     const complete = createCommandCompleter([
         "define",
+        "find",
         "set",
         "show",
     ]);
 
     assert.equal(complete("def"), "define");
+    assert.equal(complete("fin"), "find");
     assert.equal(complete("se"), "set");
     assert.equal(complete("sho"), "show");
 });
@@ -104,6 +106,48 @@ test("completes the show all command form", () => {
 
     assert.equal(complete("show a"), "show all");
     assert.equal(complete("show   "), "show   all");
+});
+
+test("completes unambiguous find command forms", () => {
+    const completers = [
+        "find ?",
+        "find all ?",
+        "find 1 ?",
+        "find all 1 ?",
+        "find 2 ?",
+        "find all 2 ?",
+        "find 3 ?",
+        "find all 3 ?",
+        "find 4 ?",
+        "find all 4 ?",
+    ].map(phrase => createCommandCompleter([phrase]));
+    const complete = source => {
+        for (const completer of completers) {
+            const completed = completer(source);
+            if (completed !== undefined) {
+                return completed;
+            }
+        }
+        return undefined;
+    };
+
+    assert.equal(complete("find "), "find ?");
+    assert.equal(complete("find   "), "find   ?");
+    assert.equal(complete("find a"), "find all ?");
+    for (let size = 1; size <= 4; ++size) {
+        assert.equal(
+            complete(`find ${size}`),
+            `find ${size} ?`);
+        assert.equal(
+            complete(`find all ${size}`),
+            `find all ${size} ?`);
+    }
+    assert.equal(
+        complete("  find\tall  4  "),
+        "  find\tall  4  ?");
+    assert.equal(complete("find 5"), undefined);
+    assert.equal(complete("find all 5"), undefined);
+    assert.equal(complete("find ?x"), undefined);
 });
 
 test("normalizes extensible command phrase definitions", () => {

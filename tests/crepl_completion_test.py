@@ -193,6 +193,34 @@ def main():
             raise AssertionError(
                 f"expected show all output; received {output!r}")
 
+        write_all(master, b"fin\t1 ?xy = x(yx)\n")
+        output = reader.read_until(b">")
+        require_completed_line(output, b"find 1 ?xy = x(yx)\n")
+        if b"?=A\n" not in normalized(output):
+            raise AssertionError(
+                f"expected Applicator match; received {output!r}")
+
+        write_all(master, b"find a\t?x = MM\n")
+        output = reader.read_until(b">")
+        require_completed_line(output, b"find all ?x = MM\n")
+        if b"No match within search bounds\n" not in normalized(output):
+            raise AssertionError(
+                f"expected completed find all no-match; received {output!r}")
+
+        write_all(master, b"find 2\t?x = MM\n")
+        output = reader.read_until(b">")
+        require_completed_line(output, b"find 2 ?x = MM\n")
+        if b"No match within search bounds\n" not in normalized(output):
+            raise AssertionError(
+                f"expected completed find 2 no-match; received {output!r}")
+
+        write_all(master, b"find all 4\t?x = MM\n")
+        output = reader.read_until(b">")
+        require_completed_line(output, b"find all 4 ?x = MM\n")
+        if b"No match within search bounds\n" not in normalized(output):
+            raise AssertionError(
+                f"expected completed find all 4 no-match; received {output!r}")
+
         write_all(master, b"save remembered definitions.cmb\n")
         output = reader.read_until(b">")
         require_completed_line(

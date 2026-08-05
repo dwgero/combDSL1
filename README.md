@@ -459,7 +459,7 @@ expression is `B`. If this preprocessing repeats an expression or exceeds its
 reduction limit, `define` safely abstracts the original body instead.
 
 The names `all`, `set`, `define`, `show`, `remove`, `single`, `key`, `basis`,
-`colorize`, `about`, `birds`, `help`, `load`, `save`, `quit`, and `exit`
+`colorize`, `about`, `birds`, `find`, `help`, `load`, `save`, `quit`, and `exit`
 are reserved words and cannot be used as names by either `set` or `define`.
 
 Occurrences of the defined name in the combinator expression are recursive
@@ -505,7 +505,8 @@ auto none = search_for_subexp(parse("C(CB)"));      // std::nullopt
 `check_for_match(combs, symbol_list, expression)` appends the quoted atoms in
 `symbol_list` to `combs`, normalizes that application and `expression` using
 the ordinary evaluator rules, and compares the resulting quoted expression
-trees. `check_for_pairs_match(symbol_list, expression)` runs that check for all
+trees. `check_for_singles_match(symbol_list, expression)` checks every bird in
+the matcher catalog. `check_for_pairs_match(symbol_list, expression)` runs that check for all
 808 ordered pairs, with repetition, made from the 29 combinators in Bird Info
 other than `J` and `Y`, and returns every matching pair. Every pair headed by
 `I`, along with `MM`, `MU`, `UM`, and `UU`, is excluded.
@@ -534,6 +535,7 @@ std::array const symbols{
 };
 auto target = quote(x)(y)(quote(x)(w)(z));
 auto one_match = check_for_match(I(J), symbols, target); // true
+auto single_matches = check_for_singles_match(symbols, target);
 auto pair_matches = check_for_pairs_match(symbols, target); // empty
 auto trip_matches = check_for_trips_match(
     std::span<quoted_atomic const>{},
@@ -564,6 +566,32 @@ distribute work among up to `std::thread::hardware_concurrency()`
 collected in index order, preserving the sequential result order. The quad
 search constructs candidates on demand rather than retaining millions of
 expression trees. Emscripten builds retain the single-threaded searches.
+
+`find_combinator_matches(symbol_list, expression, options)` searches the
+catalog in increasing composition size through `options.maximum_size`. The
+maximum defaults to three and may range from one through four. By default, the
+search stops after the first size that produces answers; set
+`options.all_sizes` to continue through every size up to the maximum. The
+four-bird level can take minutes. The parser exposes this as a display-only
+command:
+
+```text
+find ?xy = x(yx)
+find 2 ?xy = x(yx)
+find 4 ?xyzw = xy(xwz)
+find all ?xy = x(yx)
+find all 2 ?xy = x(yx)
+```
+
+The required `?` marks the unknown combinator expression. The optional number
+sets the largest composition size to search and defaults to three. Without
+`all`, searching stops after the first size that produces answers. With `all`,
+searching continues through every size up to the limit. Thus, `find 2 ?xy =
+x(yx)` prints only the single-bird answer `?=A`, while `find all 2 ?xy = x(yx)`
+also prints its two-bird answers. Each match is printed on its own line. If none
+is found, it prints `No match within search bounds`, because bounded
+normalization and the catalog exclusions mean an empty search is not a proof
+that no equivalent expression exists.
 
 Names created with `set` or `define` may be redefined. A changed definition
 replaces the user-defined basis for future parsing; expressions parsed earlier
@@ -659,7 +687,7 @@ expression produces no output, while malformed or empty lines throw
 The `crepl` executable applies `input_escape` to each line before passing it to
 `parse_eval`, so ordinary quoted words and backslashes can be entered directly.
 When standard output is a terminal, it first prints
-`Combinator Read-Eval-Print Loop, version 2.3.2`. Long evaluations display
+`Combinator Read-Eval-Print Loop, version 2.3.6`. Long evaluations display
 the accumulated step count every 1,000 reductions by overwriting one status
 line; the line is cleared before evaluation output is printed. Its interactive
 prompt is `>`. Interactive input uses GNU Readline, so previous nonempty
@@ -708,6 +736,17 @@ definition and removal records remain saveable when another basis referred to
 that name; otherwise both are omitted. Pre-defined names cannot be removed.
 Enter `show all` to display the entire saved definition list, or
 `Nothing to show` when it is empty.
+Enter `find [all] [num] ?<symbol_list> = <combinator_expression>` to search
+the pre-defined bird catalog. The `?` is required and marks the unknown
+combinator expression. The optional number must be from one through four and
+sets the largest composition size to search; it defaults to three. Without
+`all`, the command stops after the first size that produces answers. With
+`all`, it continues through every size up to the limit. Thus, `find 2 ?...`
+returns only the lowest-size answers, while `find all 2 ?...` can return both
+one- and two-bird answers. Every answer is printed as `?=<bird_expression>`. A
+four-bird search may take minutes. `J` and `Y` are excluded from the catalog,
+and matching is bounded, so `No match within search bounds` is not a proof of
+impossibility. In an interactive terminal, that message is displayed in red.
 Enter `birds` to list every bird and its
 reduction rule. The list uses three
 columns when their
@@ -898,12 +937,17 @@ successfully registered
 with no output beneath it.
 The following result begins on the next line without an intervening blank line.
 A successful `show` command is also followed without an intervening blank line.
-In Combinator Studio, a nonempty `show all` ends with a red `[Show end]` line.
+In Combinator Studio, a nonempty `show all` ends with a red `[show end]` line.
 A submitted combinator expression nevertheless always begins after a blank line
 when the Results area already contains output.
-Press Tab to complete a unique prefix for the `set`, `define`, `remove`, or `show`
-command; when no completion is available, Tab keeps its normal browser focus
-behavior.
+Press Tab to complete a unique prefix for the `set`, `define`, `find`, `remove`,
+or `show` command; when no completion is available, Tab keeps its normal browser
+focus behavior. Studio accepts the same `find [all] [num] ?...` forms as
+`crepl`, with a default limit of three. Without `all`, it stops at the first
+size with answers; with `all`, it continues through the full range. Every answer
+is shown as `?=<bird_expression>`, and a no-match message is red. A search
+ignores the stepping and color modes, displays `Searching…`, and can be stopped
+with Cancel; cancelling restarts the worker while preserving user definitions.
 
 The Single Step button switches between displaying only the evaluated result
 and displaying every reduction produced by

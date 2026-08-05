@@ -362,9 +362,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             color: #c33;
         }
     </style>
-    <script src="./evaluation_watchdog.js?v=2.3.2" defer></script>
-    <script src="./input_history.js?v=2.3.2" defer></script>
-    <script src="./app.js?v=2.3.2" defer></script>
+    <script src="./evaluation_watchdog.js?v=2.3.6" defer></script>
+    <script src="./input_history.js?v=2.3.6" defer></script>
+    <script src="./app.js?v=2.3.6" defer></script>
 </head>
 <body>
     <main aria-labelledby="studio-title">
@@ -499,8 +499,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
         <h2 class="help-subheading">Adding Combinators</h2>
         <div class="help-section">
             Press <kbd>Tab</kbd> to complete a unique prefix for
-            <code>set</code>, <code>define</code>, <code>remove</code>, or
-            <code>show</code>.
+            <code>set</code>, <code>define</code>, <code>find</code>,
+            <code>remove</code>, or <code>show</code>.
             <br><br>
             <code>set name = combinator_expression</code><br>
             In the first form, the expression always reduces immediately.
@@ -530,7 +530,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             for <code>name</code>. For example, <code>show E</code> for
             the Eagle bird would display <code>arity:5 BDD</code>.
             <code>show all</code> displays the entire saved set list followed
-            by a red <code>[Show end]</code> marker, or
+            by a red <code>[show end]</code> marker, or
             <code>Nothing to show</code> without the marker when it is empty.
             <br><br>
             <code>remove name</code><br>
@@ -539,6 +539,27 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             definition and the <code>remove</code> command remain in the saved
             set list so dependent bases can be recreated. Otherwise, neither
             command is saved. Pre-defined names cannot be removed.
+        </div>
+        <h2 class="help-subheading">Finding Combinators</h2>
+        <div class="help-section">
+            <code>find [all] [num] ?symbol_list =
+                combinator_expression</code><br>
+            Searches the pre-defined bird catalog for forms that reduce to the
+            <code>combinator_expression</code> when applied to the
+            <code>symbol_list</code>. Each answer is displayed as
+            <code>?=bird_expression</code>. The optional <code>num</code> must
+            be from 1 through 4, defaults to 3, and sets the largest number of
+            birds in a form. Without <code>all</code>, sizes are searched in
+            increasing order and the search stops after displaying every answer
+            from the first size that has answers. With <code>all</code>, every
+            size from one through <code>num</code> is searched and every answer
+            is displayed. For example, <code>find 2 ?xy = x(yx)</code> finds
+            <code>?=A</code> at size one and stops; adding <code>all</code>
+            also searches size two. A search through four birds may take minutes
+            and can be stopped with Cancel. J and Y are excluded from the search
+            catalog. Matching uses bounded normalization, so the red
+            <code>No match within search bounds</code> response does not prove
+            that no equivalent expression exists.
         </div>
         <h2 class="help-subheading">Saving and Loading Combinators</h2>
         <div class="help-section">
@@ -662,7 +683,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             data-dialog-initial-focus>About</h2>
         <div class="license-text">
             <!-- Keep this version and the app.js cache key in sync. -->
-            <p>Combinator Studio, version 2.3.2<br>
+            <p>Combinator Studio, version 2.3.6<br>
                 Part of the C++ Combinator DSL<br>
                 Copyright (C) 2026  David W. Gero</p>
             <p>This program is free software: you can redistribute it and/or modify
