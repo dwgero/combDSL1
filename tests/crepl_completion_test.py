@@ -162,12 +162,33 @@ def main():
         output = reader.read_until(b">")
         require_completed_line(output, b"key   step   off \n")
 
+        write_all(master, b"snap\t\n")
+        output = reader.read_until(b">")
+        require_completed_line(output, b"snapshot \n")
+        if b"Parse error" in normalized(output):
+            raise AssertionError(
+                f"expected successful snapshot command; received {output!r}")
+
+        write_all(master, b"snapshot   of\t\n")
+        output = reader.read_until(b">")
+        require_completed_line(output, b"snapshot   off \n")
+        if b"Parse error" in normalized(output):
+            raise AssertionError(
+                f"expected successful snapshot off; received {output!r}")
+
+        write_all(master, b"snapshot   on\t\n")
+        output = reader.read_until(b">")
+        require_completed_line(output, b"snapshot   on \n")
+        if b"Parse error" in normalized(output):
+            raise AssertionError(
+                f"expected successful snapshot on; received {output!r}")
+
         write_all(master, b"sav\t\t\n")
         output = reader.read_until(b">")
         require_completed_line(output, b"save set_list.cmb \n")
-        if b"Nothing to save\n" not in normalized(output):
+        if b"Saved set_list.cmb\n" not in normalized(output):
             raise AssertionError(
-                f"expected Nothing to save; received {output!r}")
+                f"expected snapshot commands to be saved; received {output!r}")
 
         write_all(master, b"set CompleteGone = 1 I\n")
         output = reader.read_until(b">")

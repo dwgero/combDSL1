@@ -109,7 +109,7 @@ if(NOT saved_error STREQUAL "")
 endif()
 file(READ "${saved_file}" saved_contents)
 set(expected_contents
-    "set SaveI = 1 I\ndefine SaveFlip xy = yx")
+    "snapshot on\nset SaveI = 1 I\ndefine SaveFlip xy = yx")
 if(NOT saved_contents STREQUAL expected_contents)
     message(FATAL_ERROR
         "unexpected saved definitions\n"

@@ -60,15 +60,38 @@ inline constexpr std::size_t maximum_file_parse_errors = 15;
 
 [[nodiscard]] inline set_list_load_result load_set_list(
     std::string_view source) {
+    std::lock_guard transaction_lock(
+        detail::parser_definition_transaction_mutex());
     detail::registered_parser_basis_table previous_bases;
+    detail::parser_basis_version_history previous_versions;
+    detail::parser_live_binding_table previous_live_bindings;
+    detail::registered_parser_basis_table previous_live_targets;
     detail::parser_definition_history previous_definitions;
+    bool previous_snapshot_enabled = true;
 
     try {
         std::lock_guard lock(
             detail::parser_basis_registry_mutex());
         previous_bases = detail::parser_basis_registry();
+        previous_versions =
+            detail::parser_basis_version_registry();
+        previous_live_bindings =
+            detail::parser_live_binding_registry();
+        for (auto const& [name, binding] :
+             previous_live_bindings) {
+            if (binding) {
+                auto target = std::atomic_load(&binding->target);
+                if (!target) {
+                    continue;
+                }
+                previous_live_targets.emplace(
+                    name, std::move(target));
+            }
+        }
         previous_definitions =
             detail::parser_definition_registry();
+        previous_snapshot_enabled =
+            detail::parser_snapshot_enabled();
     } catch (std::exception const& error) {
         return {
             false, false, 0, {}, 0, error.what()};
@@ -81,8 +104,28 @@ inline constexpr std::size_t maximum_file_parse_errors = 15;
         std::lock_guard lock(
             detail::parser_basis_registry_mutex());
         detail::parser_basis_registry().swap(previous_bases);
+        detail::parser_basis_version_registry().swap(
+            previous_versions);
+        for (auto const& [name, binding] :
+             previous_live_bindings) {
+            if (!binding) {
+                continue;
+            }
+            auto const target = previous_live_targets.find(name);
+            auto restored_target =
+                target == previous_live_targets.end()
+                    ? detail::registered_parser_basis_ptr{}
+                    : target->second;
+            std::atomic_store(
+                &binding->target, std::move(restored_target));
+        }
+        detail::parser_live_binding_registry().swap(
+            previous_live_bindings);
         detail::parser_definition_registry().swap(
             previous_definitions);
+        std::swap(
+            detail::parser_snapshot_enabled(),
+            previous_snapshot_enabled);
     };
 
     std::size_t loaded = 0;
@@ -163,11 +206,6 @@ inline constexpr std::size_t maximum_file_parse_errors = 15;
             restore_registry();
             return {
                 false, aborted, 0, std::move(diagnostics), 0, {}};
-        }
-        if (detail::same_registered_parser_bases(
-                previous_bases,
-                detail::registered_parser_bases_snapshot())) {
-            restore_registry();
         }
         return {true, false, loaded, {}, 0, {}};
     } catch (std::exception const& error) {

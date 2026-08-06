@@ -1192,7 +1192,8 @@ int main() {
     test("set list registers a default zero arity",
          parse(input_escape("set LZero = I")), "LZero");
     test("set list shows a default zero arity",
-         [] { std::cout << set_list(); }, "set LZero = 0 I");
+         [] { std::cout << set_list(); },
+         "snapshot on\nset LZero = 0 I");
     test("set list registers a dependent basis",
          parse(input_escape("set LUse = 1 LZero")), "LUse");
     test("set list registers a binary basis",
@@ -1207,6 +1208,7 @@ int main() {
          parse(input_escape("set LRaw = 1 K \"a b()\\c\"")), "LRaw");
 
     const std::string expected_set_list =
+        "snapshot on\n"
         "set LZero = 0 I\n"
         "set LUse = 1 LZero\n"
         "set LPair = 2 K\n"
@@ -1236,14 +1238,16 @@ int main() {
     test("set list accepts a later duplicate definition",
          parse(input_escape("set LPair = 1 I")), "LPair");
     const std::string expected_redefined_set_list =
+        "snapshot on\n"
         "set LZero = 0 I\n"
         "set LUse = 1 LZero\n"
+        "set LPair = 2 K\n"
         "set Q\\R = 1 I\n"
         "set LSlash = 1 Q\\R\n"
         "set LMulti = 1 Cstar x\n"
         "set LRaw = 1 K \"a b()\\c\"\n"
         "set LPair = 1 I";
-    test("set list replaces an unreferenced old definition",
+    test("set list preserves an earlier immutable revision",
          [] { std::cout << set_list(); },
          expected_redefined_set_list);
     test_parse_failure(
@@ -1299,63 +1303,58 @@ int main() {
 
     test("set registers a basis for circular-redefinition checks",
          parse("set SelfReplay = 0 I"), "SelfReplay");
-    test("set inspection rejects a direct circular redefinition",
+    test("set inspection accepts a frozen self-name revision",
          [] {
-             try {
-                 static_cast<void>(combdsl::detail::parse_input(
-                     "set SelfReplay = 0 SelfReplay",
-                     combdsl::detail::parser_definition_mode::
-                         inspect_definitions));
-             } catch (parse_error const& error) {
-                 std::cout << error.what();
-             }
+             auto inspected = combdsl::detail::parse_input(
+                 "set SelfReplay = 0 SelfReplay",
+                 combdsl::detail::parser_definition_mode::
+                     inspect_definitions);
+             std::cout << inspected.replaced_definition;
          },
-         "Parse error at position 5: SelfReplay would have a circular definition\n"
-         "SelfReplay -> SelfReplay");
-    test_parse_failure(
-        "set rejects a direct circular redefinition",
-        "set SelfReplay = 0 SelfReplay",
-        4,
-        "SelfReplay would have a circular definition\n"
-        "SelfReplay -> SelfReplay");
-    test("a rejected circular redefinition leaves the basis unchanged",
-         parse("show SelfReplay"), "arity:0 I");
-    test("a rejected circular redefinition is not saved",
+         "SelfReplay=0 I");
+    test("set accepts a frozen self-name revision",
+         parse("set SelfReplay = 0 SelfReplay"), "SelfReplay");
+    test("the frozen self-name points to the prior revision",
+         parse("show SelfReplay"), "arity:0 SelfReplay@1");
+    test("both immutable self-name revisions are saved",
          [] {
              std::cout << (set_list().ends_with(
-                 "set SelfReplay = 0 I")
-                 ? "unchanged"
-                 : "changed");
+                 "set SelfReplay = 0 I\n"
+                 "set SelfReplay = 0 SelfReplay")
+                 ? "saved"
+                 : "missing");
          },
-         "unchanged");
-    test("a basis remains removable after a rejected circle",
+         "saved");
+    test("a basis remains removable after a frozen revision",
          parse("remove SelfReplay"), "SelfReplay");
-    test("removing that basis omits its saved definition",
+    test("removing that basis preserves revision history",
          [] {
-             std::cout << (set_list().find("SelfReplay") ==
-                     std::string::npos
-                 ? "omitted"
-                 : "retained");
+             std::cout << (set_list().ends_with(
+                 "set SelfReplay = 0 I\n"
+                 "set SelfReplay = 0 SelfReplay\n"
+                 "remove SelfReplay")
+                 ? "retained"
+                 : "missing");
          },
-         "omitted");
+         "retained");
 
     test("define registers an initial replaceable definition",
          parse("define DefReplace x = x"), "DefReplace");
     test("define replaces the unreferenced definition",
          parse("define DefReplace x = Kx"), "DefReplace");
-    test("set list keeps only the current unreferenced define",
+    test("set list keeps every immutable define revision",
          [] {
              auto const definitions = set_list();
              auto const replacement = definitions.find(
                  "define DefReplace x = Kx");
              std::cout <<
                  (replacement != std::string::npos &&
-                  definitions.find("define DefReplace x = x") ==
+                  definitions.find("define DefReplace x = x") !=
                       std::string::npos
-                     ? "compacted"
-                     : "not compacted");
+                     ? "retained"
+                     : "missing");
          },
-         "compacted");
+         "retained");
 
     test("remove inspection accepts a user basis",
          parse("set RemoveInspect = 0 I"), "RemoveInspect");
@@ -1378,14 +1377,14 @@ int main() {
         "show RemoveInspect",
         5,
         "RemoveInspect is not a defined name");
-    test("an unreferenced removed basis leaves no saved commands",
+    test("an unreferenced removed basis preserves saved commands",
          [] {
-             std::cout << (set_list().find("RemoveInspect") ==
-                     std::string::npos
-                 ? "omitted"
-                 : "retained");
+             std::cout << (set_list().ends_with(
+                 "set RemoveInspect = 0 I\nremove RemoveInspect")
+                 ? "retained"
+                 : "missing");
          },
-         "omitted");
+         "retained");
 
     test("set registers a basis that will be referred to",
          parse("set RemoveBase = 0 I"), "RemoveBase");
@@ -1397,7 +1396,9 @@ int main() {
     test("a removed basis snapshot remains usable",
          single_step(single_step(remove_base_snapshot)), "x");
     test("a dependent basis keeps the removed snapshot",
-         parse("show RemoveUse"), "arity:0 RemoveBase");
+         parse("show RemoveUse"), "arity:0 RemoveBase@1");
+    test("usedby recognizes a removed historical dependency",
+         parse("usedby RemoveUse"), "RemoveUse uses: RemoveBase");
     test("set list keeps a referred definition and its removal",
          [] {
              constexpr std::string_view suffix =
@@ -1411,7 +1412,7 @@ int main() {
          "retained");
     test("a removed name can be defined again",
          parse("set RemoveBase = 0 K"), "RemoveBase");
-    test("an unreferenced later definition is omitted when removed",
+    test("a later definition and removal preserve version history",
          [] {
              static_cast<void>(parse("remove RemoveBase"));
              auto const definitions = set_list();
@@ -1421,26 +1422,22 @@ int main() {
                  : definitions.find("remove RemoveBase", first + 1);
              std::cout <<
                  (first != std::string::npos &&
-                  second == std::string::npos &&
-                  definitions.find("set RemoveBase = 0 K") ==
+                  second != std::string::npos &&
+                  definitions.find("set RemoveBase = 0 K") !=
                       std::string::npos
-                     ? "one retained removal"
+                     ? "complete history"
                      : "unexpected history");
          },
-         "one retained removal");
+         "complete history");
 
     test("set registers the first basis in a two-name chain",
          parse("set CycleA = 0 I"), "CycleA");
     test("set registers the second basis in a two-name chain",
          parse("set CycleB = 0 CycleA"), "CycleB");
-    test_parse_failure(
-        "set rejects a two-name circular redefinition",
-        "set CycleA = 0 CycleB",
-        4,
-        "CycleA would have a circular definition\n"
-        "CycleA -> CycleB -> CycleA");
-    test("a failed two-name circle leaves the old definition",
-         parse("show CycleA"), "arity:0 I");
+    test("set accepts a frozen two-name chain revision",
+         parse("set CycleA = 0 CycleB"), "CycleA");
+    test("the frozen two-name chain identifies its revision",
+         parse("show CycleA"), "arity:0 CycleB@1");
     test("a non-circular redefinition of the same basis succeeds",
          parse("set CycleA = 0 K"), "CycleA");
     test("the non-circular replacement becomes current",
@@ -1452,14 +1449,10 @@ int main() {
          parse("set CircleBar = 3 CircleFoo"), "CircleBar");
     test("set registers the third basis in a three-name chain",
          parse("set CircleBaz = 3 CircleBar"), "CircleBaz");
-    test_parse_failure(
-        "set rejects a three-name circular redefinition",
-        "set CircleFoo = 3 CircleBaz",
-        4,
-        "CircleFoo would have a circular definition\n"
-        "CircleFoo -> CircleBaz -> CircleBar -> CircleFoo");
-    test("the rejected three-name circle leaves the basis unchanged",
-         parse("show CircleFoo"), "arity:3 C");
+    test("set accepts a frozen three-name chain revision",
+         parse("set CircleFoo = 3 CircleBaz"), "CircleFoo");
+    test("the frozen three-name chain identifies its revision",
+         parse("show CircleFoo"), "arity:3 CircleBaz@1");
 
     test("set registers a basis for an equivalent cyclic replacement",
          parse("set EqCircleA = 2 I"), "EqCircleA");
@@ -1481,7 +1474,7 @@ int main() {
     test("set accepts that equivalent definition unchanged",
          parse("set EqCircleA = 1 EqCircleB"), "EqCircleA");
     test("the equivalent definition remains current",
-         parse("show EqCircleA"), "arity:1 EqCircleB");
+         parse("show EqCircleA"), "arity:1 EqCircleB@1");
 
     test("set registers a basis for a removed-snapshot circle",
          parse("set RemovedCircleA = 0 I"), "RemovedCircleA");
@@ -1493,27 +1486,20 @@ int main() {
          "RemovedCircleB");
     test("remove leaves the captured dependency snapshot",
          parse("remove RemovedCircleR"), "RemovedCircleR");
-    test("inspection rejects a circle through a removed snapshot",
+    test("inspection accepts a chain through a removed frozen revision",
          [] {
-             try {
-                 static_cast<void>(combdsl::detail::parse_input(
-                     "set RemovedCircleA = 0 RemovedCircleB",
-                     combdsl::detail::parser_definition_mode::
-                         inspect_definitions));
-             } catch (parse_error const& error) {
-                 std::cout << error.what();
-             }
+             auto inspected = combdsl::detail::parse_input(
+                 "set RemovedCircleA = 0 RemovedCircleB",
+                 combdsl::detail::parser_definition_mode::
+                     inspect_definitions);
+             std::cout << inspected.replaced_definition;
          },
-         "Parse error at position 5: RemovedCircleA would have a circular definition\n"
-         "RemovedCircleA -> RemovedCircleB -> RemovedCircleR -> RemovedCircleA");
-    test_parse_failure(
-        "set rejects a circle through a removed dependency snapshot",
-        "set RemovedCircleA = 0 RemovedCircleB",
-        4,
-        "RemovedCircleA would have a circular definition\n"
-        "RemovedCircleA -> RemovedCircleB -> RemovedCircleR -> RemovedCircleA");
-    test("a removed-snapshot circle leaves the old definition",
-         parse("show RemovedCircleA"), "arity:0 I");
+         "RemovedCircleA=0 I");
+    test("set accepts a chain through a removed frozen revision",
+         parse("set RemovedCircleA = 0 RemovedCircleB"),
+         "RemovedCircleA");
+    test("that frozen chain becomes the current revision",
+         parse("show RemovedCircleA"), "arity:0 RemovedCircleB@1");
 
     test("set registers a basis for a late predefined snapshot circle",
          parse("set LateCircleA = 0 I"), "LateCircleA");
@@ -1524,16 +1510,12 @@ int main() {
              parse("LateCircleCpp").print_to(std::cout);
          },
          "LateCircleCpp");
-    test_parse_failure(
-        "set rejects a circle through a late predefined basis",
-        "set LateCircleA = 0 LateCircleCpp",
-        4,
-        "LateCircleA would have a circular definition\n"
-        "LateCircleA -> LateCircleCpp -> LateCircleA");
-    test("a late-predefined circle leaves the old definition",
-         parse("show LateCircleA"), "arity:0 I");
+    test("set accepts a frozen late-predefined dependency",
+         parse("set LateCircleA = 0 LateCircleCpp"), "LateCircleA");
+    test("the late-predefined dependency becomes current",
+         parse("show LateCircleA"), "arity:0 LateCircleCpp");
 
-    test("was referred to remains true after the referring basis is removed",
+    test("all referred definitions and removals remain replayable",
          [] {
              static_cast<void>(parse("set StickyA = 0 I"));
              static_cast<void>(parse("set StickyB = 0 StickyA"));
@@ -1542,12 +1524,212 @@ int main() {
              auto const definitions = set_list();
              std::cout <<
                  (definitions.ends_with(
-                      "set StickyA = 0 I\nremove StickyA") &&
-                  definitions.find("StickyB") == std::string::npos
-                     ? "sticky"
-                     : "not sticky");
+                      "set StickyA = 0 I\n"
+                      "set StickyB = 0 StickyA\n"
+                      "remove StickyB\n"
+                      "remove StickyA")
+                     ? "complete"
+                     : "incomplete");
          },
-         "sticky");
+         "complete");
+
+    test("snapshot is classified as a state-mutating definition",
+         [] {
+             auto inspected = combdsl::detail::parse_input(
+                 "snapshot off",
+                 combdsl::detail::parser_definition_mode::
+                     inspect_definitions);
+             std::cout << inspected.is_definition
+                       << inspected.is_display_only;
+         },
+         "10");
+    test("snapshot off enables live references",
+         parse("snapshot off"), "snapshot off");
+    test("snapshot is a reserved definition name",
+         [] {
+             try {
+                 static_cast<void>(parse("set snapshot = I"));
+             } catch (parse_error const& error) {
+                 std::cout << error.detail();
+             }
+         },
+         "snapshot is a reserved word");
+    test("snapshot rejects an unknown option",
+         [] {
+             try {
+                 static_cast<void>(parse("snapshot maybe"));
+             } catch (parse_error const& error) {
+                 std::cout << error.detail();
+             }
+         },
+         "expected 'on' or 'off'");
+
+    test("live target gets its first immutable revision",
+         parse("set LiveTarget = 1 I"), "LiveTarget");
+    test("snapshot off stores an unqualified live reference",
+         parse("set LiveUse = 1 LiveTarget"), "LiveUse");
+    test("show prints a live reference without a version",
+         parse("show LiveUse"), "arity:1 LiveTarget");
+    test("a changed live target gets another revision",
+         parse("set LiveTarget = 1 K"), "LiveTarget");
+    test("a live reference observes the changed target",
+         single_step(parse("LiveUse x")), "Kx");
+    test("repeating a live definition is a no-op",
+         parse("set LiveUse = 1 LiveTarget"), "LiveUse");
+    test_parse_failure(
+        "a no-op does not allocate another revision",
+        "show LiveUse@2", 5,
+        "LiveUse@2 is not a defined name");
+    test_parse_failure(
+        "snapshot off rejects a direct live cycle",
+        "set LiveTarget = 1 LiveTarget", 4,
+        "LiveTarget would have a circular definition\n"
+        "LiveTarget -> LiveTarget");
+    test("a live-cycle rejection preserves the current target",
+         parse("show LiveTarget"), "arity:1 K");
+    test("a second live binding can refer to the target",
+         parse("set LiveOther = 1 LiveTarget"), "LiveOther");
+    test_parse_failure(
+        "snapshot off rejects an indirect live cycle",
+        "set LiveTarget = 1 LiveOther", 4,
+        "LiveTarget would have a circular definition\n"
+        "LiveTarget -> LiveOther -> LiveTarget");
+
+    test("a removable versioned name is registered",
+         parse("set Versioned = 1 I"), "Versioned");
+    test("a versioned name can be removed",
+         parse("remove Versioned"), "Versioned");
+    test("a removed version remains showable",
+         parse("show Versioned@1"), "arity:1 I");
+    test("re-adding a removed name continues its versions",
+         parse("set Versioned = 1 K"), "Versioned");
+    test("the re-added name has version two",
+         parse("show Versioned@2"), "arity:1 K");
+
+    test("shared live binding target starts at version one",
+         parse("set SharedLive = 1 I"), "SharedLive");
+    test("the first dependent stores the shared live binding",
+         parse("set SharedLiveA = 1 SharedLive"), "SharedLiveA");
+    test("the shared live binding advances to version two",
+         parse("set SharedLive = 1 K"), "SharedLive");
+    test("the second dependent stores the same live binding",
+         parse("set SharedLiveB = 1 SharedLive"), "SharedLiveB");
+    test("removing a live target retains the latest binding target",
+         parse("remove SharedLive"), "SharedLive");
+    test("an older live reference uses the shared removed target",
+         single_step(parse("SharedLiveA x")), "Kx");
+    test("a newer live reference uses the same removed target",
+         single_step(parse("SharedLiveB x")), "Kx");
+    test("re-adding the live target updates the shared binding",
+         parse("set SharedLive = 1 S"), "SharedLive");
+    test("the older live reference follows the re-added target",
+         single_step(parse("SharedLiveA x")), "Sx");
+    test("the newer live reference follows the re-added target",
+         single_step(parse("SharedLiveB x")), "Sx");
+
+    test("snapshot on restores frozen references",
+         parse("snapshot on"), "snapshot on");
+    test("a frozen target gets its first revision",
+         parse("set FrozenTarget = 1 I"), "FrozenTarget");
+    test("snapshot on captures the current revision",
+         parse("set FrozenUse = 1 FrozenTarget"), "FrozenUse");
+    test("show prints the captured revision suffix",
+         parse("show FrozenUse"), "arity:1 FrozenTarget@1");
+    test("the frozen target can be redefined",
+         parse("set FrozenTarget = 1 K"), "FrozenTarget");
+    test("the frozen reference retains its old behavior",
+         single_step(parse("FrozenUse x")), "x");
+    test("a frozen name chain is not a runtime cycle",
+         parse("set FrozenTarget = 1 FrozenUse"), "FrozenTarget");
+    test("the frozen chain points to a specific revision",
+         parse("show FrozenTarget"), "arity:1 FrozenUse@1");
+
+    test("mixed-cycle setup uses live references",
+         parse("snapshot off"), "snapshot off");
+    test("mixed-cycle target starts without a dependency",
+         parse("set MixedCycleA = 1 R"), "MixedCycleA");
+    test("mixed-cycle dependent keeps a live edge",
+         parse("set MixedCycleB = 1 MixedCycleA"), "MixedCycleB");
+    test("mixed-cycle replacement uses a frozen edge",
+         parse("snapshot on"), "snapshot on");
+    test_parse_failure(
+        "a frozen revision containing a live edge closes a cycle",
+        "set MixedCycleA = 1 MixedCycleB", 4,
+        "MixedCycleA would have a circular definition\n"
+        "MixedCycleA -> MixedCycleB@1 -> MixedCycleA");
+
+    test("recursive define remains represented through Y",
+         parse("define RecVersion x = RecVersion x"),
+         "RecVersion");
+    test("recursive define remains evaluable",
+         parse("show RecVersion"), "arity:1 YI");
+    test("define-cycle setup uses live references",
+         parse("snapshot off"), "snapshot off");
+    test("define-cycle target starts independently",
+         parse("set DefineCycleA = 1 I"), "DefineCycleA");
+    test("define-cycle dependent keeps a live edge",
+         parse("set DefineCycleB = 1 DefineCycleA"), "DefineCycleB");
+    test("define-cycle replacement uses a frozen edge",
+         parse("snapshot on"), "snapshot on");
+    test_parse_failure(
+        "define rejects a cycle through another live binding",
+        "define DefineCycleA x = DefineCycleB", 7,
+        "DefineCycleA would have a circular definition\n"
+        "DefineCycleA -> DefineCycleB@1 -> DefineCycleA");
+
+    test("pre-defined birds expose immutable version one",
+         parse("show C@1"), "arity:3 S(S(KB)S)(KK)");
+    test("ordinary pre-defined bird printing remains unqualified",
+         parse("C"), "C");
+    test_parse_failure(
+        "fundamental names do not have versions",
+        "show S@1", 5,
+        "S@1 is not a defined name");
+    test_parse_failure(
+        "set rejects a version suffix on its left side",
+        "set Versioned@3 = I", 13,
+        "version suffix is not allowed in a definition name");
+    test_parse_failure(
+        "remove rejects a version suffix",
+        "remove Versioned@1", 16,
+        "version suffix is not allowed in a removal name");
+    test("the C++ basis API rejects a reserved version suffix",
+         [] {
+             try {
+                 static_cast<void>(basis("CppVersion@1", 1, I));
+             } catch (std::invalid_argument const& error) {
+                 std::cout << error.what();
+             }
+         },
+         "combdsl::basis name cannot end in a version suffix: CppVersion@1");
+
+    test("snapshot history records a replay sequence",
+         [] {
+             static_cast<void>(parse("snapshot off"));
+             static_cast<void>(parse("set ReplayTarget = 1 I"));
+             static_cast<void>(parse(
+                 "set ReplayUse = 1 ReplayTarget"));
+             static_cast<void>(parse("set ReplayTarget = 1 K"));
+             static_cast<void>(parse("snapshot on"));
+             static_cast<void>(parse("remove ReplayTarget"));
+             static_cast<void>(parse("set ReplayTarget = 1 S"));
+             constexpr std::string_view suffix =
+                 "snapshot off\n"
+                 "set ReplayTarget = 1 I\n"
+                 "set ReplayUse = 1 ReplayTarget\n"
+                 "set ReplayTarget = 1 K\n"
+                 "snapshot on\n"
+                 "remove ReplayTarget\n"
+                 "set ReplayTarget = 1 S";
+             std::cout << (set_list().ends_with(suffix)
+                 ? "chronological"
+                 : "out of order");
+         },
+         "chronological");
+    test("replay history keeps explicit old versions",
+         parse("show ReplayTarget@1"), "arity:1 I");
+    test("replay history continues versions across removal",
+         parse("show ReplayTarget@3"), "arity:1 S");
 
     test_parse_failure(
         "remove requires a name", "remove ", 7,
@@ -1748,7 +1930,7 @@ int main() {
     test("define infers arity from its symbols",
          parse("define Def3 xyz = xyz"), "Def3");
     test("define basis remains named while undersaturated",
-         single_step(parse("Def3 a b")), "Def3ab");
+         single_step(parse("Def3 a b")), "Def3@1ab");
     test("basis step exposes a define basis body",
          single_step(parse("Def3 a b c"), true), "Iabc");
     test("define basis contracts when saturated",
@@ -1782,9 +1964,9 @@ int main() {
     test("define preprocessing leaves a user basis undersaturated",
          parse("define PrepKeep x = PrepAlias"), "PrepKeep");
     test("show preserves the undersaturated user basis",
-         parse("show PrepKeep"), "arity:1 K PrepAlias");
+         parse("show PrepKeep"), "arity:1 K PrepAlias@1");
     test("undersaturated user basis remains named",
-         single_step(parse("PrepKeep a")), "PrepAlias");
+         single_step(parse("PrepKeep a")), "PrepAlias@1");
     test("set creates a zero-arity preprocessing basis",
          parse("set PrepZero = 0 I"), "PrepZero");
     test("define preprocessing applies a zero-arity basis",
@@ -2320,7 +2502,7 @@ int main() {
     test("set accepts a unary arity",
          parse("set SetI1 = 1 I"), "SetI1");
     test("unary set basis remains named while undersaturated",
-         single_step(parse("SetI1")), "SetI1");
+         single_step(parse("SetI1")), "SetI1@1");
     test("unary set basis contracts when saturated",
          single_step(parse("SetI1 x")), "x");
     test("basis step exposes a unary set basis definition",
@@ -2328,7 +2510,7 @@ int main() {
     test("set accepts a binary arity",
          parse("set SetK2 = 2 K"), "SetK2");
     test("binary set basis remains named while undersaturated",
-         single_step(parse("SetK2 x")), "SetK2x");
+         single_step(parse("SetK2 x")), "SetK2@1x");
     test("binary set basis contracts when saturated",
          single_step(parse("SetK2 x y")), "x");
     test("binary set basis preserves trailing arguments",
@@ -2409,7 +2591,7 @@ int main() {
                      inspect_definitions);
              std::cout << inspected.replaced_definition;
          },
-         "HistB=0 HistA");
+         "HistB=0 HistA@1");
     test("saved history preserves dependency replacement order",
          [] {
              constexpr std::string_view suffix =
@@ -2423,12 +2605,9 @@ int main() {
          "ordered");
     test("set registers another direct-circle test basis",
          parse("set Self = 1 I"), "Self");
-    test_parse_failure(
-        "another direct circular redefinition is rejected",
-        "set Self = 1 Self",
-        4,
-        "Self would have a circular definition\nSelf -> Self");
-    test("a rejected circle creates no self-dependent entry",
+    test("another frozen self-name revision is accepted",
+         parse("set Self = 1 Self"), "Self");
+    test("a frozen self-name creates no live self-dependency",
          parse("dependson Self"),
          "Self is not depended on by anything");
     test("a deeply nested equivalent definition is unchanged",

@@ -44,6 +44,7 @@
         "remove",
         "set",
         "show",
+        "snapshot",
         "used by",
         "used-by",
         "usedby",
@@ -54,6 +55,11 @@
         inputHistoryTools.createCommandCompleter(
             ["define steps"],
             {appendSpaceToExact: true});
+    const completeSnapshotCommand =
+        inputHistoryTools.createCommandCompleter([
+            "snapshot off",
+            "snapshot on",
+        ]);
     const abstractCommandCompleters = [
         "abstract ?",
         "abstract steps ?",
@@ -94,7 +100,9 @@
         completeTopLevelCommand(source) ??
             completeDefineSteps(source) ??
             completeAbstractCommand(source) ??
-            completeShowAll(source) ?? completeFindCommand(source);
+            completeShowAll(source) ??
+            completeSnapshotCommand(source) ??
+            completeFindCommand(source);
     const form = document.querySelector("#evaluation-form");
     const sourceBox = document.querySelector("#source-box");
     const sourceHistory = document.querySelector("#source-history");

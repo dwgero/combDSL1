@@ -474,6 +474,7 @@ every `takeout` pass, and each optimizer substitution before the final
 omitted.
 
 The names `abstract`, `all`, `steps`, `set`, `define`, `show`, `remove`,
+`snapshot`,
 `dependson`, `depends-on`, `depends`, `on`, `usedby`, `used-by`, `used`, `by`,
 `single`, `key`, `basis`, `colorize`, `about`, `birds`, `find`, `help`, `load`,
 `save`, `quit`, and `exit` are reserved words and cannot be used as names by
@@ -610,30 +611,50 @@ is found, it prints `No match within search bounds`, because bounded
 normalization and the catalog exclusions mean an empty search is not a proof
 that no equivalent expression exists.
 
-Names created with `set` or `define` may be redefined. A changed definition
-replaces the user-defined basis for future parsing; expressions parsed earlier
-retain the basis snapshot they already contain. Repeating an equivalent arity
-and stored expression makes no change. Replacing an existing name with `set`
-is rejected if its new direct or indirect named dependency chain returns to
-that name. Recursive `define` remains supported. A changed redefinition removes
-its unreferenced old definition from `set_list()` and appends the new
-definition. An old definition remains when another saved basis needs its
-captured snapshot. The fundamental names `S`, `K`, `I`, and `Y`, and every
-pre-defined basis registered by C++ `basis(...)`, are immutable; attempting to
-redefine one is a parse error. A later C++ basis
-registration cannot take a name that is already user-defined.
+Names created with `set` or `define` may be redefined. Every changed definition
+creates a new immutable revision, starting with `name@1` and increasing by one
+for each later changed `set` or `define` of that name. Repeating an equivalent
+arity and stored expression makes no change and does not increment the version.
+Removing and later adding a name again continues its existing version sequence;
+the earlier revisions remain available.
+
+The typed command `snapshot [on | off]` controls how subsequent unqualified
+name references are parsed. Snapshot mode starts on, and bare `snapshot` means
+`snapshot on`. With snapshot mode on, an unqualified reference such as `foo`
+captures the current immutable revision of `foo`. With snapshot mode off, an
+unqualified `foo` is a live reference that follows later redefinitions of
+`foo`. An explicit reference such as `foo@2` is always frozen to that exact
+revision, regardless of the current mode. Changing the mode does not alter
+references that were parsed earlier. The command is silent under the
+evaluation and stepping entry points, but it is a state-changing command and
+is recorded in `set_list()` according to the journal compaction rules below.
+
+Before accepting a changed definition, the parser resolves its frozen and live
+references and rejects it only if the resulting revision graph would contain a
+true circular definition through live rebinding. Repeated references to frozen
+revisions are legal by themselves. A frozen revision may itself contain a live
+reference, so cycle detection follows the actual revision identities and
+bindings rather than merely looking for repeated names. Recursive `define`
+continues to use its `Y` transformation and remains supported.
+
+The fundamental names `S`, `K`, `I`, and `Y` are unversioned. Pre-defined bird
+bases are immutable revision 1, so an explicit name such as `C@1` is accepted,
+while ordinary use and printing may continue to show `C`. Attempting to
+redefine a fundamental or pre-defined name is a parse error. A later C++
+`basis(...)` registration cannot take a name that is already user-defined.
 
 At the start of a line, optionally preceded by whitespace, `show` followed by
-whitespace and a name displays the basis's arity followed by one level of its
-stored definition, without reducing it. For `S`, `K`, `I`, or `Y`, it reports
-that the name is fundamental and also gives its arity. `show all` displays the
-entire string returned by `set_list()`, or `Nothing to show` when the list is
-empty.
-Anything other than a named basis or one of those four fundamental names is a
-parse error:
+whitespace and a name displays the current basis's arity followed by one level
+of its stored definition, without reducing it. `show name@N` instead displays
+that exact historical revision. For `S`, `K`, `I`, or `Y`, it reports that the
+name is fundamental and also gives its arity. `show all` displays the entire
+string returned by `set_list()`, or `Nothing to show` when the list is empty.
+An undefined current name, unknown revision, or anything other than a named
+basis or one of those four fundamental names is a parse error:
 
 ```cpp
 parse_eval("show M");   // prints: arity:1 SII
+parse_eval("show M@1"); // prints revision 1's arity and stored expression
 parse_eval("show S");   // prints: S is a fundamental name with arity:3
 parse_eval("show all"); // prints the entire set_list()
 parse_eval("show x");   // parse error: x is not a defined name
@@ -662,11 +683,14 @@ parse_eval("usedby Left");     // Left uses: Base
 
 At the start of a line, optionally preceded by whitespace, `remove` followed
 by whitespace and a name removes a user-defined basis from future parsing.
-Previously parsed expressions and other bases that captured its definition
-keep their snapshots. Fundamental and pre-defined names cannot be removed,
-and removing an undefined name is a parse error. Like `set` and `define`, a
-successful `remove` command produces no output under the evaluation and
-stepping entry points:
+Its immutable revisions remain available through explicit `name@N` references,
+and the next definition after a later re-add receives the next version number.
+Previously parsed frozen references retain their exact revisions. A previously
+parsed live reference retains its last target while the name is removed and
+follows the new current revision if the name is later added again. Fundamental
+and pre-defined names cannot be removed, and removing an undefined name is a
+parse error. Like `set` and `define`, a successful `remove` command produces no
+output under the evaluation and stepping entry points:
 
 ```cpp
 parse("set Saved = 0 I");
@@ -675,19 +699,22 @@ parse_eval("remove Saved"); // removes Saved; prints nothing
 parse_eval("User x");       // still prints: x
 ```
 
-`set_list()` returns the replayable history of user definitions as
-newline-separated `set`, `define`, or retained `remove` declarations. A changed
-redefinition replaces an unreferenced old record, while an old record needed by
-a captured basis snapshot remains in chronological order. Equivalent
-repetitions are omitted. Each stored definition records whether another basis
-referred to it. Removing an unreferenced definition removes both its definition
-and the `remove` command from the list. If another basis referred to it, the
-required definition and a following `remove` command remain so replay can
-recreate the dependent basis without leaving the removed name defined. A `set`
-declaration always includes its arity, including `0`; a `define` declaration
-includes its defining symbols. Quotes and backslashes appear exactly as a user
-would enter them. Passing each line through `input_escape` and then to `parse`
-recreates the definitions:
+`set_list()` returns a replayable journal. It contains every changed user `set`
+or `define`, every successful `remove`, and every snapshot-mode command entered
+after the first such mutation. Snapshot commands entered before the first
+`set`, `define`, or `remove` are compacted to the last one because only that
+mode can affect the first mutation. If no snapshot command precedes that first
+mutation, the journal begins with `snapshot on`. A history containing only
+snapshot commands likewise saves only the last one. Bare `snapshot` is stored
+in its canonical `snapshot on` form. Equivalent no-op definitions and rejected
+commands are omitted, but older changed definitions and snapshot commands
+after the first mutation are never compacted away. Keeping the remaining order
+preserves revision numbers, removals, mode changes, and the distinction between
+frozen and live references when the journal is replayed. A `set` declaration
+always includes its arity, including `0`; a `define` declaration includes its
+defining symbols. Quotes and backslashes appear exactly as a user would enter
+them. Passing each line through `input_escape` and then to `parse` recreates
+the definitions and snapshot semantics:
 
 ```cpp
 auto definitions = set_list();
@@ -723,17 +750,19 @@ expression produces no output, while malformed or empty lines throw
 The `crepl` executable applies `input_escape` to each line before passing it to
 `parse_eval`, so ordinary quoted words and backslashes can be entered directly.
 When standard output is a terminal, it first prints
-`Combinator Read-Eval-Print Loop, version 2.4.0`. Long evaluations display
+`Combinator Read-Eval-Print Loop, version 2.4.2`. Long evaluations display
 the accumulated step count every 1,000 reductions by overwriting one status
 line; the line is cleared before evaluation output is printed. Its interactive
 prompt is `>`. Interactive input uses GNU Readline, so previous nonempty
 commands can be recalled with Up Arrow or Ctrl-P, including commands from
 earlier interactive sessions. Press Tab to complete command words and supported
-options; whitespace already entered between words is preserved. Save and load
+options, including `snapshot on` and `snapshot off`; whitespace already entered
+between words is preserved. Save and load
 each remember their own most recently successful filename across interactive
 sessions, initially `set_list.cmb`; Tab at either filename position restores
-it. Only command history and these two filenames persist; user definitions and
-mode settings do not. The two state files are `~/.crepl/history` and
+it. Only command history and these two filenames persist automatically between
+CREPL processes; user definitions and the active snapshot mode return only when
+their saved journal is loaded. The two state files are `~/.crepl/history` and
 `~/.crepl/settings`. Redirected input does not read or change this state.
 Redirected output contains no progress status. Enter
 `single step` or `single step on` to print every subsequent reduction, and
@@ -754,24 +783,36 @@ stepping uses `color_step_ansi` and prints the final normal form without color
 at the left margin. When Basis Step is on, a basis expansion colors only the
 basis name before the step and its stored contents after the step, both red;
 all arguments remain uncolored. Ordinary evaluation ignores this setting.
+Enter `snapshot`, `snapshot on`, or `snapshot off` to control how names in
+subsequent expressions and definitions are bound. Snapshot mode is on at
+startup, and bare `snapshot` turns it on. With it on, unqualified names freeze
+their current revisions; with it off, they stay live. Explicit `name@N`
+references are always frozen. Snapshot commands produce no output and are
+included in the saved definition journal. Before the first `set`, `define`, or
+`remove`, only the last snapshot command is saved; if there is none, the journal
+begins with `snapshot on`. Later snapshot commands stay in chronological order.
 The mode commands themselves produce no output. Enter `help` or `help brief`
 to display the command summary; enter `help full` to display detailed help.
-Enter `load <filename>` to recreate user-defined combinators from a file
-without evaluating them. File redefinitions are applied silently. Parsing
+Enter `load <filename>` to replay a saved set-list journal without evaluating
+its definitions. File redefinitions are applied silently. Parsing
 continues after an error, up to 15 errors, but any error rolls back the entire
 load. Diagnostics identify the filename and one-based line and byte position.
 The filename is the remainder of the command after surrounding whitespace is
 removed, so it may contain spaces.
-Enter `save <filename>` to write all user-defined combinators to that file in
-the same format returned by `set_list()`. The filename is the remainder of the
-command after surrounding whitespace is removed, so it may contain spaces.
-The command replaces an existing file, writes no trailing newline, and reports
-`Nothing to save` without touching the file when no user definitions exist.
-Enter `remove <name>` to remove a user-defined combinator name. Retained
-definition and removal records remain saveable when another basis referred to
-that name; otherwise both are omitted. Pre-defined names cannot be removed.
-Enter `show all` to display the entire saved definition list, or
-`Nothing to show` when it is empty.
+Enter `save <filename>` to write the replayable journal returned by `set_list()`
+to that file. The filename is the remainder of the command after surrounding
+whitespace is removed, so it may contain spaces. The command replaces an
+existing file, writes no trailing newline, and reports `Nothing to save` without
+touching the file when the journal is empty.
+The file is the replayable journal, including its compacted initial snapshot
+mode, all later snapshot-mode commands, all changed redefinitions, and removals,
+so loading it recreates the same versions and binding semantics. Enter
+`remove <name>` to remove a user-defined
+combinator name without discarding its historical revisions. Pre-defined names
+cannot be removed. Enter `show <name>` to display the current revision and
+`show <name>@N` to display an exact historical revision. Enter `show all` to
+display the entire saved definition list, or `Nothing to show` when it is
+empty.
 Enter `dependson <name>`, `depends-on <name>`, or `depends on <name>` to list
 the named bases whose definitions directly contain that name. Enter
 `usedby <name>`, `used-by <name>`, or `used by <name>` to list the named
@@ -987,18 +1028,20 @@ and eventually restore the draft that was being edited. Ctrl-O submits the
 current input and, after successful completion, recalls the next history entry
 for editing. Parse errors, `Nothing to show`, cancellation, and timeout messages
 are displayed in red and do not themselves add a blank line after them. A
-successfully registered `set`, ordinary `define`, or `remove` command leaves
-only that submitted command line, with no output beneath it. A `define steps`
-command displays its abstraction trace while registering the definition.
+successfully registered `set`, ordinary `define`, `remove`, or `snapshot`
+command leaves only that submitted command line, with no output beneath it. A
+`define steps` command displays its abstraction trace while registering the
+definition.
 The following result begins on the next line without an intervening blank line.
 A successful `show` command is also followed without an intervening blank line.
 In Combinator Studio, a nonempty `show all` ends with a red `[show end]` line.
 A submitted combinator expression nevertheless always begins after a blank line
 when the Results area already contains output.
 Press Tab to complete a unique prefix for the `abstract`, `set`, `define`,
-`dependson`, `depends-on`, `depends on`, `find`, `remove`, `show`, `usedby`,
-`used-by`, or `used by` command; when no completion is available, Tab keeps its
-normal browser focus behavior. Studio accepts the same
+`dependson`, `depends-on`, `depends on`, `find`, `remove`, `show`, `snapshot`,
+`usedby`, `used-by`, or `used by` command and the `on` or `off` snapshot
+option; when no completion is available, Tab keeps its normal browser focus
+behavior. Studio accepts the same
 `abstract [steps] ?...`, `define [steps] name symbols = ...`, and
 `find [all] [num] ?...` forms as `crepl`. Find has a default limit of three.
 Without `all`, it stops at the first size with
@@ -1006,6 +1049,11 @@ answers; with `all`, it continues through the full range. Every answer
 is shown as `?=<bird_expression>`, and a no-match message is red. A search
 ignores the stepping and color modes, displays `Searching…`, and can be stopped
 with Cancel; cancelling restarts the worker while preserving user definitions.
+
+Snapshot mode is controlled only by typing `snapshot`, `snapshot on`, or
+`snapshot off` in the Combinator Expression box; Studio deliberately has no
+Snapshot button. It starts on, bare `snapshot` means on, and its frozen, live,
+and explicit `name@N` behavior is the same as CREPL's.
 
 The Single Step button switches between displaying only the evaluated result
 and displaying every reduction produced by
@@ -1036,22 +1084,25 @@ submitted starting expression immediately, then appends the output beneath it.
 The Cancel button is active when not stepping or when Single Step is on.
 Clicking on it aborts a long-running or infinite-looping reduction.
 
-The Save button downloads all required user definitions, redefinitions, and
-removals as `set_list.cmb`, with explicit arities and user-facing quoting that
-can be entered again. An unreferenced removed definition leaves no saved
-definition or removal command; a referred-to definition retains both so its
-dependents replay correctly while its name stays removed. If there are no
-saved commands, Save opens a dialog that says `Nothing to save` instead. When
-a command entered in the browser would change a user definition, a
-confirmation dialog shows `About to replace name=arity expression`; Cancel
-preserves the existing definition, while Replace is initially focused so Enter
-confirms it.
+The Save button downloads the replayable `set_list()` journal as
+`set_list.cmb`, with explicit arities and user-facing quoting that can be
+entered again. Before the first `set`, `define`, or `remove`, it preserves only
+the last snapshot-mode command; if there is none, the file starts with
+`snapshot on`. It preserves every later snapshot-mode command, every changed
+definition and redefinition, and every removal, allowing replay to reconstruct
+the same revision numbers and frozen or live references. Equivalent no-op
+definitions are not included. If there are no saved commands, Save opens a
+dialog that says `Nothing to save` instead. When a command entered in the
+browser would change a user definition, a confirmation dialog shows
+`About to replace name=arity expression`; Cancel preserves the existing
+definition, while Replace is initially focused so Enter confirms it.
 
 The Load
-button opens a file picker filtered for `.cmb` files and recreates those
-definitions in file order by applying `parse(input_escape(record))` to each
-saved record; file redefinitions are applied silently and the expressions are
-not evaluated. A parser failure is reported with the file name, one-based line
+button opens a file picker filtered for `.cmb` files and replays its definitions,
+removals, and snapshot commands in file order by applying
+`parse(input_escape(record))` to each saved record; file redefinitions are
+applied silently and the expressions are not evaluated. A parser failure is
+reported with the file name, one-based line
 number, and one-based byte position. Loading continues with the next line after
 a parse error. It stops after the fifteenth parse error and reports
 `Too many errors, aborting with no changes made`. If any error is found, the
@@ -1071,8 +1122,8 @@ accumulated reduction count. Automatic worker failure uses the same timeout
 message; `[cancelled]` is reserved for user cancellation.
 
 The Help button
-summarizes the stepping, definition, saving, and loading options in a
-scrollable dialog.
+summarizes the stepping, definition, versioning, snapshot, saving, and loading
+options in a scrollable dialog.
 
 The Bird Info button displays the names and reductions of all the pre-defined
 bird combinators.

@@ -46,25 +46,41 @@ takeout when needed), every optimizer substitution, and the final stored result
 as "name=<expression>". For example, to add the Eagle bird:
 define Exyzwv = xy(zwv)
 
-User-defined combinator names created by "set" or "define" may be redefined. An
-unreferenced old definition is replaced in the saved set list; a definition
-needed by another saved basis remains for replay. Pre-defined bird combinator
-names are immutable and cannot be redefined.
+User-defined combinator names created by "set" or "define" may be redefined.
+Every changed definition creates the next immutable name@N revision; equivalent
+repetitions do not. Revision numbers continue after removal and re-addition. The
+saved set list keeps every changed definition and removal in chronological order
+so all revisions remain replayable. Pre-defined bird combinator names are
+immutable and cannot be redefined.
 
-Replacing an existing name with "set" is rejected when the replacement would
-make a direct or indirect named-dependency path return to that name. Recursive
-"define" remains allowed.
+A redefinition is rejected when resolving its live references would make the
+resulting definition graph circular. A frozen or version-qualified reference
+cannot create a cycle by itself, although a frozen revision can contain live
+references. Recursive "define" remains allowed.
 
-show <name | all>
-The show command displays the arity and combinators stored for name. For
-example, "show E" for the Eagle bird would display "arity:5 BDD". The "show all"
-form displays the entire saved set list, or "Nothing to show" when it is empty.
+snapshot [on | off]
+Controls how unqualified user-defined names in subsequently parsed input are
+stored. Snapshot mode is on initially, and the bare "snapshot" command also
+turns it on. When on, each reference captures the current immutable revision and
+prints as "name@N". When off, each reference remains live, prints as "name", and
+follows later redefinitions. Each changed "set" or "define" creates the next
+revision. An explicit "name@N" reference is always immutable regardless of the
+mode. Before the first saved set, define, or remove, only the last explicit
+snapshot command is saved. If there is none, the saved set list begins with
+"snapshot on". Later snapshot commands remain in chronological order.
+
+show <name | name@N | all>
+The show command displays the arity and combinators stored for the current name,
+while "show name@N" displays that exact immutable revision. For example, "show
+E" for the Eagle bird would display "arity:5 BDD". The "show all" form displays
+the entire saved set list, or "Nothing to show" when it is empty.
 
 remove <name>
-Removes a user-defined combinator name. If another basis referred to the removed
-definition, its definition and the remove command remain in the saved set list
-so dependent bases can be recreated. Otherwise, neither command is saved.
-Pre-defined names cannot be removed.
+Removes a user-defined combinator name without discarding its immutable
+revisions. Frozen references remain fixed. Live references retain the most
+recent target while the name is absent and follow the new current revision if
+the name is added again. The removal remains in the chronological saved set
+list. Pre-defined names cannot be removed.
 
 Inspecting Dependencies
 
@@ -121,17 +137,17 @@ position restores it. Existing whitespace between words is preserved.
 Other Commands
 
 load <filename>
-Loads user-defined combinators from filename without evaluating them. The
-filename is the rest of the command after surrounding whitespace is removed, so
-it may contain spaces. User-defined combinators are replaced silently. Parsing
-continues after an error, up to 15 errors, but if any error is found, the entire
-load is rolled back.
+Loads a saved set-list journal from filename without evaluating its definitions.
+The filename is the rest of the command after surrounding whitespace is removed,
+so it may contain spaces. User-defined combinators are replaced silently.
+Parsing continues after an error, up to 15 errors, but if any error is found,
+the entire load is rolled back.
 
 save <filename>
-Saves all user-defined combinators to filename, replacing any existing file. The
-filename is the rest of the command after surrounding whitespace is removed, so
-it may contain spaces. If there are no user-defined combinators, displays
-"Nothing to save" and leaves any existing file untouched.
+Saves the replayable set-list journal to filename, replacing any existing file.
+The filename is the rest of the command after surrounding whitespace is removed,
+so it may contain spaces. If the journal is empty, displays "Nothing to save"
+and leaves any existing file untouched.
 
 birds
 Displays the list of pre-defined bird combinators, defined in the system by

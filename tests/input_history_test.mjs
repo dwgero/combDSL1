@@ -42,6 +42,7 @@ test("completes unique Studio command prefixes", () => {
         "find",
         "set",
         "show",
+        "snapshot",
         "used by",
         "used-by",
         "usedby",
@@ -55,6 +56,7 @@ test("completes unique Studio command prefixes", () => {
     assert.equal(complete("fin"), "find");
     assert.equal(complete("se"), "set");
     assert.equal(complete("sho"), "show");
+    assert.equal(complete("sna"), "snapshot");
     assert.equal(complete("used b"), "used by");
     assert.equal(complete("used-"), "used-by");
     assert.equal(complete("usedb"), "usedby");
@@ -156,6 +158,35 @@ test("completes the optional define steps form", () => {
         complete("  define\tsteps"),
         "  define\tsteps ");
     assert.equal(complete("define foo"), undefined);
+});
+
+test("completes snapshot commands and options", () => {
+    const completeTopLevel = createCommandCompleter(
+        ["snapshot"], {appendSpaceToExact: true});
+    const completeOption = createCommandCompleter([
+        "snapshot off",
+        "snapshot on",
+    ]);
+    const complete = source =>
+        completeTopLevel(source) ?? completeOption(source);
+
+    assert.equal(complete("sna"), "snapshot ");
+    assert.equal(complete("snapshot"), "snapshot ");
+    assert.equal(complete("snapshot of"), "snapshot off");
+    assert.equal(complete("snapshot on"), undefined);
+    assert.equal(complete("  snapshot\tof"), "  snapshot\toff");
+    assert.equal(complete("snapshot o"), undefined);
+    assert.equal(complete("snapshot "), undefined);
+});
+
+test("keeps snapshot as a typed command without a UI button", () => {
+    const html = readFileSync(
+        new URL("../web/index.html", import.meta.url), "utf8");
+
+    assert.match(html, /snapshot \[on \| off\]/);
+    assert.doesNotMatch(
+        html,
+        /<button\b[^>]*\bid=["']snapshot["']/i);
 });
 
 test("completes unambiguous abstract command forms", () => {

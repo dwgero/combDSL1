@@ -362,9 +362,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             color: #c33;
         }
     </style>
-    <script src="./evaluation_watchdog.js?v=2.4.0" defer></script>
-    <script src="./input_history.js?v=2.4.0" defer></script>
-    <script src="./app.js?v=2.4.0" defer></script>
+    <script src="./evaluation_watchdog.js?v=2.4.2" defer></script>
+    <script src="./input_history.js?v=2.4.2" defer></script>
+    <script src="./app.js?v=2.4.2" defer></script>
 </head>
 <body>
     <main aria-labelledby="studio-title">
@@ -397,11 +397,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
                     aria-pressed="false" disabled>Colorize</button>
                 <button id="cancel" type="button" disabled>Cancel</button>
                 <a id="save" class="button-link" role="button"
-                    aria-label="Save user-defined combinators"
+                    aria-label="Save combinator journal"
                     aria-disabled="true"
                     download="set_list.cmb">Save</a>
                 <button id="load" type="button"
-                    aria-label="Load user-defined combinators"
+                    aria-label="Load combinator journal"
                     disabled>Load</button>
                 <input id="load-file" type="file" accept=".cmb" hidden>
                 <button id="help" type="button" aria-haspopup="dialog"
@@ -501,7 +501,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             Press <kbd>Tab</kbd> to complete a unique prefix for
             <code>abstract</code>, <code>set</code>, <code>define</code>,
             the dependency commands described below, <code>find</code>,
-            <code>remove</code>, or <code>show</code>.
+            <code>remove</code>, <code>show</code>, or <code>snapshot</code>.
             <br><br>
             <code>set name = combinator_expression</code><br>
             In the first form, the expression always reduces immediately.
@@ -529,11 +529,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             <br><br>
             User-defined combinator names created by <code>set</code> or
             <code>define</code> may be redefined. Pre-defined names are
-            immutable and cannot be redefined. A changed redefinition replaces
-            its unreferenced old saved definition; an old definition needed by
-            another saved basis remains available for replay. Replacing an
-            existing name with <code>set</code> is rejected if its new direct or
-            indirect named dependency chain returns to that name. Recursive
+            immutable and cannot be redefined. Every changed definition creates
+            the next immutable <code>name@N</code> revision; equivalent
+            repetitions do not. Revision numbers continue after removal and
+            re-addition. The saved set list keeps every changed definition and
+            removal in chronological order. A redefinition is rejected only
+            when its live references would create a true cycle. Recursive
             <code>define</code> remains supported.
             <br><br>
             <code>show name</code> or <code>show all</code><br>
@@ -546,10 +547,36 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             <br><br>
             <code>remove name</code><br>
             The <code>remove</code> command removes a user-defined combinator
-            name. If another basis referred to the removed definition, its
-            definition and the <code>remove</code> command remain in the saved
-            set list so dependent bases can be recreated. Otherwise, neither
-            command is saved. Pre-defined names cannot be removed.
+            name without discarding its immutable revisions. Frozen references
+            remain fixed. Live references retain the most recent target while
+            the name is absent and follow the new current revision if the name
+            is later added again. The removal remains in the chronological
+            saved set list. Pre-defined names cannot be removed.
+        </div>
+        <h2 class="help-subheading">Snapshot Mode</h2>
+        <div class="help-section">
+            <code>snapshot [on | off]</code><br>
+            Enter this command in the Combinator Expression or Command box to
+            control how named references parsed afterward are stored. Snapshot
+            mode is on by default, and <code>snapshot</code> without an option
+            also turns it on. With snapshot mode on, an unqualified
+            <code>name</code> reference pins the current immutable
+            <code>name@N</code> version. With it off, an unqualified
+            <code>name</code> reference remains live and follows later changes
+            to the current version. An explicit <code>name@N</code> reference
+            always pins that exact immutable version, regardless of the mode.
+            <br><br>
+            <code>show name</code> displays the current definition, while
+            <code>show name@N</code> displays that specific revision. A
+            redefinition is rejected only when resolving live references would
+            make the resulting definition graph circular. Purely frozen or
+            version-qualified references cannot do so by themselves. Recursive
+            <code>define</code> remains supported through <code>Y</code>. Before
+            the first <code>set</code>, <code>define</code>, or
+            <code>remove</code>, only the last explicit snapshot command is
+            saved. If there is none, the saved set list begins with
+            <code>snapshot on</code>. Later snapshot commands remain in
+            chronological order.
         </div>
         <h2 class="help-subheading">Inspecting Dependencies</h2>
         <div class="help-section">
@@ -609,18 +636,18 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
         </div>
         <h2 class="help-subheading">Saving and Loading Combinators</h2>
         <div class="help-section">
-            The Save button downloads to your computer the combinators added by
-            <code>set</code> or <code>define</code>, with default filename
-            <code>set_list.cmb</code>. Every saved definition includes its
-            arity and defining combinator expression. An unreferenced old
-            definition is replaced by its redefinition. Earlier definitions
-            needed by saved combinator expressions remain in chronological
-            order so their captured snapshots still work the same. Retained
-            <code>remove</code> commands are also saved so removed names stay
-            unavailable after dependent definitions are recreated.
+            The Save button downloads the replayable journal to your computer,
+            with default filename <code>set_list.cmb</code>. Before the first
+            <code>set</code>,
+            <code>define</code>, or <code>remove</code>, the replayable journal
+            includes only the last typed <code>snapshot</code> command; if there
+            is none, it starts with <code>snapshot on</code>. It includes every
+            later snapshot command, changed definition and redefinition, and
+            removal. Replaying it preserves revision numbers and the original
+            frozen or live references.
             The Load button reads a <code>.cmb</code> file from your computer
-            and recreates its definitions in order, applying redefinitions
-            without confirmation.
+            and replays its definitions, removals, and snapshot-mode changes in
+            order, applying redefinitions without confirmation.
         </div>
         <form method="dialog" class="dialog-controls">
             <button type="submit" autofocus>Close</button>
@@ -729,7 +756,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             data-dialog-initial-focus>About</h2>
         <div class="license-text">
             <!-- Keep this version and the app.js cache key in sync. -->
-            <p>Combinator Studio, version 2.4.0<br>
+            <p>Combinator Studio, version 2.4.2<br>
                 Part of the C++ Combinator DSL<br>
                 Copyright (C) 2026  David W. Gero</p>
             <p>This program is free software: you can redistribute it and/or modify

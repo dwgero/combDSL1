@@ -652,6 +652,104 @@ test("routes every dependency alias as display-only", () => {
     }
 });
 
+test("routes typed snapshot commands as silent saved definitions", () => {
+    for (const command of ["snapshot", "snapshot on", "snapshot off"]) {
+        const harness = createHarness();
+        const source = harness.element("source");
+        const worker = harness.workers[0];
+        const updatedSetList = `${command}\n`;
+
+        worker.send({type: "ready", setList: ""});
+        harness.flushAnimationFrames();
+
+        source.value = command;
+        harness.pressEnter();
+        harness.flushAnimationFrames();
+        const inspection = worker.messages.find(
+            message => message.type === "inspect-definition");
+        worker.send({
+            type: "definition-inspection-result",
+            id: inspection.id,
+            result: {
+                success: true,
+                definition: true,
+                displayOnly: false,
+                showAll: false,
+                find: false,
+                replacement: "",
+            },
+        });
+        harness.flushAnimationFrames();
+
+        const evaluation = worker.messages.find(
+            message => message.type === "evaluate");
+        assert.equal(evaluation.source, command);
+        assert.equal(evaluation.singleStep, false);
+        assert.equal(evaluation.keyStep, false);
+        assert.equal(evaluation.basisStep, false);
+        assert.equal(evaluation.colorize, false);
+
+        worker.send({
+            type: "result",
+            id: inspection.id,
+            setList: updatedSetList,
+            result: {
+                success: true,
+                definition: true,
+                recoverWorker: false,
+                output: "",
+                error: "",
+                reductions: 0,
+            },
+        });
+        assert.equal(harness.element("status").textContent, "Ready");
+        assert.equal(harness.element("source-history").textContent, command);
+        assert.equal(harness.element("output").textContent, command);
+        assert.equal(
+            childElements(harness.element("output")).some(
+                element => element.dataset.kind !== undefined),
+            false,
+            "snapshot should not append result output",
+        );
+
+        const save = harness.element("save");
+        assert.equal(save.attributes.get("aria-disabled"), "false");
+        save.click();
+        assert.equal(
+            harness.element("status").textContent,
+            "Saved all definitions",
+        );
+
+        source.value = "MM";
+        harness.pressEnter();
+        harness.flushAnimationFrames();
+        const pendingInspection = worker.messages.filter(
+            message => message.type === "inspect-definition").at(-1);
+        worker.send({
+            type: "definition-inspection-result",
+            id: pendingInspection.id,
+            result: {
+                success: true,
+                definition: false,
+                displayOnly: false,
+                showAll: false,
+                find: false,
+                replacement: "",
+            },
+        });
+        harness.flushAnimationFrames();
+        harness.element("cancel").click();
+
+        assert.equal(worker.terminated, true);
+        assert.equal(harness.workers.length, 2);
+        const replacementWorker = harness.workers[1];
+        replacementWorker.send({type: "ready", setList: ""});
+        const restore = replacementWorker.messages.find(
+            message => message.type === "load");
+        assert.equal(restore?.source, updatedSetList);
+    }
+});
+
 test("routes find as an unstepped cancellable search", () => {
     const harness = createHarness();
     const source = harness.element("source");

@@ -58,6 +58,12 @@ void check(std::string_view title, bool condition) {
     return output.str();
 }
 
+[[nodiscard]] std::string stepped_expression(std::string_view source) {
+    std::ostringstream output;
+    combdsl::single_step(combdsl::parse(source)).print_to(output);
+    return output.str();
+}
+
 [[nodiscard]] std::string repeated_error_lines(
     std::size_t count) {
     std::string result;
@@ -166,6 +172,14 @@ int main() {
           "Error while loading file fatal.cmb: setup loading error\n"
           "Errors are preventing any changes from being made");
 
+    auto const first_snapshot = load_set_list(
+        "snapshot on\n"
+        "snapshot off\n");
+    check("leading snapshot commands compact to the last one",
+          first_snapshot.success &&
+          first_snapshot.loaded == 2 &&
+          combdsl::set_list() == "snapshot off");
+
     auto const successful = load_set_list(
         "set FileGood = 0 I\n"
         "set FileUse = 1 FileGood\n");
@@ -177,6 +191,9 @@ int main() {
     check("an error-free load commits its definitions",
           defined_name("FileGood") &&
           defined_name("FileUse"));
+    check("the compacted leading snapshot precedes definitions",
+          combdsl::set_list().starts_with(
+              "snapshot off\nset FileGood = 0 I"));
     check("an error-free load has no diagnostic messages",
           format_file_load_diagnostics(
               "successful.cmb", successful).empty());
@@ -188,8 +205,8 @@ int main() {
           unreferenced_removal.success &&
           unreferenced_removal.loaded == 2 &&
           !defined_name("FileGone") &&
-          combdsl::set_list().find("FileGone") ==
-              std::string::npos);
+          combdsl::set_list().ends_with(
+              "set FileGone = 0 I\nremove FileGone"));
 
     auto const referred_removal = load_set_list(
         "set FileBase = 0 I\n"
@@ -227,7 +244,7 @@ int main() {
           replacement.loaded == 1 &&
           replacement.diagnostics.empty() &&
           shown_definition("FileReplace") == "arity:1 K" &&
-          replacement_list.find("set FileReplace = 0 I") ==
+          replacement_list.find("set FileReplace = 0 I") !=
               std::string::npos &&
           replacement_list.find("set FileReplace = 1 K") !=
               std::string::npos);
@@ -239,17 +256,18 @@ int main() {
     check("an error rolls back a file replacement",
           !failed_replacement.success &&
           shown_definition("FileReplace") == "arity:1 K" &&
+          !defined_name("FileReplace@3") &&
           combdsl::set_list() == before_failed_replacement);
 
     auto const repeated_replacement = load_set_list(
         "set FileTwice = 0 I\n"
         "set FileTwice = 0 K\n");
     auto const repeated_replacement_list = combdsl::set_list();
-    check("redefinitions within a file are silent and compacted",
+    check("redefinitions within a file preserve every revision",
           repeated_replacement.success &&
           repeated_replacement.loaded == 2 &&
           shown_definition("FileTwice") == "arity:0 K" &&
-          repeated_replacement_list.find("set FileTwice = 0 I") ==
+          repeated_replacement_list.find("set FileTwice = 0 I") !=
               std::string::npos &&
           repeated_replacement_list.find("set FileTwice = 0 K") !=
               std::string::npos);
@@ -264,8 +282,77 @@ int main() {
           replayed_history.success &&
           replayed_history.loaded == 2 &&
           shown_definition("FileCycle") == "arity:0 K");
-    check("a load ending at the current definitions is idempotent",
-          combdsl::set_list() == before_replayed_history);
+    check("a load ending at the current definitions keeps its revisions",
+          combdsl::set_list() == before_replayed_history +
+              "\nset FileCycle = 0 I\nset FileCycle = 0 K" &&
+          shown_definition("FileCycle@1") == "arity:0 K" &&
+          shown_definition("FileCycle@2") == "arity:0 I" &&
+          shown_definition("FileCycle@3") == "arity:0 K");
+
+    auto const snapshot_only_off = load_set_list("snapshot off\n");
+    check("a snapshot-only file persists its mode and history",
+          snapshot_only_off.success &&
+          snapshot_only_off.loaded == 1 &&
+          !combdsl::detail::registered_parser_lookup_snapshot()
+               .snapshot_enabled &&
+          combdsl::set_list().ends_with("snapshot off"));
+
+    auto const before_failed_snapshot = combdsl::set_list();
+    auto const failed_snapshot = load_set_list(
+        "snapshot on\n"
+        "@\n");
+    check("a failed load rolls back snapshot mode and history",
+          !failed_snapshot.success &&
+          !combdsl::detail::registered_parser_lookup_snapshot()
+               .snapshot_enabled &&
+          combdsl::set_list() == before_failed_snapshot);
+
+    static_cast<void>(
+        combdsl::parse("set FileLiveTarget = 1 I"));
+    static_cast<void>(
+        combdsl::parse("set FileLiveUse = 1 FileLiveTarget"));
+    auto const before_failed_live_change = combdsl::set_list();
+    auto const failed_live_change = load_set_list(
+        "set FileLiveTarget = 1 K\n"
+        "@\n");
+    check("a failed load restores a shared live binding target",
+          !failed_live_change.success &&
+          shown_definition("FileLiveTarget") == "arity:1 I" &&
+          !defined_name("FileLiveTarget@2") &&
+          stepped_expression("FileLiveUse x") == "x" &&
+          combdsl::set_list() == before_failed_live_change);
+
+    auto const successful_live_change = load_set_list(
+        "set FileLiveTarget = 1 K\n");
+    check("a successful load updates every shared live reference",
+          successful_live_change.success &&
+          shown_definition("FileLiveTarget@2") == "arity:1 K" &&
+          stepped_expression("FileLiveUse x") == "Kx");
+
+    auto const replay_modes = load_set_list(
+        "snapshot off\n"
+        "set FileModeTarget = 1 I\n"
+        "set FileModeLive = 1 FileModeTarget\n"
+        "snapshot on\n"
+        "set FileModeFrozen = 1 FileModeTarget\n"
+        "set FileModeTarget = 1 K\n"
+        "remove FileModeTarget\n"
+        "set FileModeTarget = 1 S\n");
+    check("a successful load replays live and frozen modes",
+          replay_modes.success &&
+          replay_modes.loaded == 8 &&
+          shown_definition("FileModeLive") ==
+              "arity:1 FileModeTarget" &&
+          shown_definition("FileModeFrozen") ==
+              "arity:1 FileModeTarget@1" &&
+          stepped_expression("FileModeLive x") == "Sx" &&
+          stepped_expression("FileModeFrozen x") == "x");
+    check("a successful load preserves versions across removal",
+          shown_definition("FileModeTarget@1") == "arity:1 I" &&
+          shown_definition("FileModeTarget@2") == "arity:1 K" &&
+          shown_definition("FileModeTarget@3") == "arity:1 S" &&
+          combdsl::detail::registered_parser_lookup_snapshot()
+              .snapshot_enabled);
 
     auto const before_predefined_error = combdsl::set_list();
     auto const predefined_error = load_set_list(

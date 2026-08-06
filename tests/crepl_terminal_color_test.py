@@ -78,6 +78,8 @@ def main():
             output,
             b"Parse error at position 6: x is not a defined name")
 
+        write_all(master, b"snapshot off\n")
+        reader.read_until(b">")
         write_all(master, b"set RedCircleA = 0 I\n")
         reader.read_until(b">")
         write_all(master, b"set RedCircleB = 0 RedCircleA\n")
