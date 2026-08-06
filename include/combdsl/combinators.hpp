@@ -3942,12 +3942,14 @@ enum class parser_definition_change {
     inserted,
     unchanged,
     replaced,
-    rejected_predefined
+    rejected_predefined,
+    rejected_circular
 };
 
 struct parser_definition_inspection {
     parser_definition_change change;
     std::string replaced_definition;
+    std::vector<std::string> circular_path;
 };
 
 [[nodiscard]] inline bool same_parser_definition_expression(
@@ -4252,6 +4254,195 @@ referred_parser_definition_indices(
     return result;
 }
 
+[[nodiscard]] inline std::vector<std::string>
+direct_named_parser_bases_in_expression(
+    quoted_expression const& expression,
+    registered_parser_basis_table const& registered_bases) {
+    std::vector<std::string> result;
+    std::unordered_set<std::string> added;
+    std::unordered_set<quoted_node const*> visited;
+    std::vector<std::shared_ptr<quoted_node const>> pending;
+    pending.push_back(quoted_access::root(expression));
+
+    while (!pending.empty()) {
+        auto root = std::move(pending.back());
+        pending.pop_back();
+        if (!visited.emplace(root.get()).second) {
+            continue;
+        }
+
+        if (root->kind() == quoted_node_kind::basis) {
+            auto const nested_name =
+                static_cast<quoted_basis_node_base const&>(
+                    *root).name();
+            if (registered_bases.contains(nested_name) &&
+                added.emplace(nested_name).second) {
+                result.emplace_back(nested_name);
+            }
+            continue;
+        }
+
+        switch (root->kind()) {
+        case quoted_node_kind::application: {
+            auto const& application =
+                static_cast<quoted_application_node const&>(*root);
+            pending.push_back(quoted_access::root(
+                application.argument()));
+            pending.push_back(quoted_access::root(
+                application.function()));
+            break;
+        }
+        case quoted_node_kind::pending_sk:
+            pending.push_back(quoted_access::root(
+                static_cast<quoted_pending_sk_node const&>(*root)
+                    .application()));
+            break;
+        case quoted_node_kind::recursive_y:
+            pending.push_back(quoted_access::root(
+                static_cast<quoted_recursive_y_node const&>(*root)
+                    .generator()));
+            break;
+        case quoted_node_kind::basis_argument:
+            pending.push_back(quoted_access::root(
+                static_cast<quoted_basis_argument_node const&>(*root)
+                    .argument()));
+            break;
+        case quoted_node_kind::colored_argument:
+            pending.push_back(quoted_access::root(
+                static_cast<quoted_colored_argument_node const&>(*root)
+                    .argument()));
+            break;
+        case quoted_node_kind::opaque:
+        case quoted_node_kind::rec_func:
+        case quoted_node_kind::identity:
+        case quoted_node_kind::constant:
+        case quoted_node_kind::substitution:
+        case quoted_node_kind::fixed_point:
+        case quoted_node_kind::basis:
+            break;
+        }
+    }
+
+    std::ranges::sort(result);
+    return result;
+}
+
+[[nodiscard]] inline std::vector<std::string>
+direct_named_parser_bases_in_definition(
+    quoted_expression const& expression,
+    registered_parser_basis_table const& registered_bases) {
+    auto const& root = quoted_access::root(expression);
+    if (root->kind() != quoted_node_kind::basis) {
+        throw std::logic_error(
+            "combdsl::registered parser basis is not a basis");
+    }
+    auto const& basis =
+        static_cast<quoted_basis_node_base const&>(*root);
+    return direct_named_parser_bases_in_expression(
+        basis.body(), registered_bases);
+}
+
+[[nodiscard]] inline std::vector<std::string>
+parser_basis_definition_circular_path(
+    std::string_view name,
+    quoted_expression const& proposed_definition) {
+    auto const& proposed_root = quoted_access::root(
+        proposed_definition);
+    if (proposed_root->kind() != quoted_node_kind::basis) {
+        throw std::logic_error(
+            "combdsl::registered parser basis is not a basis");
+    }
+
+    auto const& proposed_basis =
+        static_cast<quoted_basis_node_base const&>(
+            *proposed_root);
+
+    struct pending_expression {
+        std::shared_ptr<quoted_node const> root;
+        std::vector<std::string> path;
+    };
+
+    std::unordered_set<quoted_node const*> visited;
+    std::vector<pending_expression> pending;
+    pending.push_back({
+        quoted_access::root(proposed_basis.body()),
+        {std::string(name)}});
+
+    while (!pending.empty()) {
+        auto current = std::move(pending.back());
+        pending.pop_back();
+        if (!visited.emplace(current.root.get()).second) {
+            continue;
+        }
+
+        if (current.root->kind() == quoted_node_kind::basis) {
+            auto const& nested_basis =
+                static_cast<quoted_basis_node_base const&>(
+                    *current.root);
+            current.path.emplace_back(nested_basis.name());
+            if (nested_basis.name() == name) {
+                return current.path;
+            }
+            pending.push_back({
+                quoted_access::root(nested_basis.body()),
+                std::move(current.path)});
+            continue;
+        }
+
+        switch (current.root->kind()) {
+        case quoted_node_kind::application: {
+            auto const& application =
+                static_cast<quoted_application_node const&>(
+                    *current.root);
+            pending.push_back({
+                quoted_access::root(application.argument()),
+                current.path});
+            pending.push_back({
+                quoted_access::root(application.function()),
+                std::move(current.path)});
+            break;
+        }
+        case quoted_node_kind::pending_sk:
+            pending.push_back({
+                quoted_access::root(
+                    static_cast<quoted_pending_sk_node const&>(
+                        *current.root).application()),
+                std::move(current.path)});
+            break;
+        case quoted_node_kind::recursive_y:
+            pending.push_back({
+                quoted_access::root(
+                    static_cast<quoted_recursive_y_node const&>(
+                        *current.root).generator()),
+                std::move(current.path)});
+            break;
+        case quoted_node_kind::basis_argument:
+            pending.push_back({
+                quoted_access::root(
+                    static_cast<quoted_basis_argument_node const&>(
+                        *current.root).argument()),
+                std::move(current.path)});
+            break;
+        case quoted_node_kind::colored_argument:
+            pending.push_back({
+                quoted_access::root(
+                    static_cast<quoted_colored_argument_node const&>(
+                        *current.root).argument()),
+                std::move(current.path)});
+            break;
+        case quoted_node_kind::opaque:
+        case quoted_node_kind::rec_func:
+        case quoted_node_kind::identity:
+        case quoted_node_kind::constant:
+        case quoted_node_kind::substitution:
+        case quoted_node_kind::fixed_point:
+        case quoted_node_kind::basis:
+            break;
+        }
+    }
+    return {};
+}
+
 template <class Basis>
 void register_parser_basis(std::string_view name, Basis const& basis) {
     if (is_primitive_name(name)) {
@@ -4282,34 +4473,50 @@ void register_parser_basis(std::string_view name, Basis const& basis) {
 [[nodiscard]] inline parser_definition_inspection
 inspect_parser_definition_basis(
     std::string_view name,
-    quoted_expression const& basis) {
+    quoted_expression const& basis,
+    registered_parser_basis_table const& registered_bases,
+    bool reject_circular) {
     if (is_primitive_name(name)) {
         return {
-            parser_definition_change::rejected_predefined, {}};
+            parser_definition_change::rejected_predefined, {}, {}};
     }
 
-    registered_parser_basis_ptr existing;
-    {
-        std::lock_guard lock(parser_basis_registry_mutex());
-        auto const& entries = parser_basis_registry();
-        auto const match = entries.find(name);
-        if (match == entries.end()) {
-            return {parser_definition_change::inserted, {}};
+    auto const match = registered_bases.find(name);
+    if (match == registered_bases.end()) {
+        auto circular_path = reject_circular
+            ? parser_basis_definition_circular_path(name, basis)
+            : std::vector<std::string>{};
+        if (!circular_path.empty()) {
+            return {
+                parser_definition_change::rejected_circular,
+                {},
+                std::move(circular_path)};
         }
-        existing = match->second;
+        return {parser_definition_change::inserted, {}, {}};
     }
+    auto const& existing = match->second;
 
     if (existing->predefined()) {
         return {
-            parser_definition_change::rejected_predefined, {}};
+            parser_definition_change::rejected_predefined, {}, {}};
     }
     if (same_parser_basis_definition(
             existing->expression(), basis)) {
-        return {parser_definition_change::unchanged, {}};
+        return {parser_definition_change::unchanged, {}, {}};
+    }
+    auto circular_path = reject_circular
+        ? parser_basis_definition_circular_path(name, basis)
+        : std::vector<std::string>{};
+    if (!circular_path.empty()) {
+        return {
+            parser_definition_change::rejected_circular,
+            {},
+            std::move(circular_path)};
     }
     return {
         parser_definition_change::replaced,
-        format_parser_basis_definition(existing->expression())};
+        format_parser_basis_definition(existing->expression()),
+        {}};
 }
 
 [[nodiscard]] inline parser_definition_change
@@ -4317,7 +4524,9 @@ register_parser_definition_basis(
     std::string_view name,
     quoted_expression const& basis,
     std::string user_source,
-    std::vector<registered_parser_basis_ptr> dependencies) {
+    std::vector<registered_parser_basis_ptr> dependencies,
+    bool reject_circular,
+    std::vector<std::string>& circular_path) {
     if (is_primitive_name(name)) {
         return parser_definition_change::rejected_predefined;
     }
@@ -4331,6 +4540,13 @@ register_parser_definition_basis(
     auto& entries = parser_basis_registry();
     auto& definitions = parser_definition_registry();
     auto const existing = entries.find(name);
+    if (existing == entries.end() && reject_circular) {
+        circular_path =
+            parser_basis_definition_circular_path(name, basis);
+        if (!circular_path.empty()) {
+            return parser_definition_change::rejected_circular;
+        }
+    }
     if (existing != entries.end()) {
         if (existing->second->predefined()) {
             return parser_definition_change::rejected_predefined;
@@ -4338,6 +4554,13 @@ register_parser_definition_basis(
         if (same_parser_basis_definition(
                 existing->second->expression(), basis)) {
             return parser_definition_change::unchanged;
+        }
+        if (reject_circular) {
+            circular_path =
+                parser_basis_definition_circular_path(name, basis);
+            if (!circular_path.empty()) {
+                return parser_definition_change::rejected_circular;
+            }
         }
 
         auto const referred_indices =
@@ -4489,88 +4712,9 @@ parser_dependency_names(
         return {};
     }
 
-    auto direct_names = [&](quoted_expression const& expression) {
-        std::vector<std::string> result;
-        std::unordered_set<std::string> added;
-        std::unordered_set<quoted_node const*> visited;
-        std::vector<std::shared_ptr<quoted_node const>> pending;
-
-        auto const& expression_root = quoted_access::root(expression);
-        if (expression_root->kind() != quoted_node_kind::basis) {
-            throw std::logic_error(
-                "combdsl::registered parser basis is not a basis");
-        }
-        auto const& basis =
-            static_cast<quoted_basis_node_base const&>(
-                *expression_root);
-        pending.push_back(quoted_access::root(basis.body()));
-
-        while (!pending.empty()) {
-            auto root = std::move(pending.back());
-            pending.pop_back();
-            if (!visited.emplace(root.get()).second) {
-                continue;
-            }
-
-            if (root->kind() == quoted_node_kind::basis) {
-                auto const nested_name =
-                    static_cast<quoted_basis_node_base const&>(
-                        *root).name();
-                if (registered_bases.contains(nested_name) &&
-                    added.emplace(nested_name).second) {
-                    result.emplace_back(nested_name);
-                }
-                continue;
-            }
-
-            switch (root->kind()) {
-            case quoted_node_kind::application: {
-                auto const& application =
-                    static_cast<quoted_application_node const&>(
-                        *root);
-                pending.push_back(quoted_access::root(
-                    application.argument()));
-                pending.push_back(quoted_access::root(
-                    application.function()));
-                break;
-            }
-            case quoted_node_kind::pending_sk:
-                pending.push_back(quoted_access::root(
-                    static_cast<quoted_pending_sk_node const&>(*root)
-                        .application()));
-                break;
-            case quoted_node_kind::recursive_y:
-                pending.push_back(quoted_access::root(
-                    static_cast<quoted_recursive_y_node const&>(*root)
-                        .generator()));
-                break;
-            case quoted_node_kind::basis_argument:
-                pending.push_back(quoted_access::root(
-                    static_cast<quoted_basis_argument_node const&>(
-                        *root).argument()));
-                break;
-            case quoted_node_kind::colored_argument:
-                pending.push_back(quoted_access::root(
-                    static_cast<quoted_colored_argument_node const&>(
-                        *root).argument()));
-                break;
-            case quoted_node_kind::opaque:
-            case quoted_node_kind::rec_func:
-            case quoted_node_kind::identity:
-            case quoted_node_kind::constant:
-            case quoted_node_kind::substitution:
-            case quoted_node_kind::fixed_point:
-            case quoted_node_kind::basis:
-                break;
-            }
-        }
-
-        std::ranges::sort(result);
-        return result;
-    };
-
     if (direction == parser_dependency_direction::uses) {
-        return direct_names(target->second->expression());
+        return direct_named_parser_bases_in_definition(
+            target->second->expression(), registered_bases);
     }
 
     std::vector<std::string> result;
@@ -4580,7 +4724,8 @@ parser_dependency_names(
             continue;
         }
         auto const dependencies =
-            direct_names(candidate->expression());
+            direct_named_parser_bases_in_definition(
+                candidate->expression(), registered_bases);
         if (std::ranges::find(dependencies, name) !=
             dependencies.end()) {
             result.push_back(candidate_name);
@@ -4909,7 +5054,8 @@ private:
             name_position,
             result,
             std::move(user_source),
-            std::move(dependencies));
+            std::move(dependencies),
+            true);
         return result;
     }
 
@@ -5509,21 +5655,30 @@ private:
         std::size_t name_position,
         quoted_expression const& result,
         std::string user_source,
-        std::vector<registered_parser_basis_ptr> dependencies) {
+        std::vector<registered_parser_basis_ptr> dependencies,
+        bool reject_circular = false) {
         parser_definition_change change;
+        std::vector<std::string> circular_path;
         if (definition_mode_ ==
             parser_definition_mode::inspect_definitions) {
             auto inspection =
-                inspect_parser_definition_basis(name, result);
+                inspect_parser_definition_basis(
+                    name,
+                    result,
+                    registered_bases_,
+                    reject_circular);
             change = inspection.change;
             replaced_definition_ =
                 std::move(inspection.replaced_definition);
+            circular_path = std::move(inspection.circular_path);
         } else {
             change = register_parser_definition_basis(
                 name,
                 result,
                 std::move(user_source),
-                std::move(dependencies));
+                std::move(dependencies),
+                reject_circular,
+                circular_path);
         }
 
         if (change ==
@@ -5531,6 +5686,23 @@ private:
             auto message = std::string(name);
             message +=
                 " is a pre-defined basis and cannot be redefined";
+            throw parse_error(name_position, message);
+        }
+        if (change ==
+            parser_definition_change::rejected_circular) {
+            auto message = unescape_input(name);
+            message += " would have a circular definition";
+            if (!circular_path.empty()) {
+                message.push_back('\n');
+                for (std::size_t index = 0;
+                     index < circular_path.size();
+                     ++index) {
+                    if (index != 0) {
+                        message += " -> ";
+                    }
+                    message += unescape_input(circular_path[index]);
+                }
+            }
             throw parse_error(name_position, message);
         }
     }

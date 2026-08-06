@@ -1297,27 +1297,41 @@ int main() {
          },
          expected_definition_list);
 
-    test("set registers a self-redefinition base",
+    test("set registers a basis for circular-redefinition checks",
          parse("set SelfReplay = 0 I"), "SelfReplay");
-    test("set may capture its previous definition",
-         parse("set SelfReplay = 0 SelfReplay"), "SelfReplay");
-    test("set list retains a required same-name snapshot",
+    test("set inspection rejects a direct circular redefinition",
          [] {
-             constexpr std::string_view suffix =
-                 "set SelfReplay = 0 I\n"
-                 "set SelfReplay = 0 SelfReplay";
-             std::cout << (set_list().ends_with(suffix)
-                 ? "retained"
-                 : "missing");
+             try {
+                 static_cast<void>(combdsl::detail::parse_input(
+                     "set SelfReplay = 0 SelfReplay",
+                     combdsl::detail::parser_definition_mode::
+                         inspect_definitions));
+             } catch (parse_error const& error) {
+                 std::cout << error.what();
+             }
          },
-         "retained");
-    test("a retained same-name snapshot remains usable",
-         single_step(single_step(single_step(
-             parse("SelfReplay x")))),
-         "x");
-    test("an otherwise unused self-history can still be removed",
+         "Parse error at position 5: SelfReplay would have a circular definition\n"
+         "SelfReplay -> SelfReplay");
+    test_parse_failure(
+        "set rejects a direct circular redefinition",
+        "set SelfReplay = 0 SelfReplay",
+        4,
+        "SelfReplay would have a circular definition\n"
+        "SelfReplay -> SelfReplay");
+    test("a rejected circular redefinition leaves the basis unchanged",
+         parse("show SelfReplay"), "arity:0 I");
+    test("a rejected circular redefinition is not saved",
          [] {
-             static_cast<void>(parse("remove SelfReplay"));
+             std::cout << (set_list().ends_with(
+                 "set SelfReplay = 0 I")
+                 ? "unchanged"
+                 : "changed");
+         },
+         "unchanged");
+    test("a basis remains removable after a rejected circle",
+         parse("remove SelfReplay"), "SelfReplay");
+    test("removing that basis omits its saved definition",
+         [] {
              std::cout << (set_list().find("SelfReplay") ==
                      std::string::npos
                  ? "omitted"
@@ -1373,19 +1387,6 @@ int main() {
          },
          "omitted");
 
-    test("remove can discard an unreferenced self-history",
-         [] {
-             static_cast<void>(parse("set RemoveSolo = 0 I"));
-             static_cast<void>(
-                 parse("set RemoveSolo = 0 RemoveSolo"));
-             static_cast<void>(parse("remove RemoveSolo"));
-             std::cout << (set_list().find("RemoveSolo") ==
-                     std::string::npos
-                 ? "omitted"
-                 : "retained");
-         },
-         "omitted");
-
     test("set registers a basis that will be referred to",
          parse("set RemoveBase = 0 I"), "RemoveBase");
     auto remove_base_snapshot = parse("RemoveBase x");
@@ -1428,24 +1429,109 @@ int main() {
          },
          "one retained removal");
 
-    test("a reference propagates through same-name history",
+    test("set registers the first basis in a two-name chain",
+         parse("set CycleA = 0 I"), "CycleA");
+    test("set registers the second basis in a two-name chain",
+         parse("set CycleB = 0 CycleA"), "CycleB");
+    test_parse_failure(
+        "set rejects a two-name circular redefinition",
+        "set CycleA = 0 CycleB",
+        4,
+        "CycleA would have a circular definition\n"
+        "CycleA -> CycleB -> CycleA");
+    test("a failed two-name circle leaves the old definition",
+         parse("show CycleA"), "arity:0 I");
+    test("a non-circular redefinition of the same basis succeeds",
+         parse("set CycleA = 0 K"), "CycleA");
+    test("the non-circular replacement becomes current",
+         parse("show CycleA"), "arity:0 K");
+
+    test("set registers the first basis in a three-name chain",
+         parse("set CircleFoo = 3 C"), "CircleFoo");
+    test("set registers the second basis in a three-name chain",
+         parse("set CircleBar = 3 CircleFoo"), "CircleBar");
+    test("set registers the third basis in a three-name chain",
+         parse("set CircleBaz = 3 CircleBar"), "CircleBaz");
+    test_parse_failure(
+        "set rejects a three-name circular redefinition",
+        "set CircleFoo = 3 CircleBaz",
+        4,
+        "CircleFoo would have a circular definition\n"
+        "CircleFoo -> CircleBaz -> CircleBar -> CircleFoo");
+    test("the rejected three-name circle leaves the basis unchanged",
+         parse("show CircleFoo"), "arity:3 C");
+
+    test("set registers a basis for an equivalent cyclic replacement",
+         parse("set EqCircleA = 2 I"), "EqCircleA");
+    test("set registers its dependent basis",
+         parse("set EqCircleB = 2 EqCircleA"), "EqCircleB");
+    test("define may create a recursive named dependency",
+         parse("define EqCircleA x = EqCircleB x"), "EqCircleA");
+    test("inspection accepts an equivalent set after define",
          [] {
-             static_cast<void>(parse("set RemoveChain = 0 I"));
-             static_cast<void>(
-                 parse("set RemoveChain = 0 RemoveChain"));
-             static_cast<void>(
-                 parse("set RemoveChainUse = 0 RemoveChain"));
-             static_cast<void>(parse("remove RemoveChain"));
-             constexpr std::string_view suffix =
-                 "set RemoveChain = 0 I\n"
-                 "set RemoveChain = 0 RemoveChain\n"
-                 "set RemoveChainUse = 0 RemoveChain\n"
-                 "remove RemoveChain";
-             std::cout << (set_list().ends_with(suffix)
-                 ? "retained"
-                 : "missing");
+             auto inspected = combdsl::detail::parse_input(
+                 "set EqCircleA = 1 EqCircleB",
+                 combdsl::detail::parser_definition_mode::
+                     inspect_definitions);
+             std::cout << (inspected.replaced_definition.empty()
+                 ? "unchanged"
+                 : "changed");
          },
-         "retained");
+         "unchanged");
+    test("set accepts that equivalent definition unchanged",
+         parse("set EqCircleA = 1 EqCircleB"), "EqCircleA");
+    test("the equivalent definition remains current",
+         parse("show EqCircleA"), "arity:1 EqCircleB");
+
+    test("set registers a basis for a removed-snapshot circle",
+         parse("set RemovedCircleA = 0 I"), "RemovedCircleA");
+    test("set registers the soon-to-be-removed dependency",
+         parse("set RemovedCircleR = 0 RemovedCircleA"),
+         "RemovedCircleR");
+    test("set captures the soon-to-be-removed dependency",
+         parse("set RemovedCircleB = 0 RemovedCircleR"),
+         "RemovedCircleB");
+    test("remove leaves the captured dependency snapshot",
+         parse("remove RemovedCircleR"), "RemovedCircleR");
+    test("inspection rejects a circle through a removed snapshot",
+         [] {
+             try {
+                 static_cast<void>(combdsl::detail::parse_input(
+                     "set RemovedCircleA = 0 RemovedCircleB",
+                     combdsl::detail::parser_definition_mode::
+                         inspect_definitions));
+             } catch (parse_error const& error) {
+                 std::cout << error.what();
+             }
+         },
+         "Parse error at position 5: RemovedCircleA would have a circular definition\n"
+         "RemovedCircleA -> RemovedCircleB -> RemovedCircleR -> RemovedCircleA");
+    test_parse_failure(
+        "set rejects a circle through a removed dependency snapshot",
+        "set RemovedCircleA = 0 RemovedCircleB",
+        4,
+        "RemovedCircleA would have a circular definition\n"
+        "RemovedCircleA -> RemovedCircleB -> RemovedCircleR -> RemovedCircleA");
+    test("a removed-snapshot circle leaves the old definition",
+         parse("show RemovedCircleA"), "arity:0 I");
+
+    test("set registers a basis for a late predefined snapshot circle",
+         parse("set LateCircleA = 0 I"), "LateCircleA");
+    test("a late C++ basis may capture that user definition",
+         [] {
+             static_cast<void>(basis(
+                 "LateCircleCpp", 0, parse("LateCircleA")));
+             parse("LateCircleCpp").print_to(std::cout);
+         },
+         "LateCircleCpp");
+    test_parse_failure(
+        "set rejects a circle through a late predefined basis",
+        "set LateCircleA = 0 LateCircleCpp",
+        4,
+        "LateCircleA would have a circular definition\n"
+        "LateCircleA -> LateCircleCpp -> LateCircleA");
+    test("a late-predefined circle leaves the old definition",
+         parse("show LateCircleA"), "arity:0 I");
 
     test("was referred to remains true after the referring basis is removed",
          [] {
@@ -1729,11 +1815,13 @@ int main() {
          combdsl::detail::reduce_saturated_bases(
              parse("PrepY")),
          "Y(Ma)");
-    test("set creates a preprocessing snapshot",
-         parse("set CycleSnap = 1 K"), "CycleSnap");
-    test("set creates a same-name zero-arity snapshot",
-         parse("set CycleSnap = 0 CycleSnap"), "CycleSnap");
-    test("define preprocessing distinguishes same-name snapshots",
+    test("set creates a preprocessing dependency snapshot",
+         parse("set CycleOld = 1 K"), "CycleOld");
+    test("set captures the preprocessing dependency snapshot",
+         parse("set CycleSnap = 0 CycleOld"), "CycleSnap");
+    test("set replaces the dependency for future parsing",
+         parse("set CycleOld = 1 I"), "CycleOld");
+    test("define preprocessing preserves captured snapshots",
          single_step(
              combdsl::detail::reduce_saturated_bases(
                  parse("CycleSnap"))(a)),
@@ -2333,12 +2421,15 @@ int main() {
                  : "not ordered");
          },
          "ordered");
-    test("dependson excludes the queried basis from its dependents",
-         [] {
-             static_cast<void>(parse("set Self = 1 I"));
-             static_cast<void>(parse("set Self = 1 Self"));
-             parse("dependson Self").print_to(std::cout);
-         },
+    test("set registers another direct-circle test basis",
+         parse("set Self = 1 I"), "Self");
+    test_parse_failure(
+        "another direct circular redefinition is rejected",
+        "set Self = 1 Self",
+        4,
+        "Self would have a circular definition\nSelf -> Self");
+    test("a rejected circle creates no self-dependent entry",
+         parse("dependson Self"),
          "Self is not depended on by anything");
     test("a deeply nested equivalent definition is unchanged",
          [] {

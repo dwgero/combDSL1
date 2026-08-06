@@ -784,6 +784,37 @@ test("uses a lowercase show end marker", () => {
     assert.ok(marker, "missing lowercase show end marker");
 });
 
+test("keeps a circular definition path in the red error entry", () => {
+    const harness = createHarness();
+    const source = harness.element("source");
+    const worker = harness.workers[0];
+    const error =
+        "Parse error at position 5: CircleA would have a " +
+        "circular definition\nCircleA -> CircleB -> CircleA";
+
+    worker.send({type: "ready", setList: ""});
+    harness.flushAnimationFrames();
+    source.value = "set CircleA = 0 CircleB";
+    harness.pressEnter();
+    harness.flushAnimationFrames();
+
+    const inspection = worker.messages.find(
+        message => message.type === "inspect-definition");
+    worker.send({
+        type: "definition-inspection-result",
+        id: inspection.id,
+        result: {
+            success: false,
+            error,
+        },
+    });
+
+    const displayed = childElements(harness.element("output")).find(
+        element => element.textContent === error &&
+            element.dataset.kind === "error");
+    assert.ok(displayed, "missing red circular definition path");
+});
+
 test("marks restored cancellation and timeout history notices red", () => {
     const harness = createHarness({
         historyValues: [

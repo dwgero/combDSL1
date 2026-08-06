@@ -613,12 +613,14 @@ that no equivalent expression exists.
 Names created with `set` or `define` may be redefined. A changed definition
 replaces the user-defined basis for future parsing; expressions parsed earlier
 retain the basis snapshot they already contain. Repeating an equivalent arity
-and stored expression makes no change. A changed redefinition removes its
-unreferenced old definition from `set_list()` and appends the new definition.
-An old definition remains when another saved basis, including a same-name
-replacement, needs its captured snapshot. The fundamental names `S`, `K`, `I`,
-and `Y`, and every pre-defined basis registered by C++ `basis(...)`, are
-immutable; attempting to redefine one is a parse error. A later C++ basis
+and stored expression makes no change. Replacing an existing name with `set`
+is rejected if its new direct or indirect named dependency chain returns to
+that name. Recursive `define` remains supported. A changed redefinition removes
+its unreferenced old definition from `set_list()` and appends the new
+definition. An old definition remains when another saved basis needs its
+captured snapshot. The fundamental names `S`, `K`, `I`, and `Y`, and every
+pre-defined basis registered by C++ `basis(...)`, are immutable; attempting to
+redefine one is a parse error. A later C++ basis
 registration cannot take a name that is already user-defined.
 
 At the start of a line, optionally preceded by whitespace, `show` followed by
@@ -721,7 +723,7 @@ expression produces no output, while malformed or empty lines throw
 The `crepl` executable applies `input_escape` to each line before passing it to
 `parse_eval`, so ordinary quoted words and backslashes can be entered directly.
 When standard output is a terminal, it first prints
-`Combinator Read-Eval-Print Loop, version 2.3.12`. Long evaluations display
+`Combinator Read-Eval-Print Loop, version 2.3.14`. Long evaluations display
 the accumulated step count every 1,000 reductions by overwriting one status
 line; the line is cleared before evaluation output is printed. Its interactive
 prompt is `>`. Interactive input uses GNU Readline, so previous nonempty

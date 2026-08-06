@@ -51,6 +51,10 @@ unreferenced old definition is replaced in the saved set list; a definition
 needed by another saved basis remains for replay. Pre-defined bird combinator
 names are immutable and cannot be redefined.
 
+Replacing an existing name with "set" is rejected when the replacement would
+make a direct or indirect named-dependency path return to that name. Recursive
+"define" remains allowed.
+
 show <name | all>
 The show command displays the arity and combinators stored for name. For
 example, "show E" for the Eagle bird would display "arity:5 BDD". The "show all"

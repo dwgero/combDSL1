@@ -59,7 +59,7 @@
 
 namespace {
 
-constexpr std::string_view crepl_version = "2.3.12";
+constexpr std::string_view crepl_version = "2.3.14";
 
 [[nodiscard]] bool stream_is_terminal(std::FILE* stream) noexcept {
 #if defined(_WIN32)
@@ -850,6 +850,12 @@ void print_help_full(std::ostream& output) {
         "saved set list; a definition needed by another saved basis remains "
         "for replay. Pre-defined bird combinator names are immutable and "
         "cannot be redefined.");
+    output.put('\n');
+    write_wrapped_paragraph(
+        output,
+        "Replacing an existing name with \"set\" is rejected when the "
+        "replacement would make a direct or indirect named-dependency path "
+        "return to that name. Recursive \"define\" remains allowed.");
     output << '\n'
            << "show <name | all>\n";
     write_wrapped_paragraph(

@@ -362,9 +362,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             color: #c33;
         }
     </style>
-    <script src="./evaluation_watchdog.js?v=2.3.12" defer></script>
-    <script src="./input_history.js?v=2.3.12" defer></script>
-    <script src="./app.js?v=2.3.12" defer></script>
+    <script src="./evaluation_watchdog.js?v=2.3.14" defer></script>
+    <script src="./input_history.js?v=2.3.14" defer></script>
+    <script src="./app.js?v=2.3.14" defer></script>
 </head>
 <body>
     <main aria-labelledby="studio-title">
@@ -531,7 +531,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             <code>define</code> may be redefined. Pre-defined names are
             immutable and cannot be redefined. A changed redefinition replaces
             its unreferenced old saved definition; an old definition needed by
-            another saved basis remains available for replay.
+            another saved basis remains available for replay. Replacing an
+            existing name with <code>set</code> is rejected if its new direct or
+            indirect named dependency chain returns to that name. Recursive
+            <code>define</code> remains supported.
             <br><br>
             <code>show name</code> or <code>show all</code><br>
             The <code>show</code> command displays the arity and combinators stored
@@ -726,7 +729,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             data-dialog-initial-focus>About</h2>
         <div class="license-text">
             <!-- Keep this version and the app.js cache key in sync. -->
-            <p>Combinator Studio, version 2.3.12<br>
+            <p>Combinator Studio, version 2.3.14<br>
                 Part of the C++ Combinator DSL<br>
                 Copyright (C) 2026  David W. Gero</p>
             <p>This program is free software: you can redistribute it and/or modify

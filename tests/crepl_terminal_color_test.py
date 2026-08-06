@@ -78,6 +78,20 @@ def main():
             output,
             b"Parse error at position 6: x is not a defined name")
 
+        write_all(master, b"set RedCircleA = 0 I\n")
+        reader.read_until(b">")
+        write_all(master, b"set RedCircleB = 0 RedCircleA\n")
+        reader.read_until(b">")
+        write_all(master, b"set RedCircleA = 0 RedCircleB\n")
+        output = reader.read_until(
+            b"RedCircleA -> RedCircleB -> RedCircleA")
+        output += reader.read_until(b">")
+        require_red_message(
+            output,
+            b"Parse error at position 5: RedCircleA would have a "
+            b"circular definition\r\n"
+            b"RedCircleA -> RedCircleB -> RedCircleA")
+
         write_all(master, b"load missing.cmb\n")
         output = reader.read_until(b">")
         require_red_message(
