@@ -4703,7 +4703,7 @@ public:
             std::move(result),
             is_definition,
             is_show_command || is_find_command ||
-                is_abstract_command,
+                is_abstract_command || is_definition_trace_,
             is_show_all_,
             is_find_command,
             is_find_no_match_,
@@ -5135,6 +5135,28 @@ private:
             fail("missing combinator name");
         }
 
+        bool show_steps = false;
+        auto const remaining = source_.substr(position_);
+        if (remaining.starts_with("steps") &&
+            (remaining.size() == 5 ||
+             is_whitespace(remaining[5]))) {
+            show_steps = true;
+            is_definition_trace_ = true;
+            position_ += 5;
+            if (!at_end() && !is_whitespace(current())) {
+                fail("expected whitespace after 'steps'");
+            }
+            skip_whitespace();
+            if (at_end()) {
+                fail("missing combinator name");
+            }
+        }
+
+        auto const trace_enabled =
+            show_steps &&
+            definition_mode_ ==
+                parser_definition_mode::register_definitions;
+
         auto const name_position = position_;
         auto [name, symbols] = parse_define_signature();
         auto const body_position = position_;
@@ -5151,7 +5173,30 @@ private:
 
         auto user_source = canonical_define_definition(
             name.view(), symbols, source_.substr(body_position));
+
+        std::ostringstream trace;
+        bool first_trace_line = true;
+        auto append_expression = [&](std::string_view label,
+                                     quoted_expression const& value) {
+            if (!first_trace_line) {
+                trace << '\n';
+            }
+            trace << label;
+            value.print_to(trace);
+            first_trace_line = false;
+        };
+
+        auto const original_body = body;
         body = reduce_saturated_bases(std::move(body));
+        if (trace_enabled &&
+            !same_parser_definition_expression(
+                original_body, body)) {
+            trace << "preprocess: ";
+            original_body.print_to(trace);
+            trace << " -> ";
+            body.print_to(trace);
+            first_trace_line = false;
+        }
         std::vector<quoted_atomic> pending_atoms;
         pending_atoms.reserve(symbols.size() + 1);
         pending_atoms.emplace_back(recursive_function);
@@ -5166,18 +5211,58 @@ private:
                 quoted_atomic{symbol(*symbol_position)},
                 std::move(body),
                 pending_atoms);
+            if (trace_enabled) {
+                std::string label = "takeout ";
+                label.push_back(*symbol_position);
+                label += ": ";
+                append_expression(label, body);
+            }
         }
+
+        std::vector<optimizer_substitution> substitutions;
         if (contains_quoted_atom(recursive_function, body)) {
             pending_atoms.clear();
             body = takeout_with_pending_atoms(
                 quoted_atomic{recursive_function},
                 std::move(body),
                 pending_atoms);
+            if (trace_enabled) {
+                std::string label = "takeout ";
+                label += name.view();
+                label += ": ";
+                append_expression(label, body);
+            }
             body = optimize_final_takeout(
-                quote(Y)(
-                    optimize_final_takeout(std::move(body))));
+                quote(Y)(optimize_final_takeout(
+                    std::move(body),
+                    trace_enabled
+                        ? std::addressof(substitutions)
+                        : nullptr)),
+                trace_enabled
+                    ? std::addressof(substitutions)
+                    : nullptr);
         } else {
-            body = optimize_final_takeout(std::move(body));
+            body = optimize_final_takeout(
+                std::move(body),
+                trace_enabled
+                    ? std::addressof(substitutions)
+                    : nullptr);
+        }
+
+        if (trace_enabled) {
+            for (auto const& substitution : substitutions) {
+                if (!first_trace_line) {
+                    trace << '\n';
+                }
+                trace << "optimize: ";
+                substitution.before.print_to(trace);
+                trace << " -> ";
+                substitution.after.print_to(trace);
+                first_trace_line = false;
+            }
+            std::string label = unescape_input(name.view());
+            label += '=';
+            append_expression(label, body);
         }
 
         auto result = make_quoted_basis_snapshot(
@@ -5188,6 +5273,9 @@ private:
             result,
             std::move(user_source),
             std::move(dependencies));
+        if (trace_enabled) {
+            return quote(std::move(trace).str());
+        }
         return result;
     }
 
@@ -6250,6 +6338,7 @@ private:
     parser_definition_mode definition_mode_;
     bool is_show_all_ = false;
     bool is_find_no_match_ = false;
+    bool is_definition_trace_ = false;
     std::string replaced_definition_;
 };
 
@@ -6274,13 +6363,13 @@ inline evaluation_outcome parse_eval_with_outcome(
     bool basis_step,
     evaluation_progress_callback const& progress_callback) {
     auto parsed = detail::parse_input(source);
-    if (parsed.is_definition) {
-        return evaluation_outcome::completed;
-    }
     if (parsed.is_display_only) {
         parsed.expression.print_to(output);
         detail::print_layout(output, "\n");
         output.flush();
+        return evaluation_outcome::completed;
+    }
+    if (parsed.is_definition) {
         return evaluation_outcome::completed;
     }
     return eval_with_outcome(
@@ -6330,13 +6419,13 @@ inline evaluation_outcome parse_and_step_with_outcome(
     std::istream& input = std::cin,
     bool basis_step = false) {
     auto parsed = detail::parse_input(source);
-    if (parsed.is_definition) {
-        return evaluation_outcome::completed;
-    }
     if (parsed.is_display_only) {
         parsed.expression.print_to(output);
         detail::print_layout(output, "\n");
         output.flush();
+        return evaluation_outcome::completed;
+    }
+    if (parsed.is_definition) {
         return evaluation_outcome::completed;
     }
     return single_step_run_with_outcome(
@@ -6362,13 +6451,13 @@ inline void parse_and_key_step(
     std::istream& input = std::cin,
     bool basis_step = false) {
     auto parsed = detail::parse_input(source);
-    if (parsed.is_definition) {
-        return;
-    }
     if (parsed.is_display_only) {
         parsed.expression.print_to(output);
         detail::print_layout(output, "\n");
         output.flush();
+        return;
+    }
+    if (parsed.is_definition) {
         return;
     }
     single_step_loop(

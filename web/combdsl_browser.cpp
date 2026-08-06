@@ -155,13 +155,15 @@ make_evaluation_progress_callback(
     try {
         auto escaped_source = combdsl::input_escape(source);
         auto parsed = combdsl::detail::parse_input(escaped_source);
-        if (parsed.is_definition) {
-            return {true, true, false, {}, {}};
-        }
         if (parsed.is_display_only) {
             parsed.expression.print_to(output);
             output << '\n';
-            return {true, false, false, output.str(), {}};
+            return {
+                true, parsed.is_definition, false,
+                output.str(), {}};
+        }
+        if (parsed.is_definition) {
+            return {true, true, false, {}, {}};
         }
 
         try {
@@ -200,13 +202,15 @@ make_evaluation_progress_callback(
     try {
         auto escaped_source = combdsl::input_escape(source);
         auto parsed = combdsl::detail::parse_input(escaped_source);
-        if (parsed.is_definition) {
-            return {true, true, false, {}, {}};
-        }
         if (parsed.is_display_only) {
             parsed.expression.print_to(output);
             output << '\n';
-            return {true, false, false, output.str(), {}};
+            return {
+                true, parsed.is_definition, false,
+                output.str(), {}};
+        }
+        if (parsed.is_definition) {
+            return {true, true, false, {}, {}};
         }
 
         try {
@@ -242,15 +246,17 @@ make_evaluation_progress_callback(
     try {
         auto escaped_source = combdsl::input_escape(source);
         auto parsed = combdsl::detail::parse_input(escaped_source);
-        if (parsed.is_definition) {
-            return {true, true, false, {}, {}};
-        }
         if (parsed.is_display_only) {
             std::ostringstream output;
             combdsl::detail::print_quoted_html(
                 output, parsed.expression);
             output << '\n';
-            return {true, false, false, output.str(), {}};
+            return {
+                true, parsed.is_definition, false,
+                output.str(), {}};
+        }
+        if (parsed.is_definition) {
+            return {true, true, false, {}, {}};
         }
 
         try {
@@ -309,15 +315,16 @@ make_evaluation_progress_callback(
     try {
         auto escaped_source = combdsl::input_escape(source);
         auto parsed = combdsl::detail::parse_input(escaped_source);
-        if (parsed.is_definition) {
-            return {true, false, true, true, {}, {}};
-        }
         if (parsed.is_display_only) {
             std::ostringstream output;
             parsed.expression.print_to(output);
             output << '\n';
             return {
-                true, false, true, false, output.str(), {}};
+                true, false, true, parsed.is_definition,
+                output.str(), {}};
+        }
+        if (parsed.is_definition) {
+            return {true, false, true, true, {}, {}};
         }
         stepped_expression.emplace(std::move(parsed.expression));
         return {true, false, false, false, {}, {}};

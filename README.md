@@ -418,8 +418,8 @@ stored expression. `parse_eval`, `read_parse_eval`, `parse_and_step`, and
 stored expression, and produce no output for the declaration itself. A
 malformed declaration does not register its name.
 
-At the start of a line, preceded by optional whitespace, `define` followed
-by whitespace creates a named basis
+At the start of a line, preceded by optional whitespace, `define [steps]`
+followed by whitespace creates a named basis
 by abstracting one or more lowercase symbols from a combinator expression.
 The symbols may be adjacent or separated by whitespace. Their count becomes
 the basis arity, and abstraction proceeds from the last symbol back to the
@@ -446,9 +446,13 @@ the first pass takes out `z` with `x`, `y`, and recursive `foo` pending. The `y`
 similarly has `x` and `foo` pending, while the `x` pass has only `foo` pending.
 If the definition is recursive, the final `foo` pass has no pending atoms.
 The resulting expression has arity
-`3`. As with `set`, the definition command is silent under `parse_eval`,
-`read_parse_eval`, and `parse_and_step` or `parse_and_key_step`, and malformed
-definitions are not registered.
+`3`. Without `steps`, as with `set`, the definition command is silent under
+`parse_eval`, `read_parse_eval`, and `parse_and_step` or
+`parse_and_key_step`. With `steps`, it still registers the definition and also
+displays changed preprocessing, every right-to-left symbol `takeout`, a
+recursive-name `takeout` when needed, each optimizer substitution, and a final
+`name=<stored_expression>` line. It ignores the stepping and color modes.
+Malformed definitions are not registered.
 
 Before `takeout`, saturated named bases in the expression are applied,
 including reachable saturated bases nested inside other applications.
@@ -699,7 +703,7 @@ expression produces no output, while malformed or empty lines throw
 The `crepl` executable applies `input_escape` to each line before passing it to
 `parse_eval`, so ordinary quoted words and backslashes can be entered directly.
 When standard output is a terminal, it first prints
-`Combinator Read-Eval-Print Loop, version 2.3.9`. Long evaluations display
+`Combinator Read-Eval-Print Loop, version 2.3.10`. Long evaluations display
 the accumulated step count every 1,000 reductions by overwriting one status
 line; the line is cleared before evaluation output is printed. Its interactive
 prompt is `>`. Interactive input uses GNU Readline, so previous nonempty
@@ -755,6 +759,12 @@ unknown result. The ordinary form prints only `?=<final_expression>`. With
 `takeout` pass, and every optimizer substitution before that same final line.
 The command does not evaluate its result and ignores the stepping and color
 modes.
+Enter `define [steps] <name> <symbol_list> = <combinator_expression>` to
+create a named basis. The ordinary form is silent. With `steps`, CREPL also
+prints changed preprocessing, every right-to-left symbol `takeout`, any
+recursive-name `takeout`, and every optimizer substitution before the final
+`<name>=<stored_expression>` line. The traced form still stores the definition
+and ignores the stepping and color modes.
 Enter `find [all] [num] ?<symbol_list> = <combinator_expression>` to search
 the pre-defined bird catalog. The `?` is required and marks the unknown
 combinator expression. The optional number must be from one through four and
@@ -951,9 +961,9 @@ and eventually restore the draft that was being edited. Ctrl-O submits the
 current input and, after successful completion, recalls the next history entry
 for editing. Parse errors, `Nothing to show`, cancellation, and timeout messages
 are displayed in red and do not themselves add a blank line after them. A
-successfully registered
-`set`, `define`, or `remove` command leaves only that submitted command line,
-with no output beneath it.
+successfully registered `set`, ordinary `define`, or `remove` command leaves
+only that submitted command line, with no output beneath it. A `define steps`
+command displays its abstraction trace while registering the definition.
 The following result begins on the next line without an intervening blank line.
 A successful `show` command is also followed without an intervening blank line.
 In Combinator Studio, a nonempty `show all` ends with a red `[show end]` line.
@@ -962,8 +972,9 @@ when the Results area already contains output.
 Press Tab to complete a unique prefix for the `abstract`, `set`, `define`,
 `find`, `remove`, or `show` command; when no completion is available, Tab keeps
 its normal browser focus behavior. Studio accepts the same
-`abstract [steps] ?...` and `find [all] [num] ?...` forms as `crepl`. Find has
-a default limit of three. Without `all`, it stops at the first size with
+`abstract [steps] ?...`, `define [steps] name symbols = ...`, and
+`find [all] [num] ?...` forms as `crepl`. Find has a default limit of three.
+Without `all`, it stops at the first size with
 answers; with `all`, it continues through the full range. Every answer
 is shown as `?=<bird_expression>`, and a no-match message is red. A search
 ignores the stepping and color modes, displays `Searching…`, and can be stopped

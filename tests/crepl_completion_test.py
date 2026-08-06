@@ -245,6 +245,17 @@ def main():
             raise AssertionError(
                 f"expected abstract steps trace; received {output!r}")
 
+        write_all(master, b"define   s\tTraceComplete x = x\n")
+        output = reader.read_until(b">")
+        require_completed_line(
+            output,
+            b"define   steps TraceComplete x = x\n")
+        normalized_output = normalized(output)
+        if (b"takeout x: I\n" not in normalized_output or
+                b"TraceComplete=I\n" not in normalized_output):
+            raise AssertionError(
+                f"expected define steps trace; received {output!r}")
+
         write_all(master, b"save remembered definitions.cmb\n")
         output = reader.read_until(b">")
         require_completed_line(

@@ -44,6 +44,10 @@
     ], {appendSpaceToExact: true});
     const completeShowAll =
         inputHistoryTools.createCommandCompleter(["show all"]);
+    const completeDefineSteps =
+        inputHistoryTools.createCommandCompleter(
+            ["define steps"],
+            {appendSpaceToExact: true});
     const abstractCommandCompleters = [
         "abstract ?",
         "abstract steps ?",
@@ -82,8 +86,9 @@
     };
     const completeCommand = source =>
         completeTopLevelCommand(source) ??
-            completeAbstractCommand(source) ?? completeShowAll(source) ??
-            completeFindCommand(source);
+            completeDefineSteps(source) ??
+            completeAbstractCommand(source) ??
+            completeShowAll(source) ?? completeFindCommand(source);
     const form = document.querySelector("#evaluation-form");
     const sourceBox = document.querySelector("#source-box");
     const sourceHistory = document.querySelector("#source-history");
@@ -888,9 +893,9 @@
                 if (message.result.success) {
                     if (message.result.definition) {
                         updateSavedSetList(message.setList);
-                        completedRequest.outputEntry.dataset.compactAfter =
-                            "true";
-                    } else {
+                    }
+                    if (!message.result.definition ||
+                        completedRequest.displayOnly) {
                         const nothingToShow =
                             completedRequest.showAll &&
                             outputText(message.result.output) ===
@@ -917,6 +922,9 @@
                             completedRequest.outputEntry.dataset.compactAfter =
                                 "true";
                         }
+                    } else {
+                        completedRequest.outputEntry.dataset.compactAfter =
+                            "true";
                     }
                     completeSuccessfulSource(completedRequest);
                 } else {

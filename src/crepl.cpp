@@ -59,7 +59,7 @@
 
 namespace {
 
-constexpr std::string_view crepl_version = "2.3.9";
+constexpr std::string_view crepl_version = "2.3.10";
 
 [[nodiscard]] bool stream_is_terminal(std::FILE* stream) noexcept {
 #if defined(_WIN32)
@@ -163,6 +163,8 @@ constexpr std::array<std::string_view, 1>
     abstract_question_completion_candidates = {"?"};
 constexpr std::array<std::string_view, 1>
     abstract_steps_completion_candidates = {"steps"};
+constexpr std::array<std::string_view, 1>
+    define_steps_completion_candidates = {"steps"};
 constexpr std::array<std::string_view, 1> show_completion_candidates = {
     "all"};
 constexpr std::array<std::string_view, 5> find_completion_candidates = {
@@ -372,6 +374,10 @@ template<std::size_t Size>
                     abstract_question_completion_candidates)
                 : make_completion_candidates(
                     abstract_steps_completion_candidates);
+        }
+        if (words[0] == "define") {
+            return make_completion_candidates(
+                define_steps_completion_candidates);
         }
         if (words[0] == "show") {
             return make_completion_candidates(show_completion_candidates);
@@ -728,8 +734,8 @@ void print_help_brief(std::ostream& output) {
         "basis step [on | off]                 | names are converted to their stored expressions as a step\n"
         "birds                                 | display the pre-defined bird combinators\n"
         "colorize [on | off]                   | add colors to arguments while stepping\n"
-        "define <name> <xyz...> = <expression> | compute and store a series of combinators such that\n"
-        "                                      | <name> <xyz...> reduces to <expression>\n"
+        "define [steps] <name> <xyz...> = <expression> | compute and store combinators such that\n"
+        "                                              | <name> <xyz...> reduces to <expression>\n"
         "exit                                  | end the program\n"
         "find [all] [num] ?<symbols> = <expression> | find matching pre-defined bird forms\n"
         "help [brief | full]                   | display help information\n"
@@ -804,15 +810,21 @@ void print_help_full(std::ostream& output) {
         "In the second form, arity is a number specifying the minimal "
         "number of arguments required for the expression to reduce.");
     output << '\n'
-           << "define <name> <symbol_list> = <combinator_expression>\n";
+           << "define [steps] <name> <symbol_list> = "
+              "<combinator_expression>\n";
     write_wrapped_paragraph(
         output,
         "The \"define\" form requires one or more symbols (lower case "
         "letters) after the name, infers the arity from their count, and "
         "computes a series of combinators that will reproduce the "
         "combinator_expression. For a one-character name, the space "
-        "before the symbols may be omitted. For example, to add the "
-        "Eagle bird:");
+        "before the symbols may be omitted. Without \"steps\", define "
+        "stores the definition without displaying its computation. With "
+        "\"steps\", it also displays changed preprocessing, every "
+        "right-to-left takeout (including the recursive-name takeout when "
+        "needed), every optimizer substitution, and the final stored "
+        "result as \"name=<expression>\". For example, to add the Eagle "
+        "bird:");
     output << "define Exyzwv = xy(zwv)\n\n";
     write_wrapped_paragraph(
         output,
@@ -1615,11 +1627,11 @@ private:
     bool basis_step,
     bool key_step) {
     auto parsed = combdsl::detail::parse_input(source);
-    if (parsed.is_definition) {
-        return combdsl::evaluation_outcome::completed;
-    }
     if (parsed.is_display_only) {
         print_expression_line(output, parsed.expression);
+        return combdsl::evaluation_outcome::completed;
+    }
+    if (parsed.is_definition) {
         return combdsl::evaluation_outcome::completed;
     }
 
@@ -1641,11 +1653,11 @@ private:
     std::ostream& output,
     bool basis_step) {
     auto parsed = combdsl::detail::parse_input(source);
-    if (parsed.is_definition) {
-        return combdsl::evaluation_outcome::completed;
-    }
     if (parsed.is_display_only) {
         print_expression_line(output, parsed.expression);
+        return combdsl::evaluation_outcome::completed;
+    }
+    if (parsed.is_definition) {
         return combdsl::evaluation_outcome::completed;
     }
     return terminal_key_step_loop(

@@ -519,6 +519,73 @@ test("routes abstract steps as display-only with modes enabled", () => {
     }
 });
 
+test("renders define steps while storing its definition", () => {
+    const harness = createHarness();
+    const source = harness.element("source");
+    const worker = harness.workers[0];
+
+    worker.send({type: "ready", setList: ""});
+    harness.flushAnimationFrames();
+    harness.element("single-step").click();
+    harness.element("basis-step").click();
+    harness.element("colorize").click();
+
+    source.value = "define steps StudioTrace xy = x(yx)";
+    harness.pressEnter();
+    harness.flushAnimationFrames();
+    const inspection = worker.messages.find(
+        message => message.type === "inspect-definition");
+    worker.send({
+        type: "definition-inspection-result",
+        id: inspection.id,
+        result: {
+            success: true,
+            definition: true,
+            displayOnly: true,
+            showAll: false,
+            find: false,
+            replacement: "",
+        },
+    });
+    harness.flushAnimationFrames();
+
+    const evaluation = worker.messages.find(
+        message => message.type === "evaluate");
+    assert.equal(
+        evaluation.source,
+        "define steps StudioTrace xy = x(yx)");
+    assert.equal(evaluation.singleStep, false);
+    assert.equal(evaluation.keyStep, false);
+    assert.equal(evaluation.basisStep, false);
+    assert.equal(evaluation.colorize, false);
+
+    const trace = [
+        "takeout y: Bx(Tx)",
+        "takeout x: SBT",
+        "optimize: SBT -> A",
+        "StudioTrace=A",
+        "",
+    ].join("\n");
+    worker.send({
+        type: "result",
+        id: inspection.id,
+        setList: "define StudioTrace xy = x(yx)",
+        result: {
+            success: true,
+            definition: true,
+            recoverWorker: false,
+            output: trace,
+            error: "",
+            reductions: 0,
+        },
+    });
+
+    assert.equal(
+        harness.element("output").textContent,
+        `\n${trace.trimEnd()}`);
+    assert.equal(harness.element("save").disabled, false);
+});
+
 test("routes find as an unstepped cancellable search", () => {
     const harness = createHarness();
     const source = harness.element("source");

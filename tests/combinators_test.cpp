@@ -1397,6 +1397,9 @@ int main() {
         "bare define requires a combinator name", "define", 6,
         "missing combinator name");
     test_parse_failure(
+        "define steps requires a combinator name", "define steps", 12,
+        "missing combinator name");
+    test_parse_failure(
         "bare show requires a combinator name", "show", 4,
         "missing combinator name");
     test_parse_failure(
@@ -1452,6 +1455,72 @@ int main() {
          parse("show DefReplace"), "arity:2 I");
     test("cross-form replacement uses its new arity",
          single_step(parse("DefReplace a b")), "ab");
+
+    test("define steps inspection is definition display without changes",
+         [] {
+             auto const before = set_list();
+             auto parsed = combdsl::detail::parse_input(
+                 "define steps DefInspect xy = x(yx)",
+                 combdsl::detail::parser_definition_mode::
+                     inspect_definitions);
+             parsed.expression.print_to(std::cout);
+             std::cout << ' ' << parsed.is_display_only
+                       << parsed.is_definition
+                       << parsed.is_find << ' '
+                       << (before == set_list());
+         },
+         "DefInspect 110 1");
+    test("define steps traces and stores its optimized definition",
+         [] {
+             auto trace = parse(
+                 "define steps DefTrace xy = x(yx)");
+             trace.print_to(std::cout);
+             std::cout << '\n';
+             parse("show DefTrace").print_to(std::cout);
+             std::cout << '\n'
+                       << (set_list().ends_with(
+                           "define DefTrace xy = x(yx)")
+                           ? "canonical"
+                           : "noncanonical");
+             static_cast<void>(parse("remove DefTrace"));
+         },
+         "takeout y: Bx(Tx)\n"
+         "takeout x: SBT\n"
+         "optimize: SBT -> A\n"
+         "DefTrace=A\n"
+         "arity:2 A\n"
+         "canonical");
+    test("define steps traces changed preprocessing",
+         [] {
+             auto trace = parse(
+                 "define steps PrepTrace xyz = C(CB)xyz");
+             trace.print_to(std::cout);
+             static_cast<void>(parse("remove PrepTrace"));
+         },
+         "preprocess: C(CB)xyz -> x(yz)\n"
+         "takeout z: Bxy\n"
+         "takeout y: Bx\n"
+         "takeout x: B\n"
+         "PrepTrace=B");
+    test("define steps traces recursive abstraction and optimization",
+         [] {
+             auto trace = parse(
+                 "define steps RepeatTrace x = "
+                 "x(RepeatTrace x)");
+             trace.print_to(std::cout);
+             static_cast<void>(parse("remove RepeatTrace"));
+         },
+         "takeout x: O RepeatTrace\n"
+         "takeout RepeatTrace: O\n"
+         "optimize: YO -> Y\n"
+         "RepeatTrace=Y");
+    test("define steps supports a compact one-character signature",
+         [] {
+             auto trace = parse("define steps ~x = x");
+             trace.print_to(std::cout);
+             static_cast<void>(parse("remove ~"));
+         },
+         "takeout x: I\n~=I");
 
     test("abstract returns only its optimized expression",
          parse("abstract ?xy = x(yx)"), "?=A");
@@ -2528,12 +2597,17 @@ int main() {
             std::string(name);
         test_parse_failure(set_title, set_source, 4, detail);
 
-        auto const define_source =
-            std::string("define ") + std::string(name) + " x = x";
+        auto const define_source = name == "steps"
+            ? "define steps steps x = x"
+            : std::string("define ") + std::string(name) + " x = x";
         auto const define_title =
             std::string("define rejects reserved word ") +
             std::string(name);
-        test_parse_failure(define_title, define_source, 7, detail);
+        test_parse_failure(
+            define_title,
+            define_source,
+            name == "steps" ? 13 : 7,
+            detail);
     }
     test_parse_failure("set requires a basis name", "set = I", 4);
     test_parse_failure("set requires an equals sign", "set NoEq I", 9);
@@ -2713,6 +2787,17 @@ int main() {
          [&] { parse_eval("define EvalD x = x"); }, "");
     test("parse eval uses a silently registered define basis",
          [&] { parse_eval("EvalD y"); }, "y\n");
+    test("parse eval displays define steps while registering it",
+         [] {
+             parse_eval("define steps EvalTrace xy = x(yx)");
+             parse("show EvalTrace").print_to(std::cout);
+             static_cast<void>(parse("remove EvalTrace"));
+         },
+         "takeout y: Bx(Tx)\n"
+         "takeout x: SBT\n"
+         "optimize: SBT -> A\n"
+         "EvalTrace=A\n"
+         "arity:2 A");
     test("parse eval displays abstract without evaluating it",
          [&] { parse_eval("abstract ?xyz = xz(yz)"); }, "?=S\n");
     test("parse and step displays an abstract trace once",
@@ -2756,6 +2841,30 @@ int main() {
              std::cout << output.str();
          },
          "");
+    test("parse and step displays define steps without reducing it",
+         [] {
+             std::istringstream input;
+             std::ostringstream output;
+             parse_and_step(
+                 "define steps StepTrace x = x",
+                 output,
+                 input);
+             std::cout << output.str();
+             static_cast<void>(parse("remove StepTrace"));
+         },
+         "takeout x: I\nStepTrace=I\n");
+    test("parse and key step displays define steps without pausing",
+         [] {
+             std::istringstream input;
+             std::ostringstream output;
+             parse_and_key_step(
+                 "define steps KeyTrace x = x",
+                 output,
+                 input);
+             std::cout << output.str();
+             static_cast<void>(parse("remove KeyTrace"));
+         },
+         "takeout x: I\nKeyTrace=I\n");
     test("parse eval uses the parse-and-step define basis",
          [&] { parse_eval("StepD z"); }, "z\n");
     test("parse eval does not mistake definex for a definition",

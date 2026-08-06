@@ -35,11 +35,15 @@ set <name> = <arity> <combinator_expression>
 In the second form, arity is a number specifying the minimal number of arguments
 required for the expression to reduce.
 
-define <name> <symbol_list> = <combinator_expression>
+define [steps] <name> <symbol_list> = <combinator_expression>
 The "define" form requires one or more symbols (lower case letters) after the
 name, infers the arity from their count, and computes a series of combinators
 that will reproduce the combinator_expression. For a one-character name, the
-space before the symbols may be omitted. For example, to add the Eagle bird:
+space before the symbols may be omitted. Without "steps", define stores the
+definition without displaying its computation. With "steps", it also displays
+changed preprocessing, every right-to-left takeout (including the recursive-name
+takeout when needed), every optimizer substitution, and the final stored result
+as "name=<expression>". For example, to add the Eagle bird:
 define Exyzwv = xy(zwv)
 
 User-defined combinator names created by "set" or "define" may be redefined. An

@@ -110,6 +110,19 @@ test("completes the show all command form", () => {
     assert.equal(complete("show   "), "show   all");
 });
 
+test("completes the optional define steps form", () => {
+    const complete = createCommandCompleter(
+        ["define steps"],
+        {appendSpaceToExact: true});
+
+    assert.equal(complete("define s"), "define steps ");
+    assert.equal(complete("define   "), "define   steps ");
+    assert.equal(
+        complete("  define\tsteps"),
+        "  define\tsteps ");
+    assert.equal(complete("define foo"), undefined);
+});
+
 test("completes unambiguous abstract command forms", () => {
     const completers = [
         "abstract ?",

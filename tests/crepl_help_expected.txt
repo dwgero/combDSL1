@@ -4,8 +4,8 @@ abstract [steps] ?<symbols> = <expression> | display combinator abstraction
 basis step [on | off]                 | names are converted to their stored expressions as a step
 birds                                 | display the pre-defined bird combinators
 colorize [on | off]                   | add colors to arguments while stepping
-define <name> <xyz...> = <expression> | compute and store a series of combinators such that
-                                      | <name> <xyz...> reduces to <expression>
+define [steps] <name> <xyz...> = <expression> | compute and store combinators such that
+                                              | <name> <xyz...> reduces to <expression>
 exit                                  | end the program
 find [all] [num] ?<symbols> = <expression> | find matching pre-defined bird forms
 help [brief | full]                   | display help information
@@ -23,8 +23,8 @@ abstract [steps] ?<symbols> = <expression> | display combinator abstraction
 basis step [on | off]                 | names are converted to their stored expressions as a step
 birds                                 | display the pre-defined bird combinators
 colorize [on | off]                   | add colors to arguments while stepping
-define <name> <xyz...> = <expression> | compute and store a series of combinators such that
-                                      | <name> <xyz...> reduces to <expression>
+define [steps] <name> <xyz...> = <expression> | compute and store combinators such that
+                                              | <name> <xyz...> reduces to <expression>
 exit                                  | end the program
 find [all] [num] ?<symbols> = <expression> | find matching pre-defined bird forms
 help [brief | full]                   | display help information

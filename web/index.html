@@ -362,9 +362,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             color: #c33;
         }
     </style>
-    <script src="./evaluation_watchdog.js?v=2.3.9" defer></script>
-    <script src="./input_history.js?v=2.3.9" defer></script>
-    <script src="./app.js?v=2.3.9" defer></script>
+    <script src="./evaluation_watchdog.js?v=2.3.10" defer></script>
+    <script src="./input_history.js?v=2.3.10" defer></script>
+    <script src="./app.js?v=2.3.10" defer></script>
 </head>
 <body>
     <main aria-labelledby="studio-title">
@@ -510,13 +510,20 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             the minimal number of arguments required for the expression
             to reduce.
             <br><br>
-            <code>define name symbol_list = combinator_expression</code><br>
+            <code>define [steps] name symbol_list =
+                combinator_expression</code><br>
             The <code>define</code> form requires one or more <code>symbols</code>
             (lower case letters) after the name, infers the arity from their count,
             and computes a series of combinators that will reproduce the
             <code>combinator_expression</code>.  For a one-character name,
-            the space before the symbols may be omitted. For example, to add the
-            Eagle bird:<br>
+            the space before the symbols may be omitted. Without
+            <code>steps</code>, the definition is stored without displaying its
+            computation. With <code>steps</code>, it also displays changed
+            preprocessing, every right-to-left <code>takeout</code> (including a
+            recursive-name <code>takeout</code> when needed), every optimizer
+            substitution, and the final stored result as
+            <code>name=combinator_expression</code>. For example, to add the Eagle
+            bird:<br>
             <code>define Exyzwv = xy(zwv)</code>
             <br><br>
             User-defined combinator names created by <code>set</code> or
@@ -697,7 +704,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             data-dialog-initial-focus>About</h2>
         <div class="license-text">
             <!-- Keep this version and the app.js cache key in sync. -->
-            <p>Combinator Studio, version 2.3.9<br>
+            <p>Combinator Studio, version 2.3.10<br>
                 Part of the C++ Combinator DSL<br>
                 Copyright (C) 2026  David W. Gero</p>
             <p>This program is free software: you can redistribute it and/or modify
