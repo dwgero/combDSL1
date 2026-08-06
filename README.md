@@ -474,9 +474,10 @@ every `takeout` pass, and each optimizer substitution before the final
 omitted.
 
 The names `abstract`, `all`, `steps`, `set`, `define`, `show`, `remove`,
-`single`, `key`, `basis`, `colorize`, `about`, `birds`, `find`, `help`,
-`load`, `save`, `quit`, and `exit` are reserved words and cannot be used as
-names by either `set` or `define`.
+`dependson`, `depends-on`, `depends`, `on`, `usedby`, `used-by`, `used`, `by`,
+`single`, `key`, `basis`, `colorize`, `about`, `birds`, `find`, `help`, `load`,
+`save`, `quit`, and `exit` are reserved words and cannot be used as names by
+either `set` or `define`.
 
 Occurrences of the defined name in the combinator expression are recursive
 references. If any remain after the argument symbols are abstracted, `define`
@@ -640,6 +641,23 @@ parse_eval("show x");   // parse error: x is not a defined name
 `quoted_expression`. `parse_eval`, `read_parse_eval`, `parse_and_step`, and
 `parse_and_key_step` print that result once without evaluating or stepping it.
 
+The display-only commands `dependson name`, `depends-on name`, and
+`depends on name` list the named bases whose current stored definitions
+directly contain `name`. The equivalent forms `usedby name`, `used-by name`,
+and `used by name` list the named bases directly contained in `name`'s current
+stored definition. Both pre-defined and user-defined named bases participate,
+while the fundamental names `S`, `K`, `I`, and `Y` are excluded. Results are
+deduplicated and sorted by name. Empty results are reported as
+`name is not depended on by anything` or `name uses nothing`. For example:
+
+```cpp
+parse("set Base = 0 I");
+parse("set Left = 0 Base");
+parse("set Right = 0 Base");
+parse_eval("depends on Base"); // Base is depended on by: Left Right
+parse_eval("usedby Left");     // Left uses: Base
+```
+
 At the start of a line, optionally preceded by whitespace, `remove` followed
 by whitespace and a name removes a user-defined basis from future parsing.
 Previously parsed expressions and other bases that captured its definition
@@ -703,7 +721,7 @@ expression produces no output, while malformed or empty lines throw
 The `crepl` executable applies `input_escape` to each line before passing it to
 `parse_eval`, so ordinary quoted words and backslashes can be entered directly.
 When standard output is a terminal, it first prints
-`Combinator Read-Eval-Print Loop, version 2.3.10`. Long evaluations display
+`Combinator Read-Eval-Print Loop, version 2.3.12`. Long evaluations display
 the accumulated step count every 1,000 reductions by overwriting one status
 line; the line is cleared before evaluation output is printed. Its interactive
 prompt is `>`. Interactive input uses GNU Readline, so previous nonempty
@@ -752,6 +770,12 @@ definition and removal records remain saveable when another basis referred to
 that name; otherwise both are omitted. Pre-defined names cannot be removed.
 Enter `show all` to display the entire saved definition list, or
 `Nothing to show` when it is empty.
+Enter `dependson <name>`, `depends-on <name>`, or `depends on <name>` to list
+the named bases whose definitions directly contain that name. Enter
+`usedby <name>`, `used-by <name>`, or `used by <name>` to list the named
+bases directly contained in that name's definition. Both queries include
+pre-defined and user-defined bases, exclude `S`, `K`, `I`, and `Y`, and ignore
+the stepping and color modes.
 Enter `abstract [steps] ?<symbol_list> = <combinator_expression>` to perform
 `define`'s abstraction without creating a name. The required `?` marks the
 unknown result. The ordinary form prints only `?=<final_expression>`. With
@@ -970,8 +994,9 @@ In Combinator Studio, a nonempty `show all` ends with a red `[show end]` line.
 A submitted combinator expression nevertheless always begins after a blank line
 when the Results area already contains output.
 Press Tab to complete a unique prefix for the `abstract`, `set`, `define`,
-`find`, `remove`, or `show` command; when no completion is available, Tab keeps
-its normal browser focus behavior. Studio accepts the same
+`dependson`, `depends-on`, `depends on`, `find`, `remove`, `show`, `usedby`,
+`used-by`, or `used by` command; when no completion is available, Tab keeps its
+normal browser focus behavior. Studio accepts the same
 `abstract [steps] ?...`, `define [steps] name symbols = ...`, and
 `find [all] [num] ?...` forms as `crepl`. Find has a default limit of three.
 Without `all`, it stops at the first size with

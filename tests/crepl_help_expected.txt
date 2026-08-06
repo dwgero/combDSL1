@@ -6,6 +6,8 @@ birds                                 | display the pre-defined bird combinators
 colorize [on | off]                   | add colors to arguments while stepping
 define [steps] <name> <xyz...> = <expression> | compute and store combinators such that
                                               | <name> <xyz...> reduces to <expression>
+dependson <name> | depends-on <name> | depends on <name>
+                                      | display named bases that directly contain <name>
 exit                                  | end the program
 find [all] [num] ?<symbols> = <expression> | find matching pre-defined bird forms
 help [brief | full]                   | display help information
@@ -17,6 +19,8 @@ save <filename>                       | save user-defined combinators to a file
 set <name> = [number] <expression>    | store <expression> as <name> with arity <number> or 0
 show <name | all>                     | display one definition or the entire set list
 single step [on | off]                | display each step of the reduction without pause
+usedby <name> | used-by <name> | used by <name>
+                                      | display named bases directly contained in <name>
 Commands:
 about                                 | display copyright and redistribution information
 abstract [steps] ?<symbols> = <expression> | display combinator abstraction
@@ -25,6 +29,8 @@ birds                                 | display the pre-defined bird combinators
 colorize [on | off]                   | add colors to arguments while stepping
 define [steps] <name> <xyz...> = <expression> | compute and store combinators such that
                                               | <name> <xyz...> reduces to <expression>
+dependson <name> | depends-on <name> | depends on <name>
+                                      | display named bases that directly contain <name>
 exit                                  | end the program
 find [all] [num] ?<symbols> = <expression> | find matching pre-defined bird forms
 help [brief | full]                   | display help information
@@ -36,3 +42,5 @@ save <filename>                       | save user-defined combinators to a file
 set <name> = [number] <expression>    | store <expression> as <name> with arity <number> or 0
 show <name | all>                     | display one definition or the entire set list
 single step [on | off]                | display each step of the reduction without pause
+usedby <name> | used-by <name> | used by <name>
+                                      | display named bases directly contained in <name>

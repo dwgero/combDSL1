@@ -586,6 +586,72 @@ test("renders define steps while storing its definition", () => {
     assert.equal(harness.element("save").disabled, false);
 });
 
+test("routes every dependency alias as display-only", () => {
+    const cases = [
+        ["dependson A", "A is depended on by: B C\n"],
+        ["depends-on A", "A is depended on by: B C\n"],
+        ["depends on A", "A is depended on by: B C\n"],
+        ["usedby A", "A uses: B C\n"],
+        ["used-by A", "A uses: B C\n"],
+        ["used by A", "A uses: B C\n"],
+    ];
+
+    for (const [command, commandOutput] of cases) {
+        const harness = createHarness();
+        const source = harness.element("source");
+        const worker = harness.workers[0];
+
+        worker.send({type: "ready", setList: ""});
+        harness.flushAnimationFrames();
+        harness.element("single-step").click();
+        harness.element("basis-step").click();
+        harness.element("colorize").click();
+
+        source.value = command;
+        harness.pressEnter();
+        harness.flushAnimationFrames();
+        const inspection = worker.messages.find(
+            message => message.type === "inspect-definition");
+        worker.send({
+            type: "definition-inspection-result",
+            id: inspection.id,
+            result: {
+                success: true,
+                definition: false,
+                displayOnly: true,
+                showAll: false,
+                find: false,
+                replacement: "",
+            },
+        });
+        harness.flushAnimationFrames();
+
+        const evaluation = worker.messages.find(
+            message => message.type === "evaluate");
+        assert.equal(evaluation.source, command);
+        assert.equal(evaluation.singleStep, false);
+        assert.equal(evaluation.keyStep, false);
+        assert.equal(evaluation.basisStep, false);
+        assert.equal(evaluation.colorize, false);
+
+        worker.send({
+            type: "result",
+            id: inspection.id,
+            result: {
+                success: true,
+                definition: false,
+                recoverWorker: false,
+                output: commandOutput,
+                error: "",
+                reductions: 0,
+            },
+        });
+        assert.equal(
+            harness.element("output").textContent,
+            `\n${commandOutput.trimEnd()}`);
+    }
+});
+
 test("routes find as an unstepped cancellable search", () => {
     const harness = createHarness();
     const source = harness.element("source");

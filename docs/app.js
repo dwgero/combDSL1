@@ -37,10 +37,16 @@
         inputHistoryTools.createCommandCompleter([
         "abstract",
         "define",
+        "depends on",
+        "depends-on",
+        "dependson",
         "find",
         "remove",
         "set",
         "show",
+        "used by",
+        "used-by",
+        "usedby",
     ], {appendSpaceToExact: true});
     const completeShowAll =
         inputHistoryTools.createCommandCompleter(["show all"]);

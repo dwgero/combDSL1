@@ -362,9 +362,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             color: #c33;
         }
     </style>
-    <script src="./evaluation_watchdog.js?v=2.3.10" defer></script>
-    <script src="./input_history.js?v=2.3.10" defer></script>
-    <script src="./app.js?v=2.3.10" defer></script>
+    <script src="./evaluation_watchdog.js?v=2.3.12" defer></script>
+    <script src="./input_history.js?v=2.3.12" defer></script>
+    <script src="./app.js?v=2.3.12" defer></script>
 </head>
 <body>
     <main aria-labelledby="studio-title">
@@ -500,7 +500,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
         <div class="help-section">
             Press <kbd>Tab</kbd> to complete a unique prefix for
             <code>abstract</code>, <code>set</code>, <code>define</code>,
-            <code>find</code>, <code>remove</code>, or <code>show</code>.
+            the dependency commands described below, <code>find</code>,
+            <code>remove</code>, or <code>show</code>.
             <br><br>
             <code>set name = combinator_expression</code><br>
             In the first form, the expression always reduces immediately.
@@ -546,6 +547,27 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             definition and the <code>remove</code> command remain in the saved
             set list so dependent bases can be recreated. Otherwise, neither
             command is saved. Pre-defined names cannot be removed.
+        </div>
+        <h2 class="help-subheading">Inspecting Dependencies</h2>
+        <div class="help-section">
+            <code>dependson name</code>, <code>depends-on name</code>, or
+            <code>depends on name</code><br>
+            These equivalent commands list every pre-defined or currently
+            user-defined named basis whose definition directly contains
+            <code>name</code>. The result is displayed as
+            <code>name is depended on by: names</code>, or
+            <code>name is not depended on by anything</code> when the list is
+            empty.
+            <br><br>
+            <code>usedby name</code>, <code>used-by name</code>, or
+            <code>used by name</code><br>
+            These equivalent commands list every pre-defined or currently
+            user-defined named basis directly contained in <code>name</code>'s
+            definition. The result is displayed as
+            <code>name uses: names</code>, or <code>name uses nothing</code>
+            when the list is empty. Both kinds of dependency query exclude
+            the fundamental names <code>S</code>, <code>K</code>,
+            <code>I</code>, and <code>Y</code> from their results.
         </div>
         <h2 class="help-subheading">Abstracting Expressions</h2>
         <div class="help-section">
@@ -704,7 +726,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             data-dialog-initial-focus>About</h2>
         <div class="license-text">
             <!-- Keep this version and the app.js cache key in sync. -->
-            <p>Combinator Studio, version 2.3.10<br>
+            <p>Combinator Studio, version 2.3.12<br>
                 Part of the C++ Combinator DSL<br>
                 Copyright (C) 2026  David W. Gero</p>
             <p>This program is free software: you can redistribute it and/or modify

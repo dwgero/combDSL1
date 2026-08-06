@@ -1109,6 +1109,86 @@ int main() {
                        << (one.is_show_all ? "all" : "name");
          },
          "all name");
+    test("usedby accepts its compact alias",
+         parse("usedby U"), "U uses: B M O");
+    test("usedby accepts its hyphenated alias",
+         parse("used-by U"), "U uses: B M O");
+    test("usedby accepts its two-word alias and extra whitespace",
+         parse(" \tused\n  by\t U\f"), "U uses: B M O");
+    test("dependson accepts its compact alias",
+         parse("dependson O"), "O is depended on by: U");
+    test("dependson accepts its hyphenated alias",
+         parse("depends-on O"), "O is depended on by: U");
+    test("dependson accepts its two-word alias and extra whitespace",
+         parse(" \tdepends\n  on\t O\f"),
+         "O is depended on by: U");
+    test("usedby excludes fundamental combinators",
+         parse("usedby M"), "M uses nothing");
+    test("usedby deduplicates and sorts direct named bases",
+         parse("usedby Q1"), "Q1 uses: B C");
+    test("dependson reports no direct users",
+         parse("dependson J"),
+         "J is not depended on by anything");
+    test("dependency commands are display only",
+         [] {
+             auto const depends =
+                 combdsl::detail::parse_input("depends on O");
+             auto const used =
+                 combdsl::detail::parse_input("used by U");
+             std::cout << depends.is_display_only
+                       << depends.is_definition
+                       << used.is_display_only
+                       << used.is_definition;
+         },
+         "1010");
+    test_parse_failure(
+        "plain depends requires on", "depends O", 8,
+        "expected 'on'");
+    test_parse_failure(
+        "plain used requires by", "used U", 5,
+        "expected 'by'");
+    test_parse_failure(
+        "dependson requires a name", "dependson", 9,
+        "missing combinator name");
+    test_parse_failure(
+        "depends-on requires a name", "depends-on ", 11,
+        "missing combinator name");
+    test_parse_failure(
+        "depends on requires a name", "depends on", 10,
+        "missing combinator name");
+    test_parse_failure(
+        "usedby requires a name", "usedby", 6,
+        "missing combinator name");
+    test_parse_failure(
+        "used-by requires a name", "used-by ", 8,
+        "missing combinator name");
+    test_parse_failure(
+        "used by requires a name", "used by", 7,
+        "missing combinator name");
+    test_parse_failure(
+        "dependson rejects an undefined name",
+        "dependson MissingDep", 10,
+        "MissingDep is not a defined name");
+    test_parse_failure(
+        "usedby rejects an undefined name",
+        "usedby MissingDep", 7,
+        "MissingDep is not a defined name");
+    test_parse_failure(
+        "dependson rejects a fundamental name", "dependson S", 10,
+        "S is a fundamental name and cannot be queried");
+    test_parse_failure(
+        "usedby rejects a fundamental name", "usedby Y", 7,
+        "Y is a fundamental name and cannot be queried");
+    test_parse_failure(
+        "dependson rejects trailing input", "dependson O extra", 12,
+        "unexpected input after name");
+    test_parse_failure(
+        "usedby rejects trailing input", "usedby U extra", 9,
+        "unexpected input after name");
+    test("dependency command prefixes remain ordinary input",
+         parse("dependsonx"), "dependsonx");
+    test("reverse dependency command prefixes remain ordinary input",
+         parse("usedbyx"), "usedbyx");
     test("set list registers a default zero arity",
          parse(input_escape("set LZero = I")), "LZero");
     test("set list shows a default zero arity",
@@ -1142,6 +1222,16 @@ int main() {
          single_step(parse(input_escape("Q\\R x"))), "x");
     test("set list raw word basis replays",
          single_step(parse(input_escape("LRaw x"))), "a b()\\c");
+    test("usedby reports a direct user dependency",
+         parse("usedby LUse"), "LUse uses: LZero");
+    test("dependson reports a direct user",
+         parse("dependson LZero"),
+         "LZero is depended on by: LUse");
+    test("usedby stops at the directly contained named basis",
+         parse("usedby LMulti"), "LMulti uses: Cstar");
+    test("dependson includes predefined and user bases",
+         parse("dependson Cstar"),
+         "Cstar is depended on by: LMulti Vstar");
 
     test("set list accepts a later duplicate definition",
          parse(input_escape("set LPair = 1 I")), "LPair");
@@ -2216,6 +2306,11 @@ int main() {
          parse("set HistA=K"), "HistA");
     test("captured dependency keeps its earlier snapshot",
          single_step(single_step(parse("HistB x"))), "Ix");
+    test("usedby recognizes a captured earlier snapshot by name",
+         parse("usedby HistB"), "HistB uses: HistA");
+    test("dependson recognizes a captured earlier snapshot by name",
+         parse("dependson HistA"),
+         "HistA is depended on by: HistB");
     test("the replaced dependency uses its new definition",
          single_step(parse("HistA x")), "Kx");
     test("same source can change after a captured dependency changes",
@@ -2238,6 +2333,13 @@ int main() {
                  : "not ordered");
          },
          "ordered");
+    test("dependson excludes the queried basis from its dependents",
+         [] {
+             static_cast<void>(parse("set Self = 1 I"));
+             static_cast<void>(parse("set Self = 1 Self"));
+             parse("dependson Self").print_to(std::cout);
+         },
+         "Self is not depended on by anything");
     test("a deeply nested equivalent definition is unchanged",
          [] {
              std::string definition = "set DeepEq = ";
@@ -2586,7 +2688,8 @@ int main() {
     constexpr std::string_view reserved_definition_names[] = {
         "abstract", "all", "steps", "set", "define", "show", "single",
         "key", "basis", "colorize", "about", "birds", "find", "help",
-        "load", "remove", "save", "quit", "exit"};
+        "load", "remove", "save", "dependson", "depends-on", "depends",
+        "on", "usedby", "used-by", "used", "by", "quit", "exit"};
     for (auto const name : reserved_definition_names) {
         auto const detail =
             std::string(name) + " is a reserved word";

@@ -36,16 +36,28 @@ test("completes unique Studio command prefixes", () => {
     const complete = createCommandCompleter([
         "abstract",
         "define",
+        "depends on",
+        "depends-on",
+        "dependson",
         "find",
         "set",
         "show",
+        "used by",
+        "used-by",
+        "usedby",
     ]);
 
     assert.equal(complete("abs"), "abstract");
     assert.equal(complete("def"), "define");
+    assert.equal(complete("depends o"), "depends on");
+    assert.equal(complete("depends-"), "depends-on");
+    assert.equal(complete("dependso"), "dependson");
     assert.equal(complete("fin"), "find");
     assert.equal(complete("se"), "set");
     assert.equal(complete("sho"), "show");
+    assert.equal(complete("used b"), "used by");
+    assert.equal(complete("used-"), "used-by");
+    assert.equal(complete("usedb"), "usedby");
 });
 
 test("does not complete ambiguous, exact, or argument text", () => {
@@ -89,6 +101,29 @@ test("completes the remove command with its delimiter", () => {
     assert.equal(complete("remove"), "remove ");
     assert.equal(complete("  rem"), "  remove ");
     assert.equal(complete("remove "), undefined);
+});
+
+test("completes dependency commands with their delimiter", () => {
+    const complete = createCommandCompleter([
+        "depends on",
+        "depends-on",
+        "dependson",
+        "used by",
+        "used-by",
+        "usedby",
+    ], {appendSpaceToExact: true});
+
+    assert.equal(complete("dependso"), "dependson ");
+    assert.equal(complete("depends-"), "depends-on ");
+    assert.equal(complete("depends o"), "depends on ");
+    assert.equal(complete("depends   on"), "depends   on ");
+    assert.equal(complete("usedb"), "usedby ");
+    assert.equal(complete("used-by"), "used-by ");
+    assert.equal(complete("  used\tb"), "  used\tby ");
+    assert.equal(complete("used by"), "used by ");
+    assert.equal(complete("depends"), undefined);
+    assert.equal(complete("used"), undefined);
+    assert.equal(complete("depends on Foo"), undefined);
 });
 
 test("completes phrases while preserving multiple whitespace", () => {

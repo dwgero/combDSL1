@@ -59,7 +59,7 @@
 
 namespace {
 
-constexpr std::string_view crepl_version = "2.3.10";
+constexpr std::string_view crepl_version = "2.3.12";
 
 [[nodiscard]] bool stream_is_terminal(std::FILE* stream) noexcept {
 #if defined(_WIN32)
@@ -149,10 +149,11 @@ struct completion_candidates {
     std::size_t size = 0;
 };
 
-constexpr std::array<std::string_view, 17> command_completion_candidates = {
+constexpr std::array<std::string_view, 23> command_completion_candidates = {
     "about", "abstract", "basis", "birds", "colorize", "define",
-    "exit", "find", "help", "key", "load", "quit", "remove",
-    "save", "set", "show", "single"};
+    "depends", "depends-on", "dependson", "exit", "find", "help",
+    "key", "load", "quit", "remove", "save", "set", "show",
+    "single", "used", "used-by", "usedby"};
 constexpr std::array<std::string_view, 1> step_completion_candidates = {
     "step"};
 constexpr std::array<std::string_view, 2> toggle_completion_candidates = {
@@ -165,6 +166,10 @@ constexpr std::array<std::string_view, 1>
     abstract_steps_completion_candidates = {"steps"};
 constexpr std::array<std::string_view, 1>
     define_steps_completion_candidates = {"steps"};
+constexpr std::array<std::string_view, 1>
+    depends_on_completion_candidates = {"on"};
+constexpr std::array<std::string_view, 1>
+    used_by_completion_candidates = {"by"};
 constexpr std::array<std::string_view, 1> show_completion_candidates = {
     "all"};
 constexpr std::array<std::string_view, 5> find_completion_candidates = {
@@ -378,6 +383,14 @@ template<std::size_t Size>
         if (words[0] == "define") {
             return make_completion_candidates(
                 define_steps_completion_candidates);
+        }
+        if (words[0] == "depends") {
+            return make_completion_candidates(
+                depends_on_completion_candidates);
+        }
+        if (words[0] == "used") {
+            return make_completion_candidates(
+                used_by_completion_candidates);
         }
         if (words[0] == "show") {
             return make_completion_candidates(show_completion_candidates);
@@ -736,6 +749,8 @@ void print_help_brief(std::ostream& output) {
         "colorize [on | off]                   | add colors to arguments while stepping\n"
         "define [steps] <name> <xyz...> = <expression> | compute and store combinators such that\n"
         "                                              | <name> <xyz...> reduces to <expression>\n"
+        "dependson <name> | depends-on <name> | depends on <name>\n"
+        "                                      | display named bases that directly contain <name>\n"
         "exit                                  | end the program\n"
         "find [all] [num] ?<symbols> = <expression> | find matching pre-defined bird forms\n"
         "help [brief | full]                   | display help information\n"
@@ -746,7 +761,9 @@ void print_help_brief(std::ostream& output) {
         "save <filename>                       | save user-defined combinators to a file\n"
         "set <name> = [number] <expression>    | store <expression> as <name> with arity <number> or 0\n"
         "show <name | all>                     | display one definition or the entire set list\n"
-        "single step [on | off]                | display each step of the reduction without pause\n";
+        "single step [on | off]                | display each step of the reduction without pause\n"
+        "usedby <name> | used-by <name> | used by <name>\n"
+        "                                      | display named bases directly contained in <name>\n";
     output.flush();
 }
 
@@ -850,6 +867,30 @@ void print_help_full(std::ostream& output) {
         "remain in the saved set list so dependent bases can be recreated. "
         "Otherwise, neither command is saved. Pre-defined names cannot be "
         "removed.");
+
+    output << "\nInspecting Dependencies\n\n"
+           << "dependson <name>\n"
+           << "depends-on <name>\n"
+           << "depends on <name>\n";
+    write_wrapped_paragraph(
+        output,
+        "The three forms are equivalent. They display the named bases whose "
+        "definitions directly contain name. Results are printed as \"A is "
+        "depended on by: B C\" or \"A is not depended on by anything\".");
+    output << '\n'
+           << "usedby <name>\n"
+           << "used-by <name>\n"
+           << "used by <name>\n";
+    write_wrapped_paragraph(
+        output,
+        "The three forms are equivalent. They display the named bases "
+        "directly contained in name's definition. Results are printed as "
+        "\"A uses: B C\" or \"A uses nothing\".");
+    output.put('\n');
+    write_wrapped_paragraph(
+        output,
+        "Both searches include pre-defined and current user-defined named "
+        "bases, but exclude the fundamental names S, K, I, and Y.");
 
     output << "\nAbstracting Expressions\n\n"
            << "abstract [steps] ?<symbol_list> = <combinator_expression>\n";

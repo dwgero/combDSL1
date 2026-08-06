@@ -4474,6 +4474,122 @@ registered_parser_bases_snapshot() {
     return parser_basis_registry();
 }
 
+enum class parser_dependency_direction {
+    depended_on_by,
+    uses
+};
+
+[[nodiscard]] inline std::vector<std::string>
+parser_dependency_names(
+    std::string_view name,
+    parser_dependency_direction direction,
+    registered_parser_basis_table const& registered_bases) {
+    auto const target = registered_bases.find(name);
+    if (target == registered_bases.end()) {
+        return {};
+    }
+
+    auto direct_names = [&](quoted_expression const& expression) {
+        std::vector<std::string> result;
+        std::unordered_set<std::string> added;
+        std::unordered_set<quoted_node const*> visited;
+        std::vector<std::shared_ptr<quoted_node const>> pending;
+
+        auto const& expression_root = quoted_access::root(expression);
+        if (expression_root->kind() != quoted_node_kind::basis) {
+            throw std::logic_error(
+                "combdsl::registered parser basis is not a basis");
+        }
+        auto const& basis =
+            static_cast<quoted_basis_node_base const&>(
+                *expression_root);
+        pending.push_back(quoted_access::root(basis.body()));
+
+        while (!pending.empty()) {
+            auto root = std::move(pending.back());
+            pending.pop_back();
+            if (!visited.emplace(root.get()).second) {
+                continue;
+            }
+
+            if (root->kind() == quoted_node_kind::basis) {
+                auto const nested_name =
+                    static_cast<quoted_basis_node_base const&>(
+                        *root).name();
+                if (registered_bases.contains(nested_name) &&
+                    added.emplace(nested_name).second) {
+                    result.emplace_back(nested_name);
+                }
+                continue;
+            }
+
+            switch (root->kind()) {
+            case quoted_node_kind::application: {
+                auto const& application =
+                    static_cast<quoted_application_node const&>(
+                        *root);
+                pending.push_back(quoted_access::root(
+                    application.argument()));
+                pending.push_back(quoted_access::root(
+                    application.function()));
+                break;
+            }
+            case quoted_node_kind::pending_sk:
+                pending.push_back(quoted_access::root(
+                    static_cast<quoted_pending_sk_node const&>(*root)
+                        .application()));
+                break;
+            case quoted_node_kind::recursive_y:
+                pending.push_back(quoted_access::root(
+                    static_cast<quoted_recursive_y_node const&>(*root)
+                        .generator()));
+                break;
+            case quoted_node_kind::basis_argument:
+                pending.push_back(quoted_access::root(
+                    static_cast<quoted_basis_argument_node const&>(
+                        *root).argument()));
+                break;
+            case quoted_node_kind::colored_argument:
+                pending.push_back(quoted_access::root(
+                    static_cast<quoted_colored_argument_node const&>(
+                        *root).argument()));
+                break;
+            case quoted_node_kind::opaque:
+            case quoted_node_kind::rec_func:
+            case quoted_node_kind::identity:
+            case quoted_node_kind::constant:
+            case quoted_node_kind::substitution:
+            case quoted_node_kind::fixed_point:
+            case quoted_node_kind::basis:
+                break;
+            }
+        }
+
+        std::ranges::sort(result);
+        return result;
+    };
+
+    if (direction == parser_dependency_direction::uses) {
+        return direct_names(target->second->expression());
+    }
+
+    std::vector<std::string> result;
+    for (auto const& [candidate_name, candidate] :
+         registered_bases) {
+        if (candidate_name == name) {
+            continue;
+        }
+        auto const dependencies =
+            direct_names(candidate->expression());
+        if (std::ranges::find(dependencies, name) !=
+            dependencies.end()) {
+            result.push_back(candidate_name);
+        }
+    }
+    std::ranges::sort(result);
+    return result;
+}
+
 [[nodiscard]] inline bool same_registered_parser_bases(
     registered_parser_basis_table const& left,
     registered_parser_basis_table const& right) {
@@ -4679,6 +4795,14 @@ public:
             begins_command("find");
         auto const is_abstract_command =
             begins_command("abstract");
+        auto const is_depended_on_by_command =
+            begins_command("dependson") ||
+            begins_command("depends-on") ||
+            begins_command("depends");
+        auto const is_uses_command =
+            begins_command("usedby") ||
+            begins_command("used-by") ||
+            begins_command("used");
         auto const is_definition =
             is_set_definition || is_define_definition ||
             is_remove_definition;
@@ -4694,7 +4818,15 @@ public:
                             ? parse_find_command()
                             : is_abstract_command
                                 ? parse_abstract_command()
-                                : parse_expression();
+                                : is_depended_on_by_command
+                                    ? parse_dependency_command(
+                                          parser_dependency_direction::
+                                              depended_on_by)
+                                    : is_uses_command
+                                        ? parse_dependency_command(
+                                              parser_dependency_direction::
+                                                  uses)
+                                        : parse_expression();
         skip_whitespace();
         if (!at_end()) {
             fail("unexpected ')'");
@@ -4703,7 +4835,9 @@ public:
             std::move(result),
             is_definition,
             is_show_command || is_find_command ||
-                is_abstract_command || is_definition_trace_,
+                is_abstract_command ||
+                is_depended_on_by_command || is_uses_command ||
+                is_definition_trace_,
             is_show_all_,
             is_find_command,
             is_find_no_match_,
@@ -4835,6 +4969,97 @@ private:
         output << "arity:" << basis.arity() << ' ';
         basis.body().print_to(output);
         return quote(std::move(output).str());
+    }
+
+    [[nodiscard]] quoted_expression parse_dependency_command(
+        parser_dependency_direction direction) {
+        if (direction ==
+            parser_dependency_direction::depended_on_by) {
+            if (begins_command("dependson")) {
+                position_ += 9;
+            } else if (begins_command("depends-on")) {
+                position_ += 10;
+            } else {
+                position_ += 7;
+                skip_whitespace();
+                auto const remaining = source_.substr(position_);
+                if (!remaining.starts_with("on") ||
+                    (remaining.size() > 2 &&
+                     !is_whitespace(remaining[2]))) {
+                    fail("expected 'on'");
+                }
+                position_ += 2;
+            }
+        } else {
+            if (begins_command("usedby")) {
+                position_ += 6;
+            } else if (begins_command("used-by")) {
+                position_ += 7;
+            } else {
+                position_ += 4;
+                skip_whitespace();
+                auto const remaining = source_.substr(position_);
+                if (!remaining.starts_with("by") ||
+                    (remaining.size() > 2 &&
+                     !is_whitespace(remaining[2]))) {
+                    fail("expected 'by'");
+                }
+                position_ += 2;
+            }
+        }
+
+        skip_whitespace();
+        auto const name_position = position_;
+        if (at_end()) {
+            fail("missing combinator name");
+        }
+        auto const [name_text, parsed_name_position] =
+            parse_definition_basis_name_token();
+        basis_label name = [&] {
+            try {
+                return basis_label(name_text);
+            } catch (std::length_error const& error) {
+                throw parse_error(
+                    parsed_name_position + 15, error.what());
+            } catch (std::invalid_argument const& error) {
+                throw parse_error(parsed_name_position, error.what());
+            }
+        }();
+        skip_whitespace();
+        if (!at_end()) {
+            fail("unexpected input after name");
+        }
+
+        if (is_primitive_name(name.view())) {
+            auto message = std::string(name.view());
+            message +=
+                " is a fundamental name and cannot be queried";
+            throw parse_error(name_position, message);
+        }
+        if (!registered_bases_.contains(name.view())) {
+            auto message = unescape_input(name.view());
+            message += " is not a defined name";
+            throw parse_error(name_position, message);
+        }
+
+        auto names = parser_dependency_names(
+            name.view(), direction, registered_bases_);
+        std::string output = unescape_input(name.view());
+        if (direction ==
+            parser_dependency_direction::depended_on_by) {
+            output += names.empty()
+                ? " is not depended on by anything"
+                : " is depended on by:";
+        } else {
+            output += names.empty()
+                ? " uses nothing"
+                : " uses:";
+        }
+        for (auto const& dependency_name : names) {
+            output.push_back(' ');
+            output += unescape_input(dependency_name);
+        }
+        return quote(std::move(output));
     }
 
     [[nodiscard]] quoted_expression parse_find_command() {
@@ -5878,6 +6103,14 @@ private:
             name == "remove" ||
             name == "save" ||
             name == "find" ||
+            name == "dependson" ||
+            name == "depends-on" ||
+            name == "depends" ||
+            name == "on" ||
+            name == "usedby" ||
+            name == "used-by" ||
+            name == "used" ||
+            name == "by" ||
             name == "quit" ||
             name == "exit") {
             auto message = std::string(name);

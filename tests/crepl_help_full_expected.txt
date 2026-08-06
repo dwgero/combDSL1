@@ -62,6 +62,24 @@ definition, its definition and the remove command remain in the saved set list
 so dependent bases can be recreated. Otherwise, neither command is saved.
 Pre-defined names cannot be removed.
 
+Inspecting Dependencies
+
+dependson <name>
+depends-on <name>
+depends on <name>
+The three forms are equivalent. They display the named bases whose definitions
+directly contain name. Results are printed as "A is depended on by: B C" or "A
+is not depended on by anything".
+
+usedby <name>
+used-by <name>
+used by <name>
+The three forms are equivalent. They display the named bases directly contained
+in name's definition. Results are printed as "A uses: B C" or "A uses nothing".
+
+Both searches include pre-defined and current user-defined named bases, but
+exclude the fundamental names S, K, I, and Y.
+
 Abstracting Expressions
 
 abstract [steps] ?<symbol_list> = <combinator_expression>
