@@ -957,7 +957,7 @@ void print_help_full(std::ostream& output) {
         "and every answer is displayed. For example, \"find 3\" stops after "
         "the one-bird answers for ?xy = x(yx), while \"find all 3\" also "
         "reports matching two- and three-bird forms. A four-bird search may "
-        "take minutes. Each answer is printed as \"?=<match>\". J and Y are "
+        "take minutes. Each answer is printed as \"?=<match>\". Y is "
         "excluded from the search catalog. Find ignores the stepping and "
         "colorize modes. Matching uses bounded normalization, so the red "
         "response \"No match within search bounds\" does not prove that no "

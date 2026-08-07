@@ -7688,8 +7688,8 @@ inline constexpr std::size_t search_for_subexp_candidate_count =
     search_for_xy_subexp_candidate_count +
     search_for_xyz_subexp_candidate_count;
 inline constexpr std::size_t check_for_match_reduction_limit = 256;
-inline constexpr std::size_t check_for_match_combinator_count = 29;
-inline constexpr std::size_t check_for_match_excluded_pair_count = 33;
+inline constexpr std::size_t check_for_match_combinator_count = 30;
+inline constexpr std::size_t check_for_match_excluded_pair_count = 34;
 inline constexpr std::size_t check_for_pairs_match_candidate_count =
     check_for_match_combinator_count *
         check_for_match_combinator_count -
@@ -8163,6 +8163,7 @@ predefined_bird_combinators() {
         quote(G),
         quote(H),
         quote(I),
+        quote(J),
         quote(K),
         quote(L),
         quote(M),

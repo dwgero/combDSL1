@@ -268,17 +268,17 @@ static_assert(std::is_same_v<
               decltype(combdsl::search_for_subexp(S(B)(T))),
               std::optional<combdsl::subexpression_search_match>>);
 static_assert(
-    combdsl::check_for_pairs_match_candidate_count == 808);
+    combdsl::check_for_pairs_match_candidate_count == 866);
 static_assert(
-    combdsl::check_for_trips_match_candidate_count == 45'186);
+    combdsl::check_for_trips_match_candidate_count == 50'164);
 static_assert(
-    combdsl::check_for_match_left_trip_candidate_count == 22'562);
+    combdsl::check_for_match_left_trip_candidate_count == 25'050);
 static_assert(
-    combdsl::check_for_match_right_trip_candidate_count == 22'624);
+    combdsl::check_for_match_right_trip_candidate_count == 25'114);
 static_assert(
-    combdsl::check_for_quads_match_tuple_count == 707'281);
+    combdsl::check_for_quads_match_tuple_count == 810'000);
 static_assert(
-    combdsl::check_for_quads_match_candidate_count == 3'228'466);
+    combdsl::check_for_quads_match_candidate_count == 3'709'632);
 static_assert(
     combdsl::check_for_quads_match_candidate_count ==
     combdsl::check_for_match_combinator_count *
@@ -4030,6 +4030,19 @@ int main() {
     };
     auto const j_match_expression =
         quote(x)(y)(quote(x)(w)(z));
+    auto const j_single_matches =
+        combdsl::check_for_singles_match(
+            j_match_symbols,
+            j_match_expression);
+    test("single matching finds the Jay bird",
+         [&] {
+             for (auto const& match : j_single_matches) {
+                 match.print_to(std::cout);
+             }
+         },
+         "J");
+    test("find includes the Jay bird",
+         parse("find ?xyzw = xy(xwz)"), "?=J");
     std::array const applicator_match_symbols{
         quoted_atomic{x},
         quoted_atomic{y},
@@ -4151,7 +4164,7 @@ int main() {
                  j_match_expression);
          },
          "0");
-    test("pair and trip search catalog excludes J and Y",
+    test("find search catalog includes J and excludes Y",
          [] {
              bool contains_j = false;
              bool contains_y = false;
@@ -4168,7 +4181,7 @@ int main() {
              }
              std::cout << contains_j << contains_y;
          },
-         "00");
+         "10");
     test("fixed match pair exclusions include I anything",
          [] {
              std::size_t excluded_count = 0;
@@ -4200,7 +4213,7 @@ int main() {
                  << combdsl::detail::is_excluded_match_pair(
                         quote(A), quote(I));
          },
-         "33 111111 0");
+         "34 111111 0");
     std::vector<combdsl::quoted_expression> first_pairs;
     first_pairs.reserve(2);
     std::size_t generated_pair_count = 0;
@@ -4222,12 +4235,12 @@ int main() {
                  std::cout << first_pairs.size();
              }
          },
-         "808 AA AB");
+         "866 AA AB");
     auto const j_pair_matches =
         combdsl::check_for_pairs_match(
             j_match_symbols,
             j_match_expression);
-    test("pair matching searches 808 ordered pairs without J or Y",
+    test("pair matching searches 866 ordered pairs without Y",
          [&] {
              std::cout << j_pair_matches.size();
          },
@@ -4283,7 +4296,7 @@ int main() {
                  std::cout << first_trips.size();
              }
          },
-         "45186 01010 AAA A(AA)");
+         "50164 01010 AAA A(AA)");
     auto const a_trip_target = quote(A)(quote(A)(A));
     auto const parallel_trip_matches =
         combdsl::check_for_trips_match(
@@ -4357,10 +4370,10 @@ int main() {
     constexpr std::size_t e_index = 6;
     constexpr std::size_t h_index = 9;
     constexpr std::size_t i_index = 10;
-    constexpr std::size_t k_index = 11;
-    constexpr std::size_t m_index = 13;
-    constexpr std::size_t s_index = 20;
-    constexpr std::size_t u_index = 22;
+    constexpr std::size_t k_index = 12;
+    constexpr std::size_t m_index = 14;
+    constexpr std::size_t s_index = 21;
+    constexpr std::size_t u_index = 23;
     test("quad exclusions cover every pair and triplet position",
          [&] {
              auto print_presence =

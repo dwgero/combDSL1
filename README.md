@@ -527,10 +527,10 @@ auto none = search_for_subexp(parse("C(CB)"));      // std::nullopt
 the ordinary evaluator rules, and compares the resulting quoted expression
 trees. `check_for_singles_match(symbol_list, expression)` checks every bird in
 the matcher catalog. `check_for_pairs_match(symbol_list, expression)` runs that check for all
-808 ordered pairs, with repetition, made from the 29 combinators in Bird Info
-other than `J` and `Y`, and returns every matching pair. Every pair headed by
+866 ordered pairs, with repetition, made from the 30 combinators in Bird Info
+other than `Y`, and returns every matching pair. Every pair headed by
 `I`, along with `MM`, `MU`, `UM`, and `UU`, is excluded.
-`check_for_trips_match(symbol_list, expression)` similarly checks 45,186
+`check_for_trips_match(symbol_list, expression)` similarly checks 50,164
 ordered trip applications in both the left-associated and right-associated
 application-tree shapes. It skips `(AB)C` when `AB` is excluded and
 independently skips `A(BC)` when `BC` is excluded. In the left-associated
@@ -538,7 +538,7 @@ independently skips `A(BC)` when `BC` is excluded. In the left-associated
 the partially applied `K(BC)` right-associated shape remains eligible. It also
 skips `SK<anything>` in the `ABC` shape while retaining `S(K<anything>)`, and
 skips right-associated `I(BC)` because `I` is applied to the composite `BC`.
-`check_for_quads_match(symbol_list, expression)` checks 3,228,466 eligible
+`check_for_quads_match(symbol_list, expression)` checks 3,709,632 eligible
 quad applications across the five application trees `ABCD`, `AB(CD)`,
 `A(BC)D`, `A(BCD)`, and `A(B(CD))`. It inherits the pair and trip exclusions
 at every pair or trip subtree. Both pair subtrees in `AB(CD)` must be eligible,
@@ -567,8 +567,8 @@ auto quad_matches = check_for_quads_match(symbols, target);
 `AB` and `BA` are separate candidates. For each remaining triplet, both
 `(AB)C`, printed as `ABC`, and `A(BC)` are included and are not deduplicated
 even if they normalize to the same result. The pair, trip, and quad pools omit
-`J` to avoid trivial Jay matches and omit `Y` to avoid recursive candidates;
-`check_for_match` itself accepts either combinator.
+`Y` to avoid recursive candidates; `J` and every other pre-defined bird are
+included. `check_for_match` itself accepts any combinator.
 The `I`-headed exclusions avoid redundant matches because `Ix` reduces to
 `x`. The fixed `MM`, `MU`, `UM`, and `UU` exclusions avoid pairs that do not
 reach normal form under the matcher's bounded normalization. This trip and
@@ -844,7 +844,7 @@ sets the largest composition size to search; it defaults to three. Without
 `all`, it continues through every size up to the limit. Thus, `find 2 ?...`
 returns only the lowest-size answers, while `find all 2 ?...` can return both
 one- and two-bird answers. Every answer is printed as `?=<bird_expression>`. A
-four-bird search may take minutes. `J` and `Y` are excluded from the catalog,
+four-bird search may take minutes. `Y` is excluded from the catalog,
 and matching is bounded, so `No match within search bounds` is not a proof of
 impossibility. In an interactive terminal, that message is displayed in red.
 Enter `birds` to list every bird and its
