@@ -147,16 +147,25 @@ test("completes the show all command form", () => {
     assert.equal(complete("show   "), "show   all");
 });
 
-test("completes the optional define steps form", () => {
+test("completes captured and live definition modifiers", () => {
     const complete = createCommandCompleter(
-        ["define steps"],
+        [
+            "define captured",
+            "define live",
+            "set captured",
+            "set live",
+        ],
         {appendSpaceToExact: true});
 
-    assert.equal(complete("define s"), "define steps ");
-    assert.equal(complete("define   "), "define   steps ");
+    assert.equal(complete("define c"), "define captured ");
+    assert.equal(complete("define l"), "define live ");
+    assert.equal(complete("set c"), "set captured ");
+    assert.equal(complete("set l"), "set live ");
     assert.equal(
-        complete("  define\tsteps"),
-        "  define\tsteps ");
+        complete("  define\tcapt"),
+        "  define\tcaptured ");
+    assert.equal(complete("define s"), undefined);
+    assert.equal(complete("define "), undefined);
     assert.equal(complete("define foo"), undefined);
 });
 

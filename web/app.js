@@ -51,9 +51,14 @@
     ], {appendSpaceToExact: true});
     const completeShowAll =
         inputHistoryTools.createCommandCompleter(["show all"]);
-    const completeDefineSteps =
+    const completeDefinitionReferenceMode =
         inputHistoryTools.createCommandCompleter(
-            ["define steps"],
+            [
+                "define captured",
+                "define live",
+                "set captured",
+                "set live",
+            ],
             {appendSpaceToExact: true});
     const completeSnapshotCommand =
         inputHistoryTools.createCommandCompleter([
@@ -98,7 +103,7 @@
     };
     const completeCommand = source =>
         completeTopLevelCommand(source) ??
-            completeDefineSteps(source) ??
+            completeDefinitionReferenceMode(source) ??
             completeAbstractCommand(source) ??
             completeShowAll(source) ??
             completeSnapshotCommand(source) ??

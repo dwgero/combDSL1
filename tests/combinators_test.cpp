@@ -1564,6 +1564,57 @@ int main() {
          },
          "expected 'on' or 'off'");
 
+    test("captured set overrides snapshot off",
+         [] {
+             static_cast<void>(parse(
+                 "set CmdCapT = 2 I"));
+             static_cast<void>(parse(
+                 "set captured CmdCapS = 1 CmdCapT"));
+             parse("show CmdCapS").print_to(std::cout);
+         },
+         "arity:1 CmdCapT@1");
+    test("captured define overrides snapshot off",
+         [] {
+             static_cast<void>(parse(
+                 "define captured CmdCapD x = CmdCapT x"));
+             parse("show CmdCapD").print_to(std::cout);
+         },
+         "arity:1 CmdCapT@1");
+    test("captured overrides do not change snapshot off",
+         [] {
+             static_cast<void>(parse(
+                 "set CmdAmbLS = 1 CmdCapT"));
+             static_cast<void>(parse(
+                 "define CmdAmbLD x = CmdCapT x"));
+             parse("show CmdAmbLS").print_to(std::cout);
+             std::cout << '\n';
+             parse("show CmdAmbLD").print_to(std::cout);
+         },
+         "arity:1 CmdCapT\n"
+         "arity:1 CmdCapT");
+    test("captured overrides remain frozen after redefinition",
+         [] {
+             static_cast<void>(parse(
+                 "set CmdCapT = 2 K"));
+             eval(parse("CmdCapS x y"));
+             eval(parse("CmdCapD x y"));
+             eval(parse("CmdAmbLS x y"));
+             eval(parse("CmdAmbLD x y"));
+         },
+         "xy\nxy\nx\nx\n");
+    test("captured modifiers are retained in the set list",
+         [] {
+             auto const definitions = set_list();
+             std::cout
+                 << (definitions.find(
+                        "set captured CmdCapS = 1 CmdCapT") !=
+                    std::string::npos)
+                 << (definitions.find(
+                        "define captured CmdCapD x = CmdCapT x") !=
+                    std::string::npos);
+         },
+         "11");
+
     test("live target gets its first immutable revision",
          parse("set LiveTarget = 1 I"), "LiveTarget");
     test("snapshot off stores an unqualified live reference",
@@ -1629,6 +1680,66 @@ int main() {
 
     test("snapshot on restores frozen references",
          parse("snapshot on"), "snapshot on");
+    test("live set overrides snapshot on",
+         [] {
+             static_cast<void>(parse(
+                 "set CmdLiveT = 2 I"));
+             static_cast<void>(parse(
+                 "set live CmdLiveS = 1 CmdLiveT"));
+             parse("show CmdLiveS").print_to(std::cout);
+         },
+         "arity:1 CmdLiveT");
+    test("live define overrides snapshot on",
+         [] {
+             static_cast<void>(parse(
+                 "define live CmdLiveD x = CmdLiveT x"));
+             parse("show CmdLiveD").print_to(std::cout);
+         },
+         "arity:1 CmdLiveT");
+    test("live overrides do not change snapshot on",
+         [] {
+             static_cast<void>(parse(
+                 "set CmdAmbCS = 1 CmdLiveT"));
+             static_cast<void>(parse(
+                 "define CmdAmbCD x = CmdLiveT x"));
+             parse("show CmdAmbCS")
+                 .print_to(std::cout);
+             std::cout << '\n';
+             parse("show CmdAmbCD")
+                 .print_to(std::cout);
+         },
+         "arity:1 CmdLiveT@1\n"
+         "arity:1 CmdLiveT@1");
+    test("live overrides follow redefinition",
+         [] {
+             static_cast<void>(parse(
+                 "set live CmdExplicit = 1 CmdLiveT@1"));
+             static_cast<void>(parse(
+                 "set CmdLiveT = 2 K"));
+             eval(parse("CmdLiveS x y"));
+             eval(parse("CmdLiveD x y"));
+             eval(parse("CmdAmbCS x y"));
+             eval(parse("CmdAmbCD x y"));
+             eval(parse("CmdExplicit x y"));
+         },
+         "x\nx\nxy\nxy\nxy\n");
+    test("live modifiers are retained in the set list",
+         [] {
+             auto const definitions = set_list();
+             std::cout
+                 << (definitions.find(
+                        "set live CmdLiveS = 1 CmdLiveT") !=
+                    std::string::npos)
+                 << (definitions.find(
+                        "define live CmdLiveD x = CmdLiveT x") !=
+                    std::string::npos);
+         },
+         "11");
+    test_parse_failure(
+        "live override applies circularity checks under snapshot on",
+        "set live CmdLiveT = 2 CmdLiveT", 9,
+        "CmdLiveT would have a circular definition\n"
+        "CmdLiveT -> CmdLiveT");
     test("a frozen target gets its first revision",
          parse("set FrozenTarget = 1 I"), "FrozenTarget");
     test("snapshot on captures the current revision",
@@ -1755,8 +1866,8 @@ int main() {
         "bare define requires a combinator name", "define", 6,
         "missing combinator name");
     test_parse_failure(
-        "define steps requires a combinator name", "define steps", 12,
-        "missing combinator name");
+        "define no longer accepts a steps option", "define steps", 7,
+        "steps is a reserved word");
     test_parse_failure(
         "bare show requires a combinator name", "show", 4,
         "missing combinator name");
@@ -1813,72 +1924,6 @@ int main() {
          parse("show DefReplace"), "arity:2 I");
     test("cross-form replacement uses its new arity",
          single_step(parse("DefReplace a b")), "ab");
-
-    test("define steps inspection is definition display without changes",
-         [] {
-             auto const before = set_list();
-             auto parsed = combdsl::detail::parse_input(
-                 "define steps DefInspect xy = x(yx)",
-                 combdsl::detail::parser_definition_mode::
-                     inspect_definitions);
-             parsed.expression.print_to(std::cout);
-             std::cout << ' ' << parsed.is_display_only
-                       << parsed.is_definition
-                       << parsed.is_find << ' '
-                       << (before == set_list());
-         },
-         "DefInspect 110 1");
-    test("define steps traces and stores its optimized definition",
-         [] {
-             auto trace = parse(
-                 "define steps DefTrace xy = x(yx)");
-             trace.print_to(std::cout);
-             std::cout << '\n';
-             parse("show DefTrace").print_to(std::cout);
-             std::cout << '\n'
-                       << (set_list().ends_with(
-                           "define DefTrace xy = x(yx)")
-                           ? "canonical"
-                           : "noncanonical");
-             static_cast<void>(parse("remove DefTrace"));
-         },
-         "takeout y: Bx(Tx)\n"
-         "takeout x: SBT\n"
-         "optimize: SBT -> A\n"
-         "DefTrace=A\n"
-         "arity:2 A\n"
-         "canonical");
-    test("define steps traces changed preprocessing",
-         [] {
-             auto trace = parse(
-                 "define steps PrepTrace xyz = C(CB)xyz");
-             trace.print_to(std::cout);
-             static_cast<void>(parse("remove PrepTrace"));
-         },
-         "preprocess: C(CB)xyz -> x(yz)\n"
-         "takeout z: Bxy\n"
-         "takeout y: Bx\n"
-         "takeout x: B\n"
-         "PrepTrace=B");
-    test("define steps traces recursive abstraction and optimization",
-         [] {
-             auto trace = parse(
-                 "define steps RepeatTrace x = "
-                 "x(RepeatTrace x)");
-             trace.print_to(std::cout);
-             static_cast<void>(parse("remove RepeatTrace"));
-         },
-         "takeout x: O RepeatTrace\n"
-         "takeout RepeatTrace: O\n"
-         "optimize: YO -> Y\n"
-         "RepeatTrace=Y");
-    test("define steps supports a compact one-character signature",
-         [] {
-             auto trace = parse("define steps ~x = x");
-             trace.print_to(std::cout);
-             static_cast<void>(parse("remove ~"));
-         },
-         "takeout x: I\n~=I");
 
     test("abstract returns only its optimized expression",
          parse("abstract ?xy = x(yx)"), "?=A");
@@ -2956,30 +3001,38 @@ int main() {
         "find all 10 ?x = x", 9,
         "find maximum size must be from 1 to 4");
     constexpr std::string_view reserved_definition_names[] = {
-        "abstract", "all", "steps", "set", "define", "show", "single",
-        "key", "basis", "colorize", "about", "birds", "find", "help",
-        "load", "remove", "save", "dependson", "depends-on", "depends",
-        "on", "usedby", "used-by", "used", "by", "quit", "exit"};
+        "abstract", "all", "captured", "live", "steps", "set",
+        "define", "show", "single", "key", "basis", "colorize",
+        "about", "birds", "find", "help", "load", "remove", "save",
+        "dependson", "depends-on", "depends", "on", "usedby",
+        "used-by", "used", "by", "quit", "exit"};
     for (auto const name : reserved_definition_names) {
         auto const detail =
             std::string(name) + " is a reserved word";
-        auto const set_source =
-            std::string("set ") + std::string(name) + " = I";
+        auto const set_source = name == "captured"
+            ? std::string("set live captured = I")
+            : name == "live"
+                ? std::string("set captured live = I")
+                : std::string("set ") + std::string(name) + " = I";
         auto const set_title =
             std::string("set rejects reserved word ") +
             std::string(name);
-        test_parse_failure(set_title, set_source, 4, detail);
+        test_parse_failure(
+            set_title, set_source, set_source.rfind(name), detail);
 
-        auto const define_source = name == "steps"
-            ? "define steps steps x = x"
-            : std::string("define ") + std::string(name) + " x = x";
+        auto const define_source = name == "captured"
+            ? std::string("define live captured x = x")
+            : name == "live"
+                ? std::string("define captured live x = x")
+                : std::string("define ") + std::string(name) +
+                    " x = x";
         auto const define_title =
             std::string("define rejects reserved word ") +
             std::string(name);
         test_parse_failure(
             define_title,
             define_source,
-            name == "steps" ? 13 : 7,
+            define_source.rfind(name),
             detail);
     }
     test_parse_failure("set requires a basis name", "set = I", 4);
@@ -3160,17 +3213,6 @@ int main() {
          [&] { parse_eval("define EvalD x = x"); }, "");
     test("parse eval uses a silently registered define basis",
          [&] { parse_eval("EvalD y"); }, "y\n");
-    test("parse eval displays define steps while registering it",
-         [] {
-             parse_eval("define steps EvalTrace xy = x(yx)");
-             parse("show EvalTrace").print_to(std::cout);
-             static_cast<void>(parse("remove EvalTrace"));
-         },
-         "takeout y: Bx(Tx)\n"
-         "takeout x: SBT\n"
-         "optimize: SBT -> A\n"
-         "EvalTrace=A\n"
-         "arity:2 A");
     test("parse eval displays abstract without evaluating it",
          [&] { parse_eval("abstract ?xyz = xz(yz)"); }, "?=S\n");
     test("parse and step displays an abstract trace once",
@@ -3214,30 +3256,6 @@ int main() {
              std::cout << output.str();
          },
          "");
-    test("parse and step displays define steps without reducing it",
-         [] {
-             std::istringstream input;
-             std::ostringstream output;
-             parse_and_step(
-                 "define steps StepTrace x = x",
-                 output,
-                 input);
-             std::cout << output.str();
-             static_cast<void>(parse("remove StepTrace"));
-         },
-         "takeout x: I\nStepTrace=I\n");
-    test("parse and key step displays define steps without pausing",
-         [] {
-             std::istringstream input;
-             std::ostringstream output;
-             parse_and_key_step(
-                 "define steps KeyTrace x = x",
-                 output,
-                 input);
-             std::cout << output.str();
-             static_cast<void>(parse("remove KeyTrace"));
-         },
-         "takeout x: I\nKeyTrace=I\n");
     test("parse eval uses the parse-and-step define basis",
          [&] { parse_eval("StepD z"); }, "z\n");
     test("parse eval does not mistake definex for a definition",

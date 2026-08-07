@@ -28,23 +28,24 @@ neither stepping mode is active; ordinary evaluation ignores it.
 
 Adding Combinators
 
-set <name> = <combinator_expression>
+set [captured | live] <name> = <combinator_expression>
 In the first form, the expression always reduces immediately.
 
-set <name> = <arity> <combinator_expression>
+set [captured | live] <name> = <arity> <combinator_expression>
 In the second form, arity is a number specifying the minimal number of arguments
 required for the expression to reduce.
 
-define [steps] <name> <symbol_list> = <combinator_expression>
+define [captured | live] <name> <symbol_list> = <combinator_expression>
 The "define" form requires one or more symbols (lower case letters) after the
 name, infers the arity from their count, and computes a series of combinators
 that will reproduce the combinator_expression. For a one-character name, the
-space before the symbols may be omitted. Without "steps", define stores the
-definition without displaying its computation. With "steps", it also displays
-changed preprocessing, every right-to-left takeout (including the recursive-name
-takeout when needed), every optimizer substitution, and the final stored result
-as "name=<expression>". For example, to add the Eagle bird:
+space before the symbols may be omitted. For example, to add the Eagle bird:
 define Exyzwv = xy(zwv)
+
+The optional "captured" or "live" modifier on set and define overrides snapshot
+mode for that command only, without changing the mode for later input. Captured
+references pin current revisions; live references follow later redefinitions. An
+explicit modifier is retained in the saved set list.
 
 User-defined combinator names created by "set" or "define" may be redefined.
 Every changed definition creates the next immutable name@N revision; equivalent
@@ -60,14 +61,15 @@ references. Recursive "define" remains allowed.
 
 snapshot [on | off]
 Controls how unqualified user-defined names in subsequently parsed input are
-stored. Snapshot mode is on initially, and the bare "snapshot" command also
-turns it on. When on, each reference captures the current immutable revision and
-prints as "name@N". When off, each reference remains live, prints as "name", and
-follows later redefinitions. Each changed "set" or "define" creates the next
-revision. An explicit "name@N" reference is always immutable regardless of the
-mode. Before the first saved set, define, or remove, only the last explicit
-snapshot command is saved. If there is none, the saved set list begins with
-"snapshot on". Later snapshot commands remain in chronological order.
+stored when set or define has no captured/live modifier. Snapshot mode is on
+initially, and the bare "snapshot" command also turns it on. When on, each
+reference captures the current immutable revision and prints as "name@N". When
+off, each reference remains live, prints as "name", and follows later
+redefinitions. Each changed "set" or "define" creates the next revision. An
+explicit "name@N" reference is always immutable regardless of the mode. Before
+the first saved set, define, or remove, only the last explicit snapshot command
+is saved. If there is none, the saved set list begins with "snapshot on". Later
+snapshot commands remain in chronological order.
 
 show <name | name@N | all>
 The show command displays the arity and combinators stored for the current name,

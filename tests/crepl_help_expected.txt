@@ -4,8 +4,9 @@ abstract [steps] ?<symbols> = <expression> | display combinator abstraction
 basis step [on | off]                 | names are converted to their stored expressions as a step
 birds                                 | display the pre-defined bird combinators
 colorize [on | off]                   | add colors to arguments while stepping
-define [steps] <name> <xyz...> = <expression> | compute and store combinators such that
-                                              | <name> <xyz...> reduces to <expression>
+define [captured | live] <name> <xyz...> = <expression>
+                                      | compute and store combinators such that
+                                      | <name> <xyz...> reduces to <expression>
 dependson <name> | depends-on <name> | depends on <name>
                                       | display named bases that directly contain <name>
 exit                                  | end the program
@@ -16,7 +17,8 @@ load <filename>                       | load a set-list journal from a file
 quit                                  | end the program
 remove <name>                         | remove a user-defined combinator name
 save <filename>                       | save the set-list journal to a file
-set <name> = [number] <expression>    | store <expression> as <name> with arity <number> or 0
+set [captured | live] <name> = [number] <expression>
+                                      | store <expression> as <name> with arity <number> or 0
 show <name | name@N | all>            | display one revision or the entire set list
 single step [on | off]                | display each step of the reduction without pause
 snapshot [on | off]                   | capture named definitions or follow later changes
@@ -28,8 +30,9 @@ abstract [steps] ?<symbols> = <expression> | display combinator abstraction
 basis step [on | off]                 | names are converted to their stored expressions as a step
 birds                                 | display the pre-defined bird combinators
 colorize [on | off]                   | add colors to arguments while stepping
-define [steps] <name> <xyz...> = <expression> | compute and store combinators such that
-                                              | <name> <xyz...> reduces to <expression>
+define [captured | live] <name> <xyz...> = <expression>
+                                      | compute and store combinators such that
+                                      | <name> <xyz...> reduces to <expression>
 dependson <name> | depends-on <name> | depends on <name>
                                       | display named bases that directly contain <name>
 exit                                  | end the program
@@ -40,7 +43,8 @@ load <filename>                       | load a set-list journal from a file
 quit                                  | end the program
 remove <name>                         | remove a user-defined combinator name
 save <filename>                       | save the set-list journal to a file
-set <name> = [number] <expression>    | store <expression> as <name> with arity <number> or 0
+set [captured | live] <name> = [number] <expression>
+                                      | store <expression> as <name> with arity <number> or 0
 show <name | name@N | all>            | display one revision or the entire set list
 single step [on | off]                | display each step of the reduction without pause
 snapshot [on | off]                   | capture named definitions or follow later changes

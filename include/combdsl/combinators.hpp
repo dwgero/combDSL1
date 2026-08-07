@@ -5335,6 +5335,11 @@ enum class parser_definition_mode {
     inspect_definitions
 };
 
+enum class parser_reference_mode {
+    captured,
+    live
+};
+
 struct parsed_input {
     quoted_expression expression;
     bool is_definition;
@@ -5430,8 +5435,7 @@ public:
             is_definition,
             is_show_command || is_find_command ||
                 is_abstract_command ||
-                is_depended_on_by_command || is_uses_command ||
-                is_definition_trace_,
+                is_depended_on_by_command || is_uses_command,
             is_show_all_,
             is_find_command,
             is_find_no_match_,
@@ -5507,10 +5511,42 @@ private:
         return offset == remaining.size();
     }
 
+    [[nodiscard]] std::optional<parser_reference_mode>
+    parse_definition_reference_mode() {
+        auto const remaining = source_.substr(position_);
+        std::optional<parser_reference_mode> mode;
+        std::size_t keyword_size = 0;
+        if (remaining.starts_with("captured") &&
+            (remaining.size() == 8 ||
+             is_whitespace(remaining[8]))) {
+            mode = parser_reference_mode::captured;
+            keyword_size = 8;
+        } else if (remaining.starts_with("live") &&
+                   (remaining.size() == 4 ||
+                    is_whitespace(remaining[4]))) {
+            mode = parser_reference_mode::live;
+            keyword_size = 4;
+        } else {
+            return std::nullopt;
+        }
+
+        position_ += keyword_size;
+        snapshot_enabled_ =
+            *mode == parser_reference_mode::captured;
+        skip_whitespace();
+        return mode;
+    }
+
     [[nodiscard]] quoted_expression parse_set_definition() {
         constexpr std::size_t keyword_size = 3;
         position_ += keyword_size;
         skip_whitespace();
+        if (at_end()) {
+            fail("missing combinator name");
+        }
+
+        auto const reference_mode =
+            parse_definition_reference_mode();
         if (at_end()) {
             fail("missing combinator name");
         }
@@ -5535,6 +5571,7 @@ private:
         }
 
         auto user_source = canonical_set_definition(
+            reference_mode,
             name.view(), arity, source_.substr(body_position));
         auto result = make_quoted_basis_snapshot(
             name, arity, std::move(body));
@@ -6017,27 +6054,11 @@ private:
             fail("missing combinator name");
         }
 
-        bool show_steps = false;
-        auto const remaining = source_.substr(position_);
-        if (remaining.starts_with("steps") &&
-            (remaining.size() == 5 ||
-             is_whitespace(remaining[5]))) {
-            show_steps = true;
-            is_definition_trace_ = true;
-            position_ += 5;
-            if (!at_end() && !is_whitespace(current())) {
-                fail("expected whitespace after 'steps'");
-            }
-            skip_whitespace();
-            if (at_end()) {
-                fail("missing combinator name");
-            }
+        auto const reference_mode =
+            parse_definition_reference_mode();
+        if (at_end()) {
+            fail("missing combinator name");
         }
-
-        auto const trace_enabled =
-            show_steps &&
-            definition_mode_ ==
-                parser_definition_mode::register_definitions;
 
         auto const name_position = position_;
         auto [name, symbols] = parse_define_signature();
@@ -6054,31 +6075,10 @@ private:
         }
 
         auto user_source = canonical_define_definition(
+            reference_mode,
             name.view(), symbols, source_.substr(body_position));
 
-        std::ostringstream trace;
-        bool first_trace_line = true;
-        auto append_expression = [&](std::string_view label,
-                                     quoted_expression const& value) {
-            if (!first_trace_line) {
-                trace << '\n';
-            }
-            trace << label;
-            value.print_to(trace);
-            first_trace_line = false;
-        };
-
-        auto const original_body = body;
         body = reduce_saturated_bases(std::move(body));
-        if (trace_enabled &&
-            !same_parser_definition_expression(
-                original_body, body)) {
-            trace << "preprocess: ";
-            original_body.print_to(trace);
-            trace << " -> ";
-            body.print_to(trace);
-            first_trace_line = false;
-        }
         std::vector<quoted_atomic> pending_atoms;
         pending_atoms.reserve(symbols.size() + 1);
         pending_atoms.emplace_back(recursive_function);
@@ -6093,58 +6093,20 @@ private:
                 quoted_atomic{symbol(*symbol_position)},
                 std::move(body),
                 pending_atoms);
-            if (trace_enabled) {
-                std::string label = "takeout ";
-                label.push_back(*symbol_position);
-                label += ": ";
-                append_expression(label, body);
-            }
         }
 
-        std::vector<optimizer_substitution> substitutions;
         if (contains_quoted_atom(recursive_function, body)) {
             pending_atoms.clear();
             body = takeout_with_pending_atoms(
                 quoted_atomic{recursive_function},
                 std::move(body),
                 pending_atoms);
-            if (trace_enabled) {
-                std::string label = "takeout ";
-                label += name.view();
-                label += ": ";
-                append_expression(label, body);
-            }
             body = optimize_final_takeout(
                 quote(Y)(optimize_final_takeout(
-                    std::move(body),
-                    trace_enabled
-                        ? std::addressof(substitutions)
-                        : nullptr)),
-                trace_enabled
-                    ? std::addressof(substitutions)
-                    : nullptr);
+                    std::move(body))));
         } else {
             body = optimize_final_takeout(
-                std::move(body),
-                trace_enabled
-                    ? std::addressof(substitutions)
-                    : nullptr);
-        }
-
-        if (trace_enabled) {
-            for (auto const& substitution : substitutions) {
-                if (!first_trace_line) {
-                    trace << '\n';
-                }
-                trace << "optimize: ";
-                substitution.before.print_to(trace);
-                trace << " -> ";
-                substitution.after.print_to(trace);
-                first_trace_line = false;
-            }
-            std::string label = unescape_input(name.view());
-            label += '=';
-            append_expression(label, body);
+                std::move(body));
         }
 
         auto result = make_quoted_basis_snapshot(
@@ -6155,9 +6117,6 @@ private:
             result,
             std::move(user_source),
             std::move(dependencies));
-        if (trace_enabled) {
-            return quote(std::move(trace).str());
-        }
         return result;
     }
 
@@ -6737,10 +6696,17 @@ private:
     }
 
     [[nodiscard]] static std::string canonical_set_definition(
+        std::optional<parser_reference_mode> reference_mode,
         std::string_view name,
         std::size_t arity,
         std::string_view body) {
         std::string result = "set ";
+        if (reference_mode) {
+            result += *reference_mode ==
+                    parser_reference_mode::captured
+                ? "captured "
+                : "live ";
+        }
         result += name;
         result += " = ";
         result += std::to_string(arity);
@@ -6748,10 +6714,17 @@ private:
     }
 
     [[nodiscard]] static std::string canonical_define_definition(
+        std::optional<parser_reference_mode> reference_mode,
         std::string_view name,
         std::string_view symbols,
         std::string_view body) {
         std::string result = "define ";
+        if (reference_mode) {
+            result += *reference_mode ==
+                    parser_reference_mode::captured
+                ? "captured "
+                : "live ";
+        }
         result += name;
         result.push_back(' ');
         result += symbols;
@@ -6778,6 +6751,8 @@ private:
         }
         if (name == "abstract" ||
             name == "all" ||
+            name == "captured" ||
+            name == "live" ||
             name == "steps" ||
             name == "snapshot" ||
             name == "set" ||
@@ -7342,7 +7317,6 @@ private:
     bool snapshot_enabled_ = true;
     bool is_show_all_ = false;
     bool is_find_no_match_ = false;
-    bool is_definition_trace_ = false;
     std::string replaced_definition_;
 };
 

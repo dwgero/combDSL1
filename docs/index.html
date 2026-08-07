@@ -362,9 +362,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             color: #c33;
         }
     </style>
-    <script src="./evaluation_watchdog.js?v=2.5.0" defer></script>
-    <script src="./input_history.js?v=2.5.0" defer></script>
-    <script src="./app.js?v=2.5.0" defer></script>
+    <script src="./evaluation_watchdog.js?v=2.5.1" defer></script>
+    <script src="./input_history.js?v=2.5.1" defer></script>
+    <script src="./app.js?v=2.5.1" defer></script>
 </head>
 <body>
     <main aria-labelledby="studio-title">
@@ -501,31 +501,35 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             Press <kbd>Tab</kbd> to complete a unique prefix for
             <code>abstract</code>, <code>set</code>, <code>define</code>,
             the dependency commands described below, <code>find</code>,
-            <code>remove</code>, <code>show</code>, or <code>snapshot</code>.
+            <code>remove</code>, <code>show</code>, or <code>snapshot</code>,
+            including supported command options.
             <br><br>
-            <code>set name = combinator_expression</code><br>
+            <code>set [captured | live] name =
+                combinator_expression</code><br>
             In the first form, the expression always reduces immediately.
             <br><br>
-            <code>set name = arity combinator_expression</code><br>
+            <code>set [captured | live] name = arity
+                combinator_expression</code><br>
             In the second form, <code>arity</code> is a number specifying
             the minimal number of arguments required for the expression
             to reduce.
             <br><br>
-            <code>define [steps] name symbol_list =
+            <code>define [captured | live] name symbol_list =
                 combinator_expression</code><br>
             The <code>define</code> form requires one or more <code>symbols</code>
             (lower case letters) after the name, infers the arity from their count,
             and computes a series of combinators that will reproduce the
             <code>combinator_expression</code>.  For a one-character name,
-            the space before the symbols may be omitted. Without
-            <code>steps</code>, the definition is stored without displaying its
-            computation. With <code>steps</code>, it also displays changed
-            preprocessing, every right-to-left <code>takeout</code> (including a
-            recursive-name <code>takeout</code> when needed), every optimizer
-            substitution, and the final stored result as
-            <code>name=combinator_expression</code>. For example, to add the Eagle
-            bird:<br>
+            the space before the symbols may be omitted. For example, to add
+            the Eagle bird:<br>
             <code>define Exyzwv = xy(zwv)</code>
+            <br><br>
+            The optional <code>captured</code> or <code>live</code> modifier
+            on <code>set</code> and <code>define</code> overrides snapshot mode
+            for that command only without changing the mode for later input.
+            Captured references pin current revisions; live references follow
+            later redefinitions. An explicit modifier is retained in the
+            saved set list.
             <br><br>
             User-defined combinator names created by <code>set</code> or
             <code>define</code> may be redefined. Pre-defined names are
@@ -557,9 +561,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
         <div class="help-section">
             <code>snapshot [on | off]</code><br>
             Enter this command in the Combinator Expression or Command box to
-            control how named references parsed afterward are stored. Snapshot
-            mode is on by default, and <code>snapshot</code> without an option
-            also turns it on. With snapshot mode on, an unqualified
+            control how named references parsed afterward are stored when a
+            <code>set</code> or <code>define</code> command has no
+            <code>captured</code> or <code>live</code> modifier. Snapshot mode
+            is on by default, and <code>snapshot</code> without an option also
+            turns it on. With snapshot mode on, an unqualified
             <code>name</code> reference pins the current immutable
             <code>name@N</code> version. With it off, an unqualified
             <code>name</code> reference remains live and follows later changes
@@ -756,7 +762,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             data-dialog-initial-focus>About</h2>
         <div class="license-text">
             <!-- Keep this version and the app.js cache key in sync. -->
-            <p>Combinator Studio, version 2.5.0<br>
+            <p>Combinator Studio, version 2.5.1<br>
                 Part of the C++ Combinator DSL<br>
                 Copyright (C) 2026  David W. Gero</p>
             <p>This program is free software: you can redistribute it and/or modify

@@ -59,7 +59,7 @@
 
 namespace {
 
-constexpr std::string_view crepl_version = "2.5.0";
+constexpr std::string_view crepl_version = "2.5.1";
 
 [[nodiscard]] bool stream_is_terminal(std::FILE* stream) noexcept {
 #if defined(_WIN32)
@@ -164,8 +164,9 @@ constexpr std::array<std::string_view, 1>
     abstract_question_completion_candidates = {"?"};
 constexpr std::array<std::string_view, 1>
     abstract_steps_completion_candidates = {"steps"};
-constexpr std::array<std::string_view, 1>
-    define_steps_completion_candidates = {"steps"};
+constexpr std::array<std::string_view, 2>
+    definition_reference_completion_candidates = {
+        "captured", "live"};
 constexpr std::array<std::string_view, 1>
     depends_on_completion_candidates = {"on"};
 constexpr std::array<std::string_view, 1>
@@ -383,9 +384,9 @@ template<std::size_t Size>
                 : make_completion_candidates(
                     abstract_steps_completion_candidates);
         }
-        if (words[0] == "define") {
+        if (words[0] == "define" || words[0] == "set") {
             return make_completion_candidates(
-                define_steps_completion_candidates);
+                definition_reference_completion_candidates);
         }
         if (words[0] == "depends") {
             return make_completion_candidates(
@@ -750,8 +751,9 @@ void print_help_brief(std::ostream& output) {
         "basis step [on | off]                 | names are converted to their stored expressions as a step\n"
         "birds                                 | display the pre-defined bird combinators\n"
         "colorize [on | off]                   | add colors to arguments while stepping\n"
-        "define [steps] <name> <xyz...> = <expression> | compute and store combinators such that\n"
-        "                                              | <name> <xyz...> reduces to <expression>\n"
+        "define [captured | live] <name> <xyz...> = <expression>\n"
+        "                                      | compute and store combinators such that\n"
+        "                                      | <name> <xyz...> reduces to <expression>\n"
         "dependson <name> | depends-on <name> | depends on <name>\n"
         "                                      | display named bases that directly contain <name>\n"
         "exit                                  | end the program\n"
@@ -762,7 +764,8 @@ void print_help_brief(std::ostream& output) {
         "quit                                  | end the program\n"
         "remove <name>                         | remove a user-defined combinator name\n"
         "save <filename>                       | save the set-list journal to a file\n"
-        "set <name> = [number] <expression>    | store <expression> as <name> with arity <number> or 0\n"
+        "set [captured | live] <name> = [number] <expression>\n"
+        "                                      | store <expression> as <name> with arity <number> or 0\n"
         "show <name | name@N | all>            | display one revision or the entire set list\n"
         "single step [on | off]                | display each step of the reduction without pause\n"
         "snapshot [on | off]                   | capture named definitions or follow later changes\n"
@@ -820,18 +823,20 @@ void print_help_full(std::ostream& output) {
         "active; ordinary evaluation ignores it.");
 
     output << "Adding Combinators\n\n"
-           << "set <name> = <combinator_expression>\n";
+           << "set [captured | live] <name> = "
+              "<combinator_expression>\n";
     write_wrapped_paragraph(
         output,
         "In the first form, the expression always reduces immediately.");
     output << '\n'
-           << "set <name> = <arity> <combinator_expression>\n";
+           << "set [captured | live] <name> = <arity> "
+              "<combinator_expression>\n";
     write_wrapped_paragraph(
         output,
         "In the second form, arity is a number specifying the minimal "
         "number of arguments required for the expression to reduce.");
     output << '\n'
-           << "define [steps] <name> <symbol_list> = "
+           << "define [captured | live] <name> <symbol_list> = "
               "<combinator_expression>\n";
     write_wrapped_paragraph(
         output,
@@ -839,14 +844,17 @@ void print_help_full(std::ostream& output) {
         "letters) after the name, infers the arity from their count, and "
         "computes a series of combinators that will reproduce the "
         "combinator_expression. For a one-character name, the space "
-        "before the symbols may be omitted. Without \"steps\", define "
-        "stores the definition without displaying its computation. With "
-        "\"steps\", it also displays changed preprocessing, every "
-        "right-to-left takeout (including the recursive-name takeout when "
-        "needed), every optimizer substitution, and the final stored "
-        "result as \"name=<expression>\". For example, to add the Eagle "
+        "before the symbols may be omitted. For example, to add the Eagle "
         "bird:");
     output << "define Exyzwv = xy(zwv)\n\n";
+    write_wrapped_paragraph(
+        output,
+        "The optional \"captured\" or \"live\" modifier on set and "
+        "define overrides snapshot mode for that command only, without "
+        "changing the mode for later input. Captured references pin current "
+        "revisions; live references follow later redefinitions. An explicit "
+        "modifier is retained in the saved set list.");
+    output.put('\n');
     write_wrapped_paragraph(
         output,
         "User-defined combinator names created by \"set\" or \"define\" "
@@ -869,7 +877,8 @@ void print_help_full(std::ostream& output) {
     write_wrapped_paragraph(
         output,
         "Controls how unqualified user-defined names in subsequently parsed "
-        "input are stored. Snapshot mode is on initially, and the bare "
+        "input are stored when set or define has no captured/live modifier. "
+        "Snapshot mode is on initially, and the bare "
         "\"snapshot\" command also turns it on. When on, each reference "
         "captures the current immutable revision and prints as \"name@N\". "
         "When off, each reference remains live, prints as \"name\", and "

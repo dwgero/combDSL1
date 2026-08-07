@@ -64,6 +64,16 @@ void check(std::string_view title, bool condition) {
     return output.str();
 }
 
+[[nodiscard]] std::string evaluated_expression(std::string_view source) {
+    std::ostringstream output;
+    combdsl::eval(combdsl::parse(source), output);
+    auto result = output.str();
+    if (result.ends_with('\n')) {
+        result.pop_back();
+    }
+    return result;
+}
+
 [[nodiscard]] std::string repeated_error_lines(
     std::size_t count) {
     std::string result;
@@ -351,6 +361,31 @@ int main() {
           shown_definition("FileModeTarget@1") == "arity:1 I" &&
           shown_definition("FileModeTarget@2") == "arity:1 K" &&
           shown_definition("FileModeTarget@3") == "arity:1 S" &&
+          combdsl::detail::registered_parser_lookup_snapshot()
+              .snapshot_enabled);
+
+    auto const replay_overrides = load_set_list(
+        "snapshot on\n"
+        "set FileOT = 2 I\n"
+        "set live FileOL = 1 FileOT\n"
+        "snapshot off\n"
+        "define captured FileOC x = FileOT x\n"
+        "set FileOT = 2 K\n"
+        "snapshot on\n");
+    check("a successful load replays per-definition overrides",
+          replay_overrides.success &&
+          replay_overrides.loaded == 7 &&
+          shown_definition("FileOL") == "arity:1 FileOT" &&
+          shown_definition("FileOC") == "arity:1 FileOT@1" &&
+          evaluated_expression("FileOL x y") == "x" &&
+          evaluated_expression("FileOC x y") == "xy");
+    check("a successful load retains explicit override syntax",
+          combdsl::set_list().find(
+              "set live FileOL = 1 FileOT") !=
+              std::string::npos &&
+          combdsl::set_list().find(
+              "define captured FileOC x = FileOT x") !=
+              std::string::npos &&
           combdsl::detail::registered_parser_lookup_snapshot()
               .snapshot_enabled);
 

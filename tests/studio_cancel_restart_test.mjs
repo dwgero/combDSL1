@@ -519,71 +519,73 @@ test("routes abstract steps as display-only with modes enabled", () => {
     }
 });
 
-test("renders define steps while storing its definition", () => {
-    const harness = createHarness();
-    const source = harness.element("source");
-    const worker = harness.workers[0];
+test("routes captured and live definitions as silent commands", () => {
+    const cases = [
+        "define captured StudioCaptured xy = x(yx)",
+        "set live StudioLive = 1 StudioCaptured",
+    ];
 
-    worker.send({type: "ready", setList: ""});
-    harness.flushAnimationFrames();
-    harness.element("single-step").click();
-    harness.element("basis-step").click();
-    harness.element("colorize").click();
+    for (const command of cases) {
+        const harness = createHarness();
+        const source = harness.element("source");
+        const worker = harness.workers[0];
 
-    source.value = "define steps StudioTrace xy = x(yx)";
-    harness.pressEnter();
-    harness.flushAnimationFrames();
-    const inspection = worker.messages.find(
-        message => message.type === "inspect-definition");
-    worker.send({
-        type: "definition-inspection-result",
-        id: inspection.id,
-        result: {
-            success: true,
-            definition: true,
-            displayOnly: true,
-            showAll: false,
-            find: false,
-            replacement: "",
-        },
-    });
-    harness.flushAnimationFrames();
+        worker.send({type: "ready", setList: ""});
+        harness.flushAnimationFrames();
 
-    const evaluation = worker.messages.find(
-        message => message.type === "evaluate");
-    assert.equal(
-        evaluation.source,
-        "define steps StudioTrace xy = x(yx)");
-    assert.equal(evaluation.singleStep, false);
-    assert.equal(evaluation.keyStep, false);
-    assert.equal(evaluation.basisStep, false);
-    assert.equal(evaluation.colorize, false);
+        source.value = command;
+        harness.pressEnter();
+        harness.flushAnimationFrames();
+        const inspection = worker.messages.find(
+            message => message.type === "inspect-definition");
+        worker.send({
+            type: "definition-inspection-result",
+            id: inspection.id,
+            result: {
+                success: true,
+                definition: true,
+                displayOnly: false,
+                showAll: false,
+                find: false,
+                replacement: "",
+            },
+        });
+        harness.flushAnimationFrames();
 
-    const trace = [
-        "takeout y: Bx(Tx)",
-        "takeout x: SBT",
-        "optimize: SBT -> A",
-        "StudioTrace=A",
-        "",
-    ].join("\n");
-    worker.send({
-        type: "result",
-        id: inspection.id,
-        setList: "define StudioTrace xy = x(yx)",
-        result: {
-            success: true,
-            definition: true,
-            recoverWorker: false,
-            output: trace,
-            error: "",
-            reductions: 0,
-        },
-    });
+        const evaluation = worker.messages.find(
+            message => message.type === "evaluate");
+        assert.equal(evaluation.source, command);
+        assert.equal(evaluation.singleStep, false);
+        assert.equal(evaluation.keyStep, false);
+        assert.equal(evaluation.basisStep, false);
+        assert.equal(evaluation.colorize, false);
 
-    assert.equal(
-        harness.element("output").textContent,
-        `\n${trace.trimEnd()}`);
-    assert.equal(harness.element("save").disabled, false);
+        worker.send({
+            type: "result",
+            id: inspection.id,
+            setList: command,
+            result: {
+                success: true,
+                definition: true,
+                recoverWorker: false,
+                output: "",
+                error: "",
+                reductions: 0,
+            },
+        });
+
+        assert.equal(harness.element("output").textContent, command);
+        assert.equal(
+            childElements(harness.element("output")).some(
+                element => element.dataset.kind !== undefined),
+            false,
+            "definition modifier should not append result output",
+        );
+        assert.equal(
+            harness.element("save").attributes.get("aria-disabled"),
+            "false",
+        );
+    }
 });
 
 test("routes every dependency alias as display-only", () => {

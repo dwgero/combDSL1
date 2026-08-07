@@ -393,10 +393,10 @@ parse_and_key_step("K (I x) y");
 parse_eval("K (I x) y"); // prints: x
 ```
 
-At the start of a line, optionally preceded by whitespace, `set` followed by
-whitespace defines and registers a named basis. An optional decimal arity can
-appear after `=` and before the stored expression; when omitted, it defaults
-to `0`:
+At the start of a line, optionally preceded by whitespace,
+`set [captured | live]` followed by whitespace defines and registers a named
+basis. The modifier is optional. An optional decimal arity can appear after
+`=` and before the stored expression; when omitted, it defaults to `0`:
 
 ```cpp
 parse("set Double = 1 S(I)(I)");      // Double
@@ -404,6 +404,7 @@ parse_eval("set Twice = 1 S(I)(I)");  // registers Twice; prints nothing
 single_step(parse("Double x"));       // xx
 single_step(parse("Double x"), true); // SIIx
 parse("set Alias = I");               // Alias; arity defaults to 0
+parse("set live Dynamic = 1 Alias");  // Dynamic follows later Alias changes
 ```
 
 Whitespace before `set` and around `=` is optional, while at least one
@@ -418,8 +419,8 @@ stored expression. `parse_eval`, `read_parse_eval`, `parse_and_step`, and
 stored expression, and produce no output for the declaration itself. A
 malformed declaration does not register its name.
 
-At the start of a line, preceded by optional whitespace, `define [steps]`
-followed by whitespace creates a named basis
+At the start of a line, preceded by optional whitespace,
+`define [captured | live]` followed by whitespace creates a named basis
 by abstracting one or more lowercase symbols from a combinator expression.
 The symbols may be adjacent or separated by whitespace. Their count becomes
 the basis arity, and abstraction proceeds from the last symbol back to the
@@ -445,14 +446,15 @@ Under the hood, `define` uses contextual `takeout` passes. For `define foo xyz =
 the first pass takes out `z` with `x`, `y`, and recursive `foo` pending. The `y` pass
 similarly has `x` and `foo` pending, while the `x` pass has only `foo` pending.
 If the definition is recursive, the final `foo` pass has no pending atoms.
-The resulting expression has arity
-`3`. Without `steps`, as with `set`, the definition command is silent under
-`parse_eval`, `read_parse_eval`, and `parse_and_step` or
-`parse_and_key_step`. With `steps`, it still registers the definition and also
-displays changed preprocessing, every right-to-left symbol `takeout`, a
-recursive-name `takeout` when needed, each optimizer substitution, and a final
-`name=<stored_expression>` line. It ignores the stepping and color modes.
-Malformed definitions are not registered.
+The resulting expression has arity `3`. As with `set`, the definition command
+is silent under `parse_eval`, `read_parse_eval`, `parse_and_step`, and
+`parse_and_key_step`. Malformed definitions are not registered.
+
+For either `set` or `define`, the optional `captured` or `live` modifier
+overrides snapshot mode for that command only. It does not change the mode for
+later input. `captured` pins unqualified user-defined names to their current
+revisions, while `live` makes them follow later redefinitions. An explicit
+modifier is retained in `set_list()` so replay preserves the override.
 
 Before `takeout`, saturated named bases in the expression are applied,
 including reachable saturated bases nested inside other applications.
@@ -473,8 +475,8 @@ every `takeout` pass, and each optimizer substitution before the final
 `?=<expression>` line. Unchanged preprocessing and optimization passes are
 omitted.
 
-The names `abstract`, `all`, `steps`, `set`, `define`, `show`, `remove`,
-`snapshot`,
+The names `abstract`, `all`, `captured`, `live`, `steps`, `set`, `define`,
+`show`, `remove`, `snapshot`,
 `dependson`, `depends-on`, `depends`, `on`, `usedby`, `used-by`, `used`, `by`,
 `single`, `key`, `basis`, `colorize`, `about`, `birds`, `find`, `help`, `load`,
 `save`, `quit`, and `exit` are reserved words and cannot be used as names by
@@ -619,8 +621,9 @@ Removing and later adding a name again continues its existing version sequence;
 the earlier revisions remain available.
 
 The typed command `snapshot [on | off]` controls how subsequent unqualified
-name references are parsed. Snapshot mode starts on, and bare `snapshot` means
-`snapshot on`. With snapshot mode on, an unqualified reference such as `foo`
+name references are parsed when a `set` or `define` command has no
+`captured` or `live` modifier. Snapshot mode starts on, and bare `snapshot`
+means `snapshot on`. With snapshot mode on, an unqualified reference such as `foo`
 captures the current immutable revision of `foo`. With snapshot mode off, an
 unqualified `foo` is a live reference that follows later redefinitions of
 `foo`. An explicit reference such as `foo@2` is always frozen to that exact
@@ -710,11 +713,12 @@ in its canonical `snapshot on` form. Equivalent no-op definitions and rejected
 commands are omitted, but older changed definitions and snapshot commands
 after the first mutation are never compacted away. Keeping the remaining order
 preserves revision numbers, removals, mode changes, and the distinction between
-frozen and live references when the journal is replayed. A `set` declaration
-always includes its arity, including `0`; a `define` declaration includes its
-defining symbols. Quotes and backslashes appear exactly as a user would enter
-them. Passing each line through `input_escape` and then to `parse` recreates
-the definitions and snapshot semantics:
+frozen and live references when the journal is replayed. Explicit `captured`
+and `live` modifiers remain on their canonical `set` or `define` lines. A
+`set` declaration always includes its arity, including `0`; a `define`
+declaration includes its defining symbols. Quotes and backslashes appear
+exactly as a user would enter them. Passing each line through `input_escape`
+and then to `parse` recreates the definitions and snapshot semantics:
 
 ```cpp
 auto definitions = set_list();
@@ -750,14 +754,15 @@ expression produces no output, while malformed or empty lines throw
 The `crepl` executable applies `input_escape` to each line before passing it to
 `parse_eval`, so ordinary quoted words and backslashes can be entered directly.
 When standard output is a terminal, it first prints
-`Combinator Read-Eval-Print Loop, version 2.5.0`. Long evaluations display
+`Combinator Read-Eval-Print Loop, version 2.5.1`. Long evaluations display
 the accumulated step count every 1,000 reductions by overwriting one status
 line; the line is cleared before evaluation output is printed. Its interactive
 prompt is `>`. Interactive input uses GNU Readline, so previous nonempty
 commands can be recalled with Up Arrow or Ctrl-P, including commands from
 earlier interactive sessions. Press Tab to complete command words and supported
-options, including `snapshot on` and `snapshot off`; whitespace already entered
-between words is preserved. Save and load
+options, including `captured` and `live` after `set` or `define`, and
+`snapshot on` and `snapshot off`; whitespace already entered between words is
+preserved. Save and load
 each remember their own most recently successful filename across interactive
 sessions, initially `set_list.cmb`; Tab at either filename position restores
 it. Only command history and these two filenames persist automatically between
@@ -826,12 +831,11 @@ unknown result. The ordinary form prints only `?=<final_expression>`. With
 `takeout` pass, and every optimizer substitution before that same final line.
 The command does not evaluate its result and ignores the stepping and color
 modes.
-Enter `define [steps] <name> <symbol_list> = <combinator_expression>` to
-create a named basis. The ordinary form is silent. With `steps`, CREPL also
-prints changed preprocessing, every right-to-left symbol `takeout`, any
-recursive-name `takeout`, and every optimizer substitution before the final
-`<name>=<stored_expression>` line. The traced form still stores the definition
-and ignores the stepping and color modes.
+Enter `define [captured | live] <name> <symbol_list> =
+<combinator_expression>` to create a named basis. Enter
+`set [captured | live] <name> = [arity] <combinator_expression>` to store an
+expression directly. Both commands are silent. The optional modifier overrides
+snapshot mode for that command only and is retained in the saved journal.
 Enter `find [all] [num] ?<symbol_list> = <combinator_expression>` to search
 the pre-defined bird catalog. The `?` is required and marks the unknown
 combinator expression. The optional number must be from one through four and
@@ -1028,10 +1032,8 @@ and eventually restore the draft that was being edited. Ctrl-O submits the
 current input and, after successful completion, recalls the next history entry
 for editing. Parse errors, `Nothing to show`, cancellation, and timeout messages
 are displayed in red and do not themselves add a blank line after them. A
-successfully registered `set`, ordinary `define`, `remove`, or `snapshot`
-command leaves only that submitted command line, with no output beneath it. A
-`define steps` command displays its abstraction trace while registering the
-definition.
+successfully registered `set`, `define`, `remove`, or `snapshot` command leaves
+only that submitted command line, with no output beneath it.
 The following result begins on the next line without an intervening blank line.
 A successful `show` command is also followed without an intervening blank line.
 In Combinator Studio, a nonempty `show all` ends with a red `[show end]` line.
@@ -1039,10 +1041,11 @@ A submitted combinator expression nevertheless always begins after a blank line
 when the Results area already contains output.
 Press Tab to complete a unique prefix for the `abstract`, `set`, `define`,
 `dependson`, `depends-on`, `depends on`, `find`, `remove`, `show`, `snapshot`,
-`usedby`, `used-by`, or `used by` command and the `on` or `off` snapshot
-option; when no completion is available, Tab keeps its normal browser focus
-behavior. Studio accepts the same
-`abstract [steps] ?...`, `define [steps] name symbols = ...`, and
+`usedby`, `used-by`, or `used by` command, the `captured` or `live` definition
+modifier, and the `on` or `off` snapshot option; when no completion is
+available, Tab keeps its normal browser focus behavior. Studio accepts the same
+`abstract [steps] ?...`, `define [captured | live] name symbols = ...`,
+`set [captured | live] name = ...`, and
 `find [all] [num] ?...` forms as `crepl`. Find has a default limit of three.
 Without `all`, it stops at the first size with
 answers; with `all`, it continues through the full range. Every answer
