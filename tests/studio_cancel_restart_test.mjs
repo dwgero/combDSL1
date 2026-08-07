@@ -278,6 +278,8 @@ const createHarness = ({historyValues = []} = {}) => {
     };
     window.location = {protocol: "https:"};
     window.focus = () => {};
+    const selection = {isCollapsed: true};
+    window.getSelection = () => selection;
 
     const inputHistory = {
         record: (source, outcome = "") => outcome === ""
@@ -353,9 +355,33 @@ const createHarness = ({historyValues = []} = {}) => {
                 isComposing: false,
             });
         },
+        selection,
         workers: FakeWorker.instances,
     };
 };
+
+test("keeps selected history text while blank clicks focus input", () => {
+    const harness = createHarness();
+    const source = harness.element("source");
+    const sourceBox = harness.element("source-box");
+    const sourceHistory = harness.element("source-history");
+
+    source.value = "draft";
+    source.setSelectionRange(0, 0);
+    harness.selection.isCollapsed = false;
+    sourceBox.dispatch("click", {target: sourceHistory});
+    assert.deepEqual(
+        [source.selectionStart, source.selectionEnd],
+        [0, 0],
+    );
+
+    harness.selection.isCollapsed = true;
+    sourceBox.dispatch("click", {target: sourceHistory});
+    assert.deepEqual(
+        [source.selectionStart, source.selectionEnd],
+        [source.value.length, source.value.length],
+    );
+});
 
 test("replays a submission after cancellation and definition restore", () => {
     const harness = createHarness();

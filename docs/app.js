@@ -1365,7 +1365,9 @@
         resizeSourceEditor();
     });
     sourceBox.addEventListener("click", event => {
-        if (event.target !== source) {
+        const selection = window.getSelection?.();
+        if (event.target !== source &&
+            selection?.isCollapsed !== false) {
             focusSource();
         }
     });
