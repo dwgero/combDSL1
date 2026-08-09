@@ -580,12 +580,19 @@ Each normalization is limited to
 a repeated or excessively large expression. A stopped normalization is treated
 as a non-match, preventing a divergent candidate from blocking the remaining
 candidates.
-Native `check_for_trips_match` and `check_for_quads_match` dynamically
-distribute work among up to `std::thread::hardware_concurrency()`
-`std::jthread` workers. Matches are recorded by original candidate index and
-collected in index order, preserving the sequential result order. The quad
-search constructs candidates on demand rather than retaining millions of
-expression trees. Emscripten builds retain the single-threaded searches.
+Native `check_for_trips_match` and `check_for_quads_match` use the calling
+thread as a producer and dynamically hand each generated job to an idle
+`std::jthread` worker. The pool uses one fewer worker than
+`std::thread::hardware_concurrency()` when more than one hardware thread is
+available, leaving one hardware thread for the producer. Each worker has one
+private work slot; a trip job contains one candidate and a quad job contains
+up to four adjacent combinator tuples. Matches are tagged with their original
+candidate index and sorted after all workers become idle, preserving the
+sequential result order.
+Trip candidates are streamed instead of retained as a complete candidate
+vector, and quad candidates are constructed on demand without a full match
+bitmap or a reconstruction pass. Emscripten builds retain the single-threaded
+searches.
 
 `find_combinator_matches(symbol_list, expression, options)` searches the
 catalog in increasing composition size through `options.maximum_size`. The

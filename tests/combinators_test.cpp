@@ -23,6 +23,9 @@
 #include <cstdlib>
 #include <functional>
 #include <iostream>
+#if !defined(__EMSCRIPTEN__)
+#include <latch>
+#endif
 #include <memory>
 #include <sstream>
 #include <stdexcept>
@@ -293,6 +296,23 @@ static_assert(
     (combdsl::check_for_match_combinator_count - 1) *
         (combdsl::check_for_match_combinator_count - 1) *
         combdsl::check_for_pairs_match_candidate_count);
+#if !defined(__EMSCRIPTEN__)
+static_assert(
+    combdsl::detail::native_find_worker_count(0, 12) == 0);
+static_assert(
+    combdsl::detail::native_find_worker_count(1, 12) == 1);
+static_assert(
+    combdsl::detail::native_find_worker_count(3, 12) == 3);
+static_assert(
+    combdsl::detail::native_find_worker_count(100, 12) == 11);
+static_assert(
+    combdsl::detail::native_find_worker_count(100, 1) == 1);
+static_assert(
+    combdsl::detail::native_find_worker_count(100, 0) == 1);
+static_assert(
+    combdsl::detail::native_find_worker_count(100, 100) ==
+    combdsl::detail::native_find_worker_limit);
+#endif
 using combinator_match_symbol_span =
     std::span<combdsl::quoted_atomic const>;
 static_assert(std::is_same_v<
@@ -4297,6 +4317,185 @@ int main() {
              }
          },
          "50164 01010 AAA A(AA)");
+#if !defined(__EMSCRIPTEN__)
+    test("native find dispatch uses idle worker slots",
+         [] {
+             constexpr std::size_t job_count = 64;
+             std::array<std::atomic<unsigned>, job_count>
+                 seen{};
+             std::latch first_workers_started{3};
+             std::mutex worker_threads_mutex;
+             std::vector<std::thread::id> worker_threads;
+             auto const producer_thread =
+                 std::this_thread::get_id();
+             std::atomic<bool> ran_on_producer = false;
+             combdsl::detail::dispatch_native_find_work<
+                 std::size_t>(
+                 job_count,
+                 [&](auto&& submit) {
+                     for (std::size_t job = 0;
+                          job < job_count;
+                          ++job) {
+                         if (!submit(job)) {
+                             break;
+                         }
+                     }
+                 },
+                 [&](std::size_t job) {
+                     if (job < 3) {
+                         {
+                             std::scoped_lock lock(
+                                 worker_threads_mutex);
+                             worker_threads.push_back(
+                                 std::this_thread::get_id());
+                         }
+                         first_workers_started.count_down();
+                         first_workers_started.wait();
+                     }
+                     if (std::this_thread::get_id() ==
+                         producer_thread) {
+                         ran_on_producer.store(true);
+                     }
+                     seen[job].fetch_add(1);
+                 },
+                 4);
+             std::size_t processed = 0;
+             bool exactly_once = true;
+             for (auto const& count : seen) {
+                 auto const value = count.load();
+                 processed += value;
+                 exactly_once = exactly_once && value == 1;
+             }
+             std::cout << processed << ' '
+                       << exactly_once << ' '
+                       << !ran_on_producer.load() << ' '
+                       << worker_threads.size();
+         },
+         "64 1 1 3");
+    test("native find dispatch propagates worker exceptions",
+         [] {
+             bool all_caught = true;
+             for (std::size_t repetition = 0;
+                  repetition < 16;
+                  ++repetition) {
+                 try {
+                     combdsl::detail::dispatch_native_find_work<
+                         std::size_t>(
+                         16,
+                         [&](auto&& submit) {
+                             for (std::size_t job = 0;
+                                  job < 16;
+                                  ++job) {
+                                 if (!submit(job)) {
+                                     break;
+                                 }
+                             }
+                         },
+                         [](std::size_t job) {
+                             if (job == 3) {
+                                 throw std::runtime_error(
+                                     "worker failure");
+                             }
+                         },
+                         4);
+                     all_caught = false;
+                 } catch (std::runtime_error const& error) {
+                     all_caught = all_caught &&
+                         std::string_view(error.what()) ==
+                             "worker failure";
+                 }
+             }
+             std::cout << all_caught;
+         },
+         "1");
+    test("native find dispatch propagates generator exceptions",
+         [] {
+             try {
+                 combdsl::detail::dispatch_native_find_work<
+                     std::size_t>(
+                     4,
+                     [](auto&& submit) {
+                         static_cast<void>(submit(0));
+                         throw std::runtime_error(
+                             "generator failure");
+                     },
+                     [](std::size_t) {},
+                     4);
+             } catch (std::runtime_error const& error) {
+                 std::cout << error.what();
+             }
+         },
+         "generator failure");
+    test("native find dispatch reports final worker failure",
+         [] {
+             std::latch worker_started{1};
+             std::atomic<bool> release_worker = false;
+             try {
+                 combdsl::detail::dispatch_native_find_work<
+                     std::size_t>(
+                     1,
+                     [&](auto&& submit) {
+                         static_cast<void>(submit(0));
+                         worker_started.wait();
+                         release_worker.store(true);
+                     },
+                     [&](std::size_t) {
+                         worker_started.count_down();
+                         while (!release_worker.load()) {
+                             std::this_thread::yield();
+                         }
+                         throw std::runtime_error(
+                             "final worker failure");
+                     },
+                     2);
+             } catch (std::runtime_error const& error) {
+                 std::cout << error.what();
+             }
+         },
+         "final worker failure");
+    test("native find dispatch survives repeated wakeup races",
+         [] {
+             constexpr std::size_t repetition_count = 64;
+             constexpr std::size_t job_count = 32;
+             bool exactly_once = true;
+             for (std::size_t repetition = 0;
+                  repetition < repetition_count;
+                  ++repetition) {
+                 std::array<std::atomic<unsigned>, job_count>
+                     seen{};
+                 std::latch first_batch_started{4};
+                 combdsl::detail::dispatch_native_find_work<
+                     std::size_t>(
+                     job_count,
+                     [&](auto&& submit) {
+                         for (std::size_t job = 0;
+                              job < job_count;
+                              ++job) {
+                             if (!submit(job)) {
+                                 break;
+                             }
+                         }
+                     },
+                     [&](std::size_t job) {
+                         if (job < 4) {
+                             first_batch_started.count_down();
+                             first_batch_started.wait();
+                         } else if (
+                             (job + repetition) % 3 == 0) {
+                             std::this_thread::yield();
+                         }
+                         seen[job].fetch_add(1);
+                     },
+                     5);
+                 for (auto const& count : seen) {
+                     exactly_once = exactly_once &&
+                         count.load() == 1;
+                 }
+             }
+             std::cout << exactly_once;
+         },
+         "1");
+#endif
     auto const a_trip_target = quote(A)(quote(A)(A));
     auto const parallel_trip_matches =
         combdsl::check_for_trips_match(

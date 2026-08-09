@@ -21,6 +21,7 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <bit>
 #include <concepts>
 #include <csignal>
 #include <cstdint>
@@ -46,6 +47,7 @@
 #include <vector>
 
 #if !defined(__EMSCRIPTEN__)
+#include <semaphore>
 #include <thread>
 #endif
 
@@ -8369,6 +8371,214 @@ inline void for_each_predefined_bird_quad_at(
                normalized_expression);
 }
 
+#if !defined(__EMSCRIPTEN__)
+struct indexed_find_match {
+    std::size_t index;
+    quoted_expression expression;
+};
+
+inline constexpr std::size_t native_find_worker_limit =
+    std::numeric_limits<std::uint64_t>::digits;
+
+[[nodiscard]] inline constexpr std::size_t native_find_worker_count(
+    std::size_t maximum_work_count,
+    unsigned reported_hardware_concurrency =
+        std::thread::hardware_concurrency()) noexcept {
+    if (maximum_work_count == 0) {
+        return 0;
+    }
+    auto const requested_worker_count =
+        reported_hardware_concurrency > 1
+            ? static_cast<std::size_t>(
+                  reported_hardware_concurrency - 1)
+            : std::size_t{1};
+    return std::min(
+        maximum_work_count,
+        std::min(
+            requested_worker_count,
+            native_find_worker_limit));
+}
+
+template <class Work, class Generator, class Processor>
+inline void dispatch_native_find_work(
+    std::size_t maximum_work_count,
+    Generator&& generate,
+    Processor&& process,
+    unsigned reported_hardware_concurrency =
+        std::thread::hardware_concurrency()) {
+    auto const worker_count = native_find_worker_count(
+        maximum_work_count,
+        reported_hardware_concurrency);
+    if (worker_count == 0) {
+        return;
+    }
+
+    struct worker_slot {
+        std::optional<Work> work;
+        std::exception_ptr failure;
+        std::counting_semaphore<2> ready{0};
+    };
+
+    std::vector<std::unique_ptr<worker_slot>> slots;
+    slots.reserve(worker_count);
+    for (std::size_t index = 0;
+         index < worker_count;
+         ++index) {
+        slots.push_back(std::make_unique<worker_slot>());
+    }
+
+    auto const all_idle_mask =
+        worker_count == native_find_worker_limit
+            ? std::numeric_limits<std::uint64_t>::max()
+            : (std::uint64_t{1} << worker_count) - 1;
+    std::atomic<std::uint64_t> idle_worker_bits = 0;
+    std::atomic<bool> producer_waiting = false;
+    std::atomic<bool> stopping = false;
+    std::atomic<std::size_t> failure_worker = worker_count;
+    std::counting_semaphore<> producer_semaphore{0};
+
+    std::vector<std::jthread> workers;
+    workers.reserve(worker_count);
+    try {
+        for (std::size_t worker_index = 0;
+             worker_index < worker_count;
+             ++worker_index) {
+            workers.emplace_back(
+                [&, worker_index] {
+                    auto& slot = *slots[worker_index];
+                    auto const worker_mask =
+                        std::uint64_t{1} << worker_index;
+                    auto publish_idle = [&] {
+                        idle_worker_bits.fetch_or(worker_mask);
+                        if (producer_waiting.load()) {
+                            producer_semaphore.release();
+                        }
+                    };
+
+                    publish_idle();
+
+                    for (;;) {
+                        slot.ready.acquire();
+                        if (stopping.load()) {
+                            return;
+                        }
+                        try {
+                            Work work = std::move(*slot.work);
+                            slot.work.reset();
+                            std::invoke(
+                                process,
+                                std::move(work));
+                        } catch (...) {
+                            slot.failure =
+                                std::current_exception();
+                            auto expected = worker_count;
+                            static_cast<void>(
+                                failure_worker.compare_exchange_strong(
+                                    expected,
+                                    worker_index));
+                            stopping.store(true);
+                            publish_idle();
+                            return;
+                        }
+
+                        publish_idle();
+                    }
+                });
+        }
+    } catch (...) {
+        auto const startup_failure =
+            std::current_exception();
+        stopping.store(true);
+        for (std::size_t worker_index = 0;
+             worker_index < workers.size();
+             ++worker_index) {
+            slots[worker_index]->ready.release();
+        }
+        for (auto& worker : workers) {
+            worker.join();
+        }
+        std::rethrow_exception(startup_failure);
+    }
+
+    auto wait_for_worker_state = [&](auto&& ready) {
+        auto idle = idle_worker_bits.load();
+        while (!std::invoke(ready, idle) &&
+               !stopping.load()) {
+            producer_waiting.store(true);
+            idle = idle_worker_bits.load();
+            if (!std::invoke(ready, idle) &&
+                !stopping.load()) {
+                producer_semaphore.acquire();
+            }
+            producer_waiting.store(false);
+            while (producer_semaphore.try_acquire()) {
+            }
+            idle = idle_worker_bits.load();
+        }
+        return idle;
+    };
+
+    static_cast<void>(wait_for_worker_state(
+        [&](std::uint64_t idle) {
+            return idle == all_idle_mask;
+        }));
+
+    // The generator invokes submit only on the producer thread, so one
+    // producer owns all idle-bit claims.
+    auto submit = [&](Work work) {
+        auto const idle = wait_for_worker_state(
+            [](std::uint64_t available) {
+                return available != 0;
+            });
+        if (stopping.load()) {
+            return false;
+        }
+        auto const worker_index =
+            static_cast<std::size_t>(
+                std::countr_zero(idle));
+        auto const worker_mask =
+            std::uint64_t{1} << worker_index;
+        slots[worker_index]->work.emplace(
+            std::move(work));
+        idle_worker_bits.fetch_and(~worker_mask);
+        slots[worker_index]->ready.release();
+        return true;
+    };
+
+    std::exception_ptr generator_failure;
+    try {
+        std::invoke(
+            std::forward<Generator>(generate),
+            submit);
+    } catch (...) {
+        generator_failure = std::current_exception();
+    }
+
+    if (!generator_failure && !stopping.load()) {
+        static_cast<void>(wait_for_worker_state(
+            [&](std::uint64_t idle) {
+                return idle == all_idle_mask;
+            }));
+    }
+    stopping.store(true);
+    for (auto& slot : slots) {
+        slot->ready.release();
+    }
+    for (auto& worker : workers) {
+        worker.join();
+    }
+
+    if (generator_failure) {
+        std::rethrow_exception(generator_failure);
+    }
+    auto const failed_worker = failure_worker.load();
+    if (failed_worker < worker_count) {
+        std::rethrow_exception(
+            slots[failed_worker]->failure);
+    }
+}
+#endif
+
 } // namespace detail
 
 [[nodiscard]] inline bool check_for_match(
@@ -8495,82 +8705,50 @@ check_for_trips_match(
             }
         });
 #else
-    std::vector<quoted_expression> candidates;
-    candidates.reserve(check_for_trips_match_candidate_count);
-    detail::for_each_predefined_bird_trip(
-        [&](quoted_expression trip) {
-            candidates.push_back(std::move(trip));
+    (void)detail::predefined_bird_combinators();
+    struct trip_job {
+        std::size_t index;
+        quoted_expression expression;
+    };
+    std::vector<detail::indexed_find_match> matches;
+    std::mutex matches_mutex;
+
+    detail::dispatch_native_find_work<trip_job>(
+        check_for_trips_match_candidate_count,
+        [&](auto&& submit) {
+            std::size_t candidate_index = 0;
+            bool accepting_work = true;
+            detail::for_each_predefined_bird_trip(
+                [&](quoted_expression trip) {
+                    auto const index = candidate_index++;
+                    if (accepting_work) {
+                        accepting_work = submit({
+                            index,
+                            std::move(trip),
+                        });
+                    }
+                });
+        },
+        [&](trip_job job) {
+            if (detail::check_normalized_match(
+                    job.expression,
+                    symbol_list,
+                    *normalized_expression)) {
+                std::scoped_lock lock(matches_mutex);
+                matches.push_back({
+                    job.index,
+                    std::move(job.expression),
+                });
+            }
         });
 
-    auto const reported_worker_count =
-        std::thread::hardware_concurrency();
-    auto const worker_count = std::min(
-        candidates.size(),
-        std::size_t{
-            reported_worker_count == 0
-                ? 1
-                : reported_worker_count});
-    std::vector<std::uint8_t> matched(
-        candidates.size(), std::uint8_t{0});
-    std::atomic<std::size_t> next_candidate = 0;
-    std::atomic<bool> failed = false;
-    std::exception_ptr failure;
-    std::mutex failure_mutex;
-    std::vector<std::jthread> workers;
-    workers.reserve(worker_count);
-
-    for (std::size_t worker_index = 0;
-         worker_index < worker_count;
-         ++worker_index) {
-        workers.emplace_back(
-            [&] {
-                try {
-                    constexpr std::size_t chunk_size = 1;
-                    while (!failed.load(
-                        std::memory_order_relaxed)) {
-                        auto const begin =
-                            next_candidate.fetch_add(
-                                chunk_size,
-                                std::memory_order_relaxed);
-                        if (begin >= candidates.size()) {
-                            break;
-                        }
-                        auto const end = std::min(
-                            begin + chunk_size,
-                            candidates.size());
-                        for (auto index = begin;
-                             index < end;
-                             ++index) {
-                            if (detail::check_normalized_match(
-                                    candidates[index],
-                                    symbol_list,
-                                    *normalized_expression)) {
-                                matched[index] = 1;
-                            }
-                        }
-                    }
-                } catch (...) {
-                    if (!failed.exchange(
-                            true,
-                            std::memory_order_relaxed)) {
-                        std::scoped_lock lock(failure_mutex);
-                        failure = std::current_exception();
-                    }
-                }
-            });
-    }
-    for (auto& worker : workers) {
-        worker.join();
-    }
-    if (failure) {
-        std::rethrow_exception(failure);
-    }
-    for (std::size_t index = 0;
-         index < candidates.size();
-         ++index) {
-        if (matched[index] != 0) {
-            result.push_back(std::move(candidates[index]));
-        }
+    std::ranges::sort(
+        matches,
+        {},
+        &detail::indexed_find_match::index);
+    result.reserve(matches.size());
+    for (auto& match : matches) {
+        result.push_back(std::move(match.expression));
     }
 #endif
     return result;
@@ -8617,109 +8795,65 @@ check_for_quads_match(
             });
     }
 #else
-    constexpr auto slot_count =
-        check_for_quads_match_shape_count *
-        check_for_quads_match_tuple_count;
-    auto const reported_worker_count =
-        std::thread::hardware_concurrency();
-    auto const worker_count = std::min(
-        check_for_quads_match_tuple_count,
-        std::size_t{
-            reported_worker_count == 0
-                ? 1
-                : reported_worker_count});
-    std::vector<std::uint8_t> matched(
-        slot_count, std::uint8_t{0});
-    std::atomic<std::size_t> next_tuple = 0;
-    std::atomic<bool> failed = false;
-    std::exception_ptr failure;
-    std::mutex failure_mutex;
-    std::vector<std::jthread> workers;
-    workers.reserve(worker_count);
+    struct quad_job {
+        std::size_t begin;
+        std::size_t end;
+    };
+    constexpr std::size_t tuples_per_job = 4;
+    constexpr auto quad_job_count =
+        (check_for_quads_match_tuple_count +
+         tuples_per_job - 1) /
+        tuples_per_job;
+    std::vector<detail::indexed_find_match> matches;
+    std::mutex matches_mutex;
 
-    for (std::size_t worker_index = 0;
-         worker_index < worker_count;
-         ++worker_index) {
-        workers.emplace_back(
-            [&] {
-                try {
-                    constexpr std::size_t chunk_size = 4;
-                    while (!failed.load(
-                        std::memory_order_relaxed)) {
-                        auto const begin =
-                            next_tuple.fetch_add(
-                                chunk_size,
-                                std::memory_order_relaxed);
-                        if (begin >=
-                            check_for_quads_match_tuple_count) {
-                            break;
-                        }
-                        auto const end = std::min(
-                            begin + chunk_size,
-                            check_for_quads_match_tuple_count);
-                        for (auto tuple_index = begin;
-                             tuple_index < end;
-                             ++tuple_index) {
-                            detail::for_each_predefined_bird_quad_at(
-                                tuple_index,
-                                [&](std::size_t shape_index,
-                                    quoted_expression quad) {
-                                    if (detail::check_normalized_match(
-                                            std::move(quad),
-                                            symbol_list,
-                                            *normalized_expression)) {
-                                        matched[
-                                            tuple_index *
-                                                check_for_quads_match_shape_count +
-                                            shape_index] = 1;
-                                    }
-                                });
-                        }
-                    }
-                } catch (...) {
-                    if (!failed.exchange(
-                            true,
-                            std::memory_order_relaxed)) {
-                        std::scoped_lock lock(failure_mutex);
-                        failure = std::current_exception();
-                    }
+    detail::dispatch_native_find_work<quad_job>(
+        quad_job_count,
+        [&](auto&& submit) {
+            for (std::size_t begin = 0;
+                 begin < check_for_quads_match_tuple_count;
+                 begin += tuples_per_job) {
+                if (!submit({
+                        begin,
+                        std::min(
+                            begin + tuples_per_job,
+                            check_for_quads_match_tuple_count),
+                    })) {
+                    break;
                 }
-            });
-    }
-    for (auto& worker : workers) {
-        worker.join();
-    }
-    if (failure) {
-        std::rethrow_exception(failure);
-    }
+            }
+        },
+        [&](quad_job job) {
+            for (auto tuple_index = job.begin;
+                 tuple_index < job.end;
+                 ++tuple_index) {
+                detail::for_each_predefined_bird_quad_at(
+                    tuple_index,
+                    [&](std::size_t shape_index,
+                        quoted_expression quad) {
+                        if (detail::check_normalized_match(
+                                quad,
+                                symbol_list,
+                                *normalized_expression)) {
+                            std::scoped_lock lock(matches_mutex);
+                            matches.push_back({
+                                tuple_index *
+                                        check_for_quads_match_shape_count +
+                                    shape_index,
+                                std::move(quad),
+                            });
+                        }
+                    });
+            }
+        });
 
-    for (std::size_t tuple_index = 0;
-         tuple_index < check_for_quads_match_tuple_count;
-         ++tuple_index) {
-        auto const slot_begin =
-            tuple_index * check_for_quads_match_shape_count;
-        auto const any_match = std::any_of(
-            matched.begin() +
-                static_cast<std::ptrdiff_t>(slot_begin),
-            matched.begin() +
-                static_cast<std::ptrdiff_t>(
-                    slot_begin +
-                    check_for_quads_match_shape_count),
-            [](std::uint8_t value) {
-                return value != 0;
-            });
-        if (!any_match) {
-            continue;
-        }
-
-        detail::for_each_predefined_bird_quad_at(
-            tuple_index,
-            [&](std::size_t shape_index,
-                quoted_expression quad) {
-                if (matched[slot_begin + shape_index] != 0) {
-                    result.push_back(std::move(quad));
-                }
-            });
+    std::ranges::sort(
+        matches,
+        {},
+        &detail::indexed_find_match::index);
+    result.reserve(matches.size());
+    for (auto& match : matches) {
+        result.push_back(std::move(match.expression));
     }
 #endif
     return result;
