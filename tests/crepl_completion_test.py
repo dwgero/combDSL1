@@ -162,6 +162,20 @@ def main():
         output = reader.read_until(b">")
         require_completed_line(output, b"key   step   off \n")
 
+        write_all(master, b"ste\tlim\t2\n")
+        output = reader.read_until(b">")
+        require_completed_line(output, b"step limit 2\n")
+        if b"Parse error" in normalized(output):
+            raise AssertionError(
+                f"expected successful step limit 2; received {output!r}")
+
+        write_all(master, b"step   limit   o\t\n")
+        output = reader.read_until(b">")
+        require_completed_line(output, b"step   limit   off \n")
+        if b"Parse error" in normalized(output):
+            raise AssertionError(
+                f"expected successful step limit off; received {output!r}")
+
         write_all(master, b"ref\t\n")
         output = reader.read_until(b">")
         require_completed_line(output, b"references \n")

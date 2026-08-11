@@ -362,9 +362,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             color: #c33;
         }
     </style>
-    <script src="./evaluation_watchdog.js?v=2.6.1" defer></script>
-    <script src="./input_history.js?v=2.6.1" defer></script>
-    <script src="./app.js?v=2.6.1" defer></script>
+    <script src="./evaluation_watchdog.js?v=2.6.5" defer></script>
+    <script src="./input_history.js?v=2.6.5" defer></script>
+    <script src="./app.js?v=2.6.5" defer></script>
 </head>
 <body>
     <main aria-labelledby="studio-title">
@@ -438,6 +438,18 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
         </form>
     </dialog>
 
+    <dialog id="step-limit-dialog"
+        aria-labelledby="step-limit-title"
+        aria-describedby="step-limit-message">
+        <h2 id="step-limit-title">Step limit reached</h2>
+        <p id="step-limit-message" class="dialog-message"></p>
+        <form method="dialog" class="dialog-controls">
+            <button type="submit" value="cancel">Cancel</button>
+            <button id="step-limit-resume" type="submit"
+                value="resume">Resume</button>
+        </form>
+    </dialog>
+
     <dialog id="help-dialog" aria-labelledby="help-title">
         <h2 id="help-title">Stepping Options</h2>
         <dl>
@@ -465,6 +477,24 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
                 <code>Mx</code> becomes <code>SIIx</code>). It may remain on
                 when neither stepping mode is active; ordinary evaluation
                 ignores it.
+            </dd>
+            <dt><code>step limit &lt;off | num&gt;</code></dt>
+            <dd>
+                Limits each subsequent ordinary or Single Step evaluation to
+                at most <code>num</code> reductions. Key Step ignores this
+                setting. The limit is off at startup, and an explicit
+                <code>off</code> or <code>num</code> is required;
+                <code>num</code> must be greater than zero. An
+                expression that reaches normal form on exactly the limiting
+                reduction completes normally. Otherwise, Studio offers to
+                cancel or resume; resuming continues the same expression with
+                a fresh limit interval in the same Results entry. Before the
+                dialog opens, any progress line is refreshed to the exact
+                cumulative step count; Results then remain unchanged while it
+                waits. Cancelling adds only the red <code>[cancelled]</code>
+                line. This remains a typed command;
+                there is no Step Limit button, and the setting is not written
+                to saved set-list journals.
             </dd>
             <dt>Colorize</dt>
             <dd>
@@ -501,8 +531,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             Press <kbd>Tab</kbd> to complete a unique prefix for
             <code>abstract</code>, <code>set</code>, <code>define</code>,
             the dependency commands described below, <code>find</code>,
-            <code>references</code>, <code>remove</code>, or <code>show</code>,
-            including supported command options.
+            <code>references</code>, <code>remove</code>, <code>show</code>,
+            or <code>step limit</code>, including supported command options.
             <br><br>
             <code>set [captured | live] name =
                 combinator_expression</code><br>
@@ -764,7 +794,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             data-dialog-initial-focus>About</h2>
         <div class="license-text">
             <!-- Keep this version and the app.js cache key in sync. -->
-            <p>Combinator Studio, version 2.6.1<br>
+            <p>Combinator Studio, version 2.6.5<br>
                 Part of the C++ Combinator DSL<br>
                 Copyright (C) 2026  David W. Gero</p>
             <p>This program is free software: you can redistribute it and/or modify

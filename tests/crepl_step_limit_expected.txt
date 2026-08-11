@@ -1,0 +1,13 @@
+Ix
+[step limit reached after 2 steps]
+x
+x
+Ix
+[step limit reached after 1 step]
+Ix
+[step limit reached after 1 step]
+x
+I(Ix)
+Ix
+[step limit reached after 2 steps]
+x

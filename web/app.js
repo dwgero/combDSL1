@@ -45,6 +45,7 @@
         "remove",
         "set",
         "show",
+        "step limit",
         "used by",
         "used-by",
         "usedby",
@@ -64,6 +65,10 @@
         inputHistoryTools.createCommandCompleter([
             "references captured",
             "references live",
+        ]);
+    const completeStepLimitCommand =
+        inputHistoryTools.createCommandCompleter([
+            "step limit off",
         ]);
     const abstractCommandCompleters = [
         "abstract ?",
@@ -107,6 +112,7 @@
             completeAbstractCommand(source) ??
             completeShowAll(source) ??
             completeReferencesCommand(source) ??
+            completeStepLimitCommand(source) ??
             completeFindCommand(source);
     const form = document.querySelector("#evaluation-form");
     const sourceBox = document.querySelector("#source-box");
@@ -128,6 +134,12 @@
         "#replacement-message");
     const replacementReplace = document.querySelector(
         "#replacement-replace");
+    const stepLimitDialog = document.querySelector(
+        "#step-limit-dialog");
+    const stepLimitDialogMessage = document.querySelector(
+        "#step-limit-message");
+    const stepLimitResume = document.querySelector(
+        "#step-limit-resume");
     const help = document.querySelector("#help");
     const helpDialog = document.querySelector("#help-dialog");
     const combinatorInfo = document.querySelector("#combinator-info");
@@ -146,6 +158,7 @@
     let nextRequestId = 0;
     let activeRequest;
     let replacementRequest;
+    let stepLimitRequest;
     let loadRequest;
     let ready = false;
     let workerStarting = false;
@@ -158,6 +171,7 @@
     let basisStepEnabled = false;
     let keyStepEnabled = false;
     let colorizeEnabled = false;
+    let stepLimit;
     let outputScrollScheduled = false;
     let sourceScrollScheduled = false;
     const blobDownloadsSupported =
@@ -245,7 +259,7 @@
     };
 
     const redNoticePattern =
-        /\[(?:cancelled|timed out[^\]\r\n]*)\]/g;
+        /\[(?:cancelled|step limit|timed out[^\]\r\n]*)\]/g;
 
     const appendTextWithRedNotices = (parent, text) => {
         const content = String(text);
@@ -310,7 +324,8 @@
 
     const armEvaluationWatchdog = (request, waitMs) => {
         clearEvaluationWatchdog(request);
-        if (request.keyStep || document.hidden) {
+        if (request.keyStep || request.awaitingStepLimit ||
+            document.hidden) {
             return;
         }
 
@@ -335,7 +350,7 @@
         if (document.hidden ||
             request?.evaluationWorker !== worker ||
             request.evaluationGeneration !== generation ||
-            request.keyStep) {
+            request.keyStep || request.awaitingStepLimit) {
             return;
         }
         armEvaluationWatchdog(
@@ -462,15 +477,16 @@
     const updateEvaluationProgress = (
         request,
         reductions,
-        exact = false,
+        {exact = false, final = false} = {},
     ) => {
-        const completedMilestone = exact
+        const displayExactCount = exact || final;
+        const completedMilestone = displayExactCount
             ? evaluationWatchdog.finalDisplayedStepCount(reductions)
             : evaluationWatchdog.displayedStepCount(reductions);
         const displayedMilestone = request.displayedSteps;
         if (completedMilestone === 0 ||
             completedMilestone < displayedMilestone ||
-            (!exact &&
+            (!displayExactCount &&
                 completedMilestone === displayedMilestone)) {
             return;
         }
@@ -485,14 +501,15 @@
             request.outputEntry.append("\n", request.progressEntry);
         }
         request.displayedSteps = completedMilestone;
-        request.progressEntry.textContent =
-            evaluationWatchdog.stepCountMessage(
-                reductions, exact);
+        request.progressEntry.textContent = exact && !final
+            ? `[${completedMilestone} steps so far]`
+            : evaluationWatchdog.stepCountMessage(
+                  reductions, final);
         scrollToNewestOutput();
     };
 
-    const completeSuccessfulSource = request => {
-        appendSourceHistory(request.source);
+    const completeSuccessfulSource = (request, outcome = "") => {
+        appendSourceHistory(request.source, outcome);
         if (source.value === request.source) {
             const nextSource = request.operateAndGetNext === undefined
                 ? ""
@@ -576,6 +593,12 @@
                     ? false
                     : request.keyStep,
                 colorize: request.colorize,
+                stepLimitEnabled:
+                    !request.keyStep &&
+                    request.stepLimit !== undefined,
+                stepLimit: request.keyStep
+                    ? 0
+                    : request.stepLimit ?? 0,
             });
         });
     };
@@ -603,6 +626,42 @@
         if (replacementDialog.open) {
             replacementDialog.close("cancel");
         }
+    };
+
+    const dismissStepLimitDialog = () => {
+        if (stepLimitRequest !== undefined) {
+            stepLimitRequest.awaitingStepLimit = false;
+        }
+        stepLimitRequest = undefined;
+        if (stepLimitDialog.open) {
+            stepLimitDialog.close("cancel");
+        }
+    };
+
+    const pauseAtStepLimit = request => {
+        if (activeRequest !== request) {
+            return;
+        }
+
+        clearEvaluationWatchdog(request);
+        request.evaluationStarted = false;
+        request.stepReady = false;
+        request.stepPending = false;
+        request.awaitingStepLimit = true;
+        stepLimitRequest = request;
+        stepLimitDialogMessage.textContent =
+            "Step limit reached after " + request.stepLimit + " " +
+            (request.stepLimit === 1 ? "step." : "steps.");
+        stepLimitDialog.returnValue = "";
+        status.textContent = "Step limit reached";
+        stepLimitDialog.showModal();
+        stepLimitResume.focus({preventScroll: true});
+        afterNextPaint(() => {
+            if (stepLimitDialog.open) {
+                stepLimitResume.focus({preventScroll: true});
+            }
+        });
+        updateControls();
     };
 
     const saveSetListWithPicker = async () => {
@@ -639,6 +698,7 @@
 
     const showStartupError = message => {
         dismissReplacementDialog();
+        dismissStepLimitDialog();
         workerStarting = false;
         submitWhenReady = false;
         ready = false;
@@ -652,6 +712,7 @@
     const startWorker = (setListToRestore = "") => {
         clearEvaluationWatchdog(activeRequest);
         dismissReplacementDialog();
+        dismissStepLimitDialog();
         const currentGeneration = ++generation;
         let currentWorker;
         let terminationExpected = false;
@@ -690,7 +751,7 @@
                 !activeRequest.evaluationStarted) {
                 const request = activeRequest;
                 request.evaluationStarted = true;
-                request.evaluationProgress =
+                request.evaluationProgress ??=
                     evaluationWatchdog.createProgressState();
                 armEvaluationWatchdog(
                     request, evaluationWatchdog.timeoutMs);
@@ -761,6 +822,17 @@
                     status.textContent = "Ready";
                     completeEvaluationOutput(
                         request, message.result.error, "error");
+                    updateControls();
+                    return;
+                }
+                if (message.result.stepLimitCommand) {
+                    stepLimit = message.result.stepLimitEnabled
+                        ? Number(message.result.stepLimit)
+                        : undefined;
+                    activeRequest = undefined;
+                    status.textContent = "Ready";
+                    request.outputEntry.dataset.compactAfter = "true";
+                    completeSuccessfulSource(request);
                     updateControls();
                     return;
                 }
@@ -897,6 +969,20 @@
                     failedEvaluationAndRestart(completedRequest);
                     return;
                 }
+                clearEvaluationWatchdog(completedRequest);
+                if (message.result.success &&
+                    message.result.limitReached) {
+                    if (!completedRequest.singleStep &&
+                        !completedRequest.keyStep &&
+                        !completedRequest.findCommand) {
+                        updateEvaluationProgress(
+                            completedRequest,
+                            message.result.reductions,
+                            {exact: true});
+                    }
+                    pauseAtStepLimit(completedRequest);
+                    return;
+                }
                 if (message.result.success &&
                     !completedRequest.singleStep &&
                     !completedRequest.keyStep &&
@@ -904,11 +990,8 @@
                     updateEvaluationProgress(
                         completedRequest,
                         message.result.reductions,
-                        true);
+                        {exact: true, final: true});
                 }
-                clearEvaluationWatchdog(completedRequest);
-                activeRequest = undefined;
-                status.textContent = "Ready";
                 if (message.result.success) {
                     if (message.result.definition) {
                         updateSavedSetList(message.setList);
@@ -950,6 +1033,8 @@
                     completeEvaluationOutput(
                         completedRequest, message.result.error, "error");
                 }
+                activeRequest = undefined;
+                status.textContent = "Ready";
                 updateControls();
                 return;
             }
@@ -961,6 +1046,7 @@
                     return;
                 }
                 dismissReplacementDialog();
+                dismissStepLimitDialog();
                 workerStarting = false;
                 submitWhenReady = false;
                 activeRequest = undefined;
@@ -992,6 +1078,7 @@
                 return;
             }
             dismissReplacementDialog();
+            dismissStepLimitDialog();
             workerStarting = false;
             submitWhenReady = false;
             activeRequest = undefined;
@@ -1072,10 +1159,12 @@
             basisStep: basisStepEnabled,
             keyStep: keyStepEnabled,
             colorize: colorizeEnabled,
+            stepLimit,
             stepReady: false,
             stepPending: false,
             displayedSteps: 0,
             awaitingReplacement: false,
+            awaitingStepLimit: false,
             operateAndGetNext,
             outputEntry: beginEvaluationOutput(startingExpression),
         };
@@ -1217,7 +1306,9 @@
     const configureDialog = (button, dialog) => {
         button.addEventListener("click", () => {
             if (replacementRequest !== undefined ||
-                replacementDialog.open) {
+                replacementDialog.open ||
+                stepLimitRequest !== undefined ||
+                stepLimitDialog.open) {
                 return;
             }
             dialog.showModal();
@@ -1294,8 +1385,34 @@
         focusSourceAfterNextPaint();
     });
 
+    stepLimitDialog.addEventListener("cancel", event => {
+        event.preventDefault();
+        stepLimitDialog.close("cancel");
+    });
+
+    stepLimitDialog.addEventListener("close", () => {
+        const request = stepLimitRequest;
+        stepLimitRequest = undefined;
+        if (request === undefined ||
+            activeRequest !== request ||
+            !request.awaitingStepLimit) {
+            return;
+        }
+
+        request.awaitingStepLimit = false;
+        if (stepLimitDialog.returnValue === "resume") {
+            status.textContent = "Resuming…";
+            worker.postMessage({type: "resume", id: request.id});
+            updateControls();
+            return;
+        }
+
+        cancelAndRestart(request);
+    });
+
     window.addEventListener("pagehide", () => {
         clearEvaluationWatchdog(activeRequest);
+        dismissStepLimitDialog();
         if (saveDownloadUrl !== undefined &&
             blobDownloadsSupported) {
             URL.revokeObjectURL(saveDownloadUrl);
@@ -1382,6 +1499,7 @@
             event.key === "Shift" ||
             helpDialog.open || combinatorInfoDialog.open ||
             aboutDialog.open || replacementDialog.open ||
+            stepLimitDialog.open ||
             event.target instanceof HTMLButtonElement) {
             return;
         }

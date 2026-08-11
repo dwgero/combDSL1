@@ -2745,6 +2745,10 @@ reduce_next_redex(quoted_expression const& expression,
                   reduction_options options,
                   reduction_trace* trace = nullptr);
 
+[[nodiscard]] inline bool
+has_next_redex(quoted_expression const& expression,
+               reduction_options options);
+
 [[nodiscard]] inline quoted_expression
 restore_basis_arguments(quoted_expression const& expression) {
     auto const& root = quoted_access::root(expression);
@@ -3576,6 +3580,122 @@ reduce_next_saturated_basis(
     }
 }
 
+[[nodiscard]] inline bool
+has_pending_sk_redex(
+    quoted_expression const& expression,
+    bool reduce_partial_k_argument) {
+    std::vector<quoted_expression> pending{expression};
+    while (!pending.empty()) {
+        auto current = std::move(pending.back());
+        pending.pop_back();
+        auto const& root = quoted_access::root(current);
+        if (root->kind() == quoted_node_kind::pending_sk) {
+            return true;
+        }
+        if (root->kind() != quoted_node_kind::application ||
+            (!reduce_partial_k_argument &&
+             is_partially_applied_k(current))) {
+            continue;
+        }
+
+        auto const& application =
+            static_cast<quoted_application_node const&>(*root);
+        pending.push_back(application.argument());
+        pending.push_back(application.function());
+    }
+    return false;
+}
+
+[[nodiscard]] inline bool
+has_redex_at_head(
+    quoted_expression const& expression,
+    reduction_options options) {
+    auto head = expression;
+    auto first_argument = expression;
+    std::size_t argument_count = 0;
+    while (quoted_access::root(head)->kind() ==
+           quoted_node_kind::application) {
+        auto const& application =
+            static_cast<quoted_application_node const&>(
+                *quoted_access::root(head));
+        first_argument = application.argument();
+        ++argument_count;
+        head = application.function();
+    }
+
+    switch (quoted_access::root(head)->kind()) {
+    case quoted_node_kind::identity:
+        return argument_count >= 1;
+    case quoted_node_kind::constant:
+        return argument_count >= 2;
+    case quoted_node_kind::substitution:
+        return argument_count >= 3 ||
+               (argument_count >= 2 &&
+                quoted_access::root(first_argument)->kind() ==
+                    quoted_node_kind::constant);
+    case quoted_node_kind::fixed_point:
+        return options.reduce_fixed_point && argument_count >= 1;
+    case quoted_node_kind::recursive_y:
+        return options.reduce_recursive_y;
+    case quoted_node_kind::basis:
+        return argument_count >=
+            static_cast<quoted_basis_node_base const&>(
+                *quoted_access::root(head)).arity();
+    default:
+        return false;
+    }
+}
+
+[[nodiscard]] inline bool
+has_next_redex(quoted_expression const& expression,
+               reduction_options options) {
+    std::unique_lock transaction_lock(
+        parser_definition_transaction_mutex(), std::defer_lock);
+    if (quoted_access::root(expression)->contains_live_binding()) {
+        transaction_lock.lock();
+    }
+    if (has_pending_sk_redex(
+            expression, options.reduce_partial_k_argument)) {
+        return true;
+    }
+
+    std::vector<quoted_expression> pending{expression};
+    while (!pending.empty()) {
+        auto current = std::move(pending.back());
+        pending.pop_back();
+        if (has_redex_at_head(current, options)) {
+            return true;
+        }
+
+        auto const& root = quoted_access::root(current);
+        if (root->kind() != quoted_node_kind::application) {
+            continue;
+        }
+
+        auto head = current;
+        while (quoted_access::root(head)->kind() ==
+               quoted_node_kind::application) {
+            head = static_cast<quoted_application_node const&>(
+                *quoted_access::root(head)).function();
+        }
+        auto const head_kind = quoted_access::root(head)->kind();
+        if ((!options.reduce_fixed_point &&
+             head_kind == quoted_node_kind::fixed_point) ||
+            (!options.reduce_recursive_y &&
+             head_kind == quoted_node_kind::recursive_y) ||
+            (!options.reduce_partial_k_argument &&
+             is_partially_applied_k(current))) {
+            continue;
+        }
+
+        auto const& application =
+            static_cast<quoted_application_node const&>(*root);
+        pending.push_back(application.argument());
+        pending.push_back(application.function());
+    }
+    return false;
+}
+
 [[nodiscard]] inline quoted_expression
 reduce_saturated_bases(quoted_expression expression) {
     constexpr std::size_t total_step_limit = 4096;
@@ -3654,10 +3774,15 @@ single_step(quoted_expression expression, bool basis_step = false) {
 
 using evaluation_progress_callback =
     std::function<void(std::size_t)>;
+using evaluation_step_limit_callback =
+    std::function<bool(std::size_t)>;
+using evaluation_interrupt_callback =
+    std::function<bool()>;
 
 enum class evaluation_outcome {
     completed,
-    cancelled
+    cancelled,
+    step_limit_reached
 };
 
 namespace detail {
@@ -3698,14 +3823,16 @@ private:
         std::memory_order_relaxed);
 }
 
-[[nodiscard]] inline bool wait_for_evaluation_resume(
-    std::istream& input,
-    std::ostream& output) {
-    print_layout(
-        output,
-        "Interrupted. Press Enter to resume; type q or Q then Enter to quit.\n");
-    output.flush();
+[[nodiscard]] inline bool evaluation_interrupt_pending() noexcept {
+    return !evaluation_not_interrupted.test(
+        std::memory_order_relaxed);
+}
 
+inline constexpr std::string_view evaluation_resume_prompt_suffix =
+    " Press Enter to resume; type q or Q then Enter to quit.\n";
+
+[[nodiscard]] inline bool wait_for_evaluation_resume_input(
+    std::istream& input) {
     std::string command;
     while (std::getline(input, command)) {
         if (command.empty()) {
@@ -3719,6 +3846,16 @@ private:
     return false;
 }
 
+[[nodiscard]] inline bool wait_for_evaluation_resume(
+    std::istream& input,
+    std::ostream& output) {
+    print_layout(output, "Interrupted.");
+    print_layout(output, evaluation_resume_prompt_suffix);
+    output.flush();
+
+    return wait_for_evaluation_resume_input(input);
+}
+
 enum class evaluation_interrupt_result {
     not_interrupted,
     resumed,
@@ -3728,11 +3865,13 @@ enum class evaluation_interrupt_result {
 class evaluation_progress_reporter {
 public:
     explicit evaluation_progress_reporter(
-        evaluation_progress_callback const& callback)
-        : callback_(callback) {}
+        evaluation_progress_callback const& callback,
+        std::optional<std::size_t> step_limit = std::nullopt)
+        : callback_(callback), step_limit_(step_limit) {}
 
     void completed_reduction() {
         ++reductions_;
+        ++reductions_since_step_limit_resume_;
         if (!callback_) {
             return;
         }
@@ -3740,9 +3879,29 @@ public:
         callback_(reductions_);
     }
 
+    [[nodiscard]] bool step_limit_reached() const noexcept {
+        return step_limit_ &&
+               reductions_since_step_limit_resume_ >= *step_limit_;
+    }
+
+    [[nodiscard]] std::size_t reductions() const noexcept {
+        return reductions_;
+    }
+
+    [[nodiscard]] std::size_t
+    reductions_since_step_limit_resume() const noexcept {
+        return reductions_since_step_limit_resume_;
+    }
+
+    void reset_step_limit_count() noexcept {
+        reductions_since_step_limit_resume_ = 0;
+    }
+
 private:
     evaluation_progress_callback const& callback_;
+    std::optional<std::size_t> step_limit_;
     std::size_t reductions_ = 0;
+    std::size_t reductions_since_step_limit_resume_ = 0;
 };
 
 } // namespace detail
@@ -3752,9 +3911,13 @@ inline evaluation_outcome eval_with_outcome(
     std::ostream& output,
     std::istream& input,
     bool basis_step,
-    evaluation_progress_callback const& progress_callback) {
+    evaluation_progress_callback const& progress_callback,
+    std::optional<std::size_t> step_limit,
+    evaluation_step_limit_callback const& step_limit_callback,
+    evaluation_interrupt_callback const& interrupt_callback) {
     detail::scoped_evaluation_sigint_handler sigint_handler;
-    detail::evaluation_progress_reporter progress(progress_callback);
+    detail::evaluation_progress_reporter progress(
+        progress_callback, step_limit);
     auto print_expression = [&output](quoted_expression const& current) {
         current.print_to(output);
         detail::print_layout(output, "\n");
@@ -3766,12 +3929,16 @@ inline evaluation_outcome eval_with_outcome(
         }
 
         print_expression(current);
-        return detail::wait_for_evaluation_resume(input, output)
+        auto const resume = interrupt_callback
+            ? interrupt_callback()
+            : detail::wait_for_evaluation_resume(input, output);
+        return resume
                    ? detail::evaluation_interrupt_result::resumed
                    : detail::evaluation_interrupt_result::quit;
     };
 
     bool expression_was_printed = false;
+    bool allow_one_reduction_after_zero_limit = false;
     for (;;) {
         auto const before_step = wait_after_interrupt(expression);
         if (before_step == detail::evaluation_interrupt_result::quit) {
@@ -3781,20 +3948,39 @@ inline evaluation_outcome eval_with_outcome(
             expression_was_printed = true;
         }
 
-        auto next = expression;
-        if (auto reduced = detail::reduce_next_redex(
-                expression,
-                detail::reduction_options{
-                    .basis_step = basis_step,
-                    .reduce_partial_k_argument = false,
-                })) {
-            next = std::move(*reduced);
+        detail::reduction_options const options{
+            .basis_step = basis_step,
+            .reduce_partial_k_argument = false,
+        };
+        if (progress.step_limit_reached() &&
+            !allow_one_reduction_after_zero_limit) {
+            auto const reducible =
+                detail::has_next_redex(expression, options);
+            if (!expression_was_printed) {
+                print_expression(expression);
+            }
+            if (!reducible) {
+                return evaluation_outcome::completed;
+            }
+            if (!step_limit_callback) {
+                return evaluation_outcome::step_limit_reached;
+            }
+            if (!step_limit_callback(
+                    progress.reductions_since_step_limit_resume())) {
+                return evaluation_outcome::cancelled;
+            }
+            progress.reset_step_limit_count();
+            allow_one_reduction_after_zero_limit =
+                step_limit && *step_limit == 0;
+            expression_was_printed = true;
+            continue;
         }
-        auto const no_reduction =
-            detail::quoted_access::root(next) ==
-            detail::quoted_access::root(expression);
-        if (!no_reduction) {
+        auto reduced = detail::reduce_next_redex(expression, options);
+        auto next = reduced ? std::move(*reduced) : expression;
+        auto const no_reduction = !reduced;
+        if (reduced) {
             progress.completed_reduction();
+            allow_one_reduction_after_zero_limit = false;
         }
         auto const after_step = wait_after_interrupt(next);
         if (after_step == detail::evaluation_interrupt_result::quit) {
@@ -3815,18 +4001,86 @@ inline evaluation_outcome eval_with_outcome(
     }
 }
 
+inline evaluation_outcome eval_with_outcome(
+    quoted_expression expression,
+    std::ostream& output,
+    std::istream& input,
+    bool basis_step,
+    evaluation_progress_callback const& progress_callback,
+    std::optional<std::size_t> step_limit,
+    evaluation_step_limit_callback const& step_limit_callback) {
+    return eval_with_outcome(
+        std::move(expression),
+        output,
+        input,
+        basis_step,
+        progress_callback,
+        step_limit,
+        step_limit_callback,
+        evaluation_interrupt_callback{});
+}
+
+inline evaluation_outcome eval_with_outcome(
+    quoted_expression expression,
+    std::ostream& output,
+    std::istream& input,
+    bool basis_step,
+    evaluation_progress_callback const& progress_callback,
+    std::optional<std::size_t> step_limit) {
+    return eval_with_outcome(
+        std::move(expression),
+        output,
+        input,
+        basis_step,
+        progress_callback,
+        step_limit,
+        evaluation_step_limit_callback{});
+}
+
+inline evaluation_outcome eval_with_outcome(
+    quoted_expression expression,
+    std::ostream& output,
+    std::istream& input,
+    bool basis_step,
+    evaluation_progress_callback const& progress_callback) {
+    return eval_with_outcome(
+        std::move(expression),
+        output,
+        input,
+        basis_step,
+        progress_callback,
+        std::nullopt);
+}
+
+inline void eval(
+    quoted_expression expression,
+    std::ostream& output,
+    std::istream& input,
+    bool basis_step,
+    evaluation_progress_callback const& progress_callback,
+    std::optional<std::size_t> step_limit) {
+    static_cast<void>(eval_with_outcome(
+        std::move(expression),
+        output,
+        input,
+        basis_step,
+        progress_callback,
+        step_limit));
+}
+
 inline void eval(
     quoted_expression expression,
     std::ostream& output,
     std::istream& input,
     bool basis_step,
     evaluation_progress_callback const& progress_callback) {
-    static_cast<void>(eval_with_outcome(
+    eval(
         std::move(expression),
         output,
         input,
         basis_step,
-        progress_callback));
+        progress_callback,
+        std::nullopt);
 }
 
 inline void eval(
@@ -3894,17 +4148,47 @@ inline evaluation_outcome single_step_run_with_outcome(
     std::ostream& output,
     std::istream& input,
     bool basis_step,
+    evaluation_progress_callback const& progress_callback,
+    std::optional<std::size_t> step_limit,
+    evaluation_step_limit_callback const& step_limit_callback,
+    evaluation_interrupt_callback const& interrupt_callback);
+
+inline evaluation_outcome single_step_run_with_outcome(
+    quoted_expression expression,
+    std::ostream& output,
+    std::istream& input,
+    bool basis_step,
+    evaluation_progress_callback const& progress_callback,
+    std::optional<std::size_t> step_limit,
+    evaluation_step_limit_callback const& step_limit_callback);
+
+inline evaluation_outcome single_step_run_with_outcome(
+    quoted_expression expression,
+    std::ostream& output,
+    std::istream& input,
+    bool basis_step,
+    evaluation_progress_callback const& progress_callback,
+    std::optional<std::size_t> step_limit);
+
+inline evaluation_outcome single_step_run_with_outcome(
+    quoted_expression expression,
+    std::ostream& output,
+    std::istream& input,
+    bool basis_step,
     evaluation_progress_callback const& progress_callback);
 
 namespace detail {
 
 [[nodiscard]] inline bool wait_after_single_step_run_interrupt(
     std::istream& input,
-    std::ostream& output) {
+    std::ostream& output,
+    evaluation_interrupt_callback const& interrupt_callback) {
     if (!consume_evaluation_interrupt()) {
         return true;
     }
-    return wait_for_evaluation_resume(input, output);
+    return interrupt_callback
+        ? interrupt_callback()
+        : wait_for_evaluation_resume(input, output);
 }
 
 } // namespace detail
@@ -3914,15 +4198,51 @@ inline evaluation_outcome single_step_run_with_outcome(
     std::ostream& output,
     std::istream& input,
     bool basis_step,
-    evaluation_progress_callback const& progress_callback) {
+    evaluation_progress_callback const& progress_callback,
+    std::optional<std::size_t> step_limit,
+    evaluation_step_limit_callback const& step_limit_callback,
+    evaluation_interrupt_callback const& interrupt_callback) {
     detail::scoped_evaluation_sigint_handler sigint_handler;
-    detail::evaluation_progress_reporter progress(progress_callback);
+    detail::evaluation_progress_reporter progress(
+        progress_callback, step_limit);
 
     output.flush();
+    bool expression_was_printed = false;
+    bool allow_one_reduction_after_zero_limit = false;
 
     for (;;) {
-        if (!detail::wait_after_single_step_run_interrupt(input, output)) {
+        if (!detail::wait_after_single_step_run_interrupt(
+                input, output, interrupt_callback)) {
             return evaluation_outcome::cancelled;
+        }
+
+        if (progress.step_limit_reached() &&
+            !allow_one_reduction_after_zero_limit) {
+            auto const reducible = detail::has_next_redex(
+                expression,
+                detail::reduction_options{
+                    .basis_step = basis_step,
+                });
+            if (reducible && !expression_was_printed) {
+                expression.print_to(output);
+                detail::print_layout(output, "\n");
+                output.flush();
+            }
+            if (!reducible) {
+                return evaluation_outcome::completed;
+            }
+            if (!step_limit_callback) {
+                return evaluation_outcome::step_limit_reached;
+            }
+            if (!step_limit_callback(
+                    progress.reductions_since_step_limit_resume())) {
+                return evaluation_outcome::cancelled;
+            }
+            progress.reset_step_limit_count();
+            allow_one_reduction_after_zero_limit =
+                step_limit && *step_limit == 0;
+            expression_was_printed = true;
+            continue;
         }
 
         auto next = single_step(expression, basis_step);
@@ -3931,8 +4251,10 @@ inline evaluation_outcome single_step_run_with_outcome(
             detail::quoted_access::root(expression);
         if (!no_reduction) {
             progress.completed_reduction();
+            allow_one_reduction_after_zero_limit = false;
         }
-        if (!detail::wait_after_single_step_run_interrupt(input, output)) {
+        if (!detail::wait_after_single_step_run_interrupt(
+                input, output, interrupt_callback)) {
             return evaluation_outcome::cancelled;
         }
 
@@ -3944,7 +4266,59 @@ inline evaluation_outcome single_step_run_with_outcome(
         expression.print_to(output);
         detail::print_layout(output, "\n");
         output.flush();
+        expression_was_printed = true;
     }
+}
+
+inline evaluation_outcome single_step_run_with_outcome(
+    quoted_expression expression,
+    std::ostream& output,
+    std::istream& input,
+    bool basis_step,
+    evaluation_progress_callback const& progress_callback,
+    std::optional<std::size_t> step_limit,
+    evaluation_step_limit_callback const& step_limit_callback) {
+    return single_step_run_with_outcome(
+        std::move(expression),
+        output,
+        input,
+        basis_step,
+        progress_callback,
+        step_limit,
+        step_limit_callback,
+        evaluation_interrupt_callback{});
+}
+
+inline evaluation_outcome single_step_run_with_outcome(
+    quoted_expression expression,
+    std::ostream& output,
+    std::istream& input,
+    bool basis_step,
+    evaluation_progress_callback const& progress_callback,
+    std::optional<std::size_t> step_limit) {
+    return single_step_run_with_outcome(
+        std::move(expression),
+        output,
+        input,
+        basis_step,
+        progress_callback,
+        step_limit,
+        evaluation_step_limit_callback{});
+}
+
+inline evaluation_outcome single_step_run_with_outcome(
+    quoted_expression expression,
+    std::ostream& output,
+    std::istream& input,
+    bool basis_step,
+    evaluation_progress_callback const& progress_callback) {
+    return single_step_run_with_outcome(
+        std::move(expression),
+        output,
+        input,
+        basis_step,
+        progress_callback,
+        std::nullopt);
 }
 
 inline void single_step_run(
@@ -5311,6 +5685,88 @@ private:
     std::size_t position_;
     std::string detail_;
 };
+
+struct step_limit_command {
+    bool enabled = false;
+    std::size_t limit = 0;
+};
+
+[[nodiscard]] inline std::optional<step_limit_command>
+parse_step_limit_command(std::string_view source) {
+    auto const whitespace = [](char value) noexcept {
+        return value == ' ' || value == '\t' || value == '\n' ||
+               value == '\r' || value == '\f' || value == '\v';
+    };
+    std::size_t position = 0;
+    auto skip_whitespace = [&] {
+        while (position < source.size() &&
+               whitespace(source[position])) {
+            ++position;
+        }
+    };
+    auto next_word = [&] {
+        skip_whitespace();
+        auto const start = position;
+        while (position < source.size() &&
+               !whitespace(source[position])) {
+            ++position;
+        }
+        return std::pair{
+            source.substr(start, position - start), start};
+    };
+
+    if (next_word().first != "step") {
+        return std::nullopt;
+    }
+
+    auto const [subcommand, subcommand_position] = next_word();
+    if (subcommand != "limit") {
+        throw parse_error(
+            subcommand.empty() ? position : subcommand_position,
+            "expected 'limit'");
+    }
+
+    auto const [option, option_position] = next_word();
+    if (option.empty()) {
+        throw parse_error(position, "expected 'off' or a number");
+    }
+
+    step_limit_command result;
+    if (option == "off") {
+        result.enabled = false;
+    } else {
+        std::size_t value = 0;
+        for (char digit_character : option) {
+            if (digit_character < '0' || digit_character > '9') {
+                throw parse_error(
+                    option_position, "expected 'off' or a number");
+            }
+            auto const digit = static_cast<std::size_t>(
+                digit_character - '0');
+            if (value >
+                (std::numeric_limits<std::size_t>::max() - digit) /
+                    10) {
+                throw parse_error(
+                    option_position, "step limit is too large");
+            }
+            value = value * 10 + digit;
+        }
+        if (value == 0) {
+            throw parse_error(
+                option_position,
+                "step limit must be greater than zero");
+        }
+        result.enabled = true;
+        result.limit = value;
+    }
+
+    skip_whitespace();
+    if (position != source.size()) {
+        throw parse_error(
+            position, "unexpected input after step limit");
+    }
+    return result;
+}
 
 struct combinator_find_result {
     std::vector<quoted_expression> singles;
@@ -6778,6 +7234,8 @@ private:
             name == "all" ||
             name == "captured" ||
             name == "live" ||
+            name == "limit" ||
+            name == "step" ||
             name == "steps" ||
             name == "references" ||
             name == "snapshot" ||
@@ -7391,7 +7849,10 @@ inline evaluation_outcome parse_eval_with_outcome(
     std::ostream& output,
     std::istream& input,
     bool basis_step,
-    evaluation_progress_callback const& progress_callback) {
+    evaluation_progress_callback const& progress_callback,
+    std::optional<std::size_t> step_limit,
+    evaluation_step_limit_callback const& step_limit_callback,
+    evaluation_interrupt_callback const& interrupt_callback) {
     auto parsed = detail::parse_input(source);
     if (parsed.is_display_only) {
         parsed.expression.print_to(output);
@@ -7407,7 +7868,77 @@ inline evaluation_outcome parse_eval_with_outcome(
         output,
         input,
         basis_step,
-        progress_callback);
+        progress_callback,
+        step_limit,
+        step_limit_callback,
+        interrupt_callback);
+}
+
+inline evaluation_outcome parse_eval_with_outcome(
+    std::string_view source,
+    std::ostream& output,
+    std::istream& input,
+    bool basis_step,
+    evaluation_progress_callback const& progress_callback,
+    std::optional<std::size_t> step_limit,
+    evaluation_step_limit_callback const& step_limit_callback) {
+    return parse_eval_with_outcome(
+        source,
+        output,
+        input,
+        basis_step,
+        progress_callback,
+        step_limit,
+        step_limit_callback,
+        evaluation_interrupt_callback{});
+}
+
+inline evaluation_outcome parse_eval_with_outcome(
+    std::string_view source,
+    std::ostream& output,
+    std::istream& input,
+    bool basis_step,
+    evaluation_progress_callback const& progress_callback,
+    std::optional<std::size_t> step_limit) {
+    return parse_eval_with_outcome(
+        source,
+        output,
+        input,
+        basis_step,
+        progress_callback,
+        step_limit,
+        evaluation_step_limit_callback{});
+}
+
+inline evaluation_outcome parse_eval_with_outcome(
+    std::string_view source,
+    std::ostream& output,
+    std::istream& input,
+    bool basis_step,
+    evaluation_progress_callback const& progress_callback) {
+    return parse_eval_with_outcome(
+        source,
+        output,
+        input,
+        basis_step,
+        progress_callback,
+        std::nullopt);
+}
+
+inline void parse_eval(
+    std::string_view source,
+    std::ostream& output,
+    std::istream& input,
+    bool basis_step,
+    evaluation_progress_callback const& progress_callback,
+    std::optional<std::size_t> step_limit) {
+    static_cast<void>(parse_eval_with_outcome(
+        source,
+        output,
+        input,
+        basis_step,
+        progress_callback,
+        step_limit));
 }
 
 inline void parse_eval(
@@ -7416,8 +7947,13 @@ inline void parse_eval(
     std::istream& input,
     bool basis_step,
     evaluation_progress_callback const& progress_callback) {
-    static_cast<void>(parse_eval_with_outcome(
-        source, output, input, basis_step, progress_callback));
+    parse_eval(
+        source,
+        output,
+        input,
+        basis_step,
+        progress_callback,
+        std::nullopt);
 }
 
 inline void parse_eval(
@@ -7445,9 +7981,12 @@ inline void read_parse_eval(
 
 inline evaluation_outcome parse_and_step_with_outcome(
     std::string_view source,
-    std::ostream& output = std::cout,
-    std::istream& input = std::cin,
-    bool basis_step = false) {
+    std::ostream& output,
+    std::istream& input,
+    bool basis_step,
+    std::optional<std::size_t> step_limit,
+    evaluation_step_limit_callback const& step_limit_callback,
+    evaluation_interrupt_callback const& interrupt_callback) {
     auto parsed = detail::parse_input(source);
     if (parsed.is_display_only) {
         parsed.expression.print_to(output);
@@ -7463,7 +8002,51 @@ inline evaluation_outcome parse_and_step_with_outcome(
         output,
         input,
         basis_step,
-        evaluation_progress_callback{});
+        evaluation_progress_callback{},
+        step_limit,
+        step_limit_callback,
+        interrupt_callback);
+}
+
+inline evaluation_outcome parse_and_step_with_outcome(
+    std::string_view source,
+    std::ostream& output,
+    std::istream& input,
+    bool basis_step,
+    std::optional<std::size_t> step_limit,
+    evaluation_step_limit_callback const& step_limit_callback) {
+    return parse_and_step_with_outcome(
+        source,
+        output,
+        input,
+        basis_step,
+        step_limit,
+        step_limit_callback,
+        evaluation_interrupt_callback{});
+}
+
+inline evaluation_outcome parse_and_step_with_outcome(
+    std::string_view source,
+    std::ostream& output,
+    std::istream& input,
+    bool basis_step,
+    std::optional<std::size_t> step_limit) {
+    return parse_and_step_with_outcome(
+        source,
+        output,
+        input,
+        basis_step,
+        step_limit,
+        evaluation_step_limit_callback{});
+}
+
+inline evaluation_outcome parse_and_step_with_outcome(
+    std::string_view source,
+    std::ostream& output = std::cout,
+    std::istream& input = std::cin,
+    bool basis_step = false) {
+    return parse_and_step_with_outcome(
+        source, output, input, basis_step, std::nullopt);
 }
 
 inline void parse_and_step(

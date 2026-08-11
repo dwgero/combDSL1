@@ -29,7 +29,9 @@
 #include <latch>
 #include <semaphore>
 #endif
+#include <limits>
 #include <memory>
+#include <optional>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -392,12 +394,23 @@ using eval_with_progress_signature = void (*)(
     std::istream&,
     bool,
     evaluation_progress_callback const&);
+using eval_with_progress_and_limit_signature = void (*)(
+    combdsl::quoted_expression,
+    std::ostream&,
+    std::istream&,
+    bool,
+    evaluation_progress_callback const&,
+    std::optional<std::size_t>);
 static_assert(std::is_same_v<
               decltype(static_cast<eval_without_progress_signature>(&eval)),
               eval_without_progress_signature>);
 static_assert(std::is_same_v<
               decltype(static_cast<eval_with_progress_signature>(&eval)),
               eval_with_progress_signature>);
+static_assert(std::is_same_v<
+              decltype(static_cast<eval_with_progress_and_limit_signature>(
+                  &eval)),
+              eval_with_progress_and_limit_signature>);
 using parse_eval_without_progress_signature = void (*)(
     std::string_view,
     std::ostream&,
@@ -409,6 +422,13 @@ using parse_eval_with_progress_signature = void (*)(
     std::istream&,
     bool,
     evaluation_progress_callback const&);
+using parse_eval_with_progress_and_limit_signature = void (*)(
+    std::string_view,
+    std::ostream&,
+    std::istream&,
+    bool,
+    evaluation_progress_callback const&,
+    std::optional<std::size_t>);
 static_assert(std::is_same_v<
               decltype(static_cast<
                        parse_eval_without_progress_signature>(
@@ -419,6 +439,11 @@ static_assert(std::is_same_v<
                        parse_eval_with_progress_signature>(
                   &parse_eval)),
               parse_eval_with_progress_signature>);
+static_assert(std::is_same_v<
+              decltype(static_cast<
+                       parse_eval_with_progress_and_limit_signature>(
+                  &parse_eval)),
+              parse_eval_with_progress_and_limit_signature>);
 using single_step_run_without_progress_signature = void (*)(
     combdsl::quoted_expression,
     std::ostream&,
@@ -3050,8 +3075,96 @@ int main() {
         "find parses a multi-digit maximum before rejecting it",
         "find all 10 ?x = x", 9,
         "find maximum size must be from 1 to 4");
+    test("step limit parses a positive number",
+         [] {
+             auto const command =
+                 combdsl::parse_step_limit_command(
+                     "  step\tlimit 123  ");
+             std::cout << command.has_value()
+                       << command->enabled << ':' << command->limit;
+         },
+         "11:123");
+    test("step limit parses off",
+         [] {
+             auto const command =
+                 combdsl::parse_step_limit_command("step limit off");
+             std::cout << command.has_value()
+                       << command->enabled << ':' << command->limit;
+         },
+         "10:0");
+    test("step limit rejects zero",
+         [] {
+             try {
+                 static_cast<void>(
+                     combdsl::parse_step_limit_command("step limit 0"));
+             } catch (parse_error const& error) {
+                 std::cout << error.position() << ':' << error.detail();
+             }
+         },
+         "11:step limit must be greater than zero");
+    test("step limit parser ignores another command prefix",
+         [] {
+             std::cout << !combdsl::parse_step_limit_command(
+                 "stepwise limit 4");
+         },
+         "1");
+    test("bare step requires the limit subcommand",
+         [] {
+             try {
+                 static_cast<void>(
+                     combdsl::parse_step_limit_command("step"));
+             } catch (parse_error const& error) {
+                 std::cout << error.position() << ':' << error.detail();
+             }
+         },
+         "4:expected 'limit'");
+    test("bare step limit requires an option",
+         [] {
+             try {
+                 static_cast<void>(
+                     combdsl::parse_step_limit_command("step limit"));
+             } catch (parse_error const& error) {
+                 std::cout << error.position() << ':' << error.detail();
+             }
+         },
+         "10:expected 'off' or a number");
+    test("step limit rejects a signed number",
+         [] {
+             try {
+                 static_cast<void>(
+                     combdsl::parse_step_limit_command("step limit -1"));
+             } catch (parse_error const& error) {
+                 std::cout << error.position() << ':' << error.detail();
+             }
+         },
+         "11:expected 'off' or a number");
+    test("step limit rejects trailing input",
+         [] {
+             try {
+                 static_cast<void>(combdsl::parse_step_limit_command(
+                     "step limit 4 extra"));
+             } catch (parse_error const& error) {
+                 std::cout << error.position() << ':' << error.detail();
+             }
+         },
+         "13:unexpected input after step limit");
+    test("step limit rejects size_t overflow",
+         [] {
+             auto source = std::string("step limit ");
+             source += std::to_string(
+                 std::numeric_limits<std::size_t>::max());
+             source.push_back('0');
+             try {
+                 static_cast<void>(
+                     combdsl::parse_step_limit_command(source));
+             } catch (parse_error const& error) {
+                 std::cout << error.position() << ':' << error.detail();
+             }
+         },
+         "11:step limit is too large");
     constexpr std::string_view reserved_definition_names[] = {
-        "abstract", "all", "captured", "live", "steps", "set",
+        "abstract", "all", "captured", "live", "limit", "step",
+        "steps", "set",
         "define", "show", "single", "key", "basis", "colorize",
         "about", "birds", "find", "help", "load", "remove", "save",
         "dependson", "depends-on", "depends", "on", "usedby",
@@ -5295,6 +5408,335 @@ int main() {
                        << (text.ends_with("x\n") ? "x" : "wrong");
          },
          "123/3/x");
+    test("eval stops below the reductions needed for normal form",
+         [] {
+             std::vector<std::size_t> reports;
+             std::istringstream input;
+             std::ostringstream output;
+             auto const outcome = combdsl::eval_with_outcome(
+                 repeated_identity_expression(3),
+                 output,
+                 input,
+                 false,
+                 [&reports](std::size_t reductions) {
+                     reports.push_back(reductions);
+                 },
+                 2);
+             std::cout << (outcome ==
+                 combdsl::evaluation_outcome::step_limit_reached) << '/';
+             for (auto reductions : reports) {
+                 std::cout << reductions;
+             }
+             std::cout << '/' << output.str();
+         },
+         "1/12/Ix\n");
+    test("read-only redex probing agrees with reduction",
+         [] {
+             std::vector<combdsl::quoted_expression> expressions;
+             for (auto source : {
+                      "x", "Ix", "Kx", "Kxy", "Sxy", "Sxyz",
+                      "SKx", "YI", "M", "Mx", "K(Ix)",
+                      "I(K(Ix))"}) {
+                 expressions.push_back(parse(source));
+             }
+             expressions.push_back(single_step(parse("YI")));
+             expressions.push_back(
+                 combdsl::detail::make_quoted_pending_sk(
+                     parse("Ix")));
+
+             bool agrees = true;
+             for (bool basis_step : {false, true}) {
+                 for (bool reduce_partial_k_argument : {false, true}) {
+                     combdsl::detail::reduction_options const options{
+                         .basis_step = basis_step,
+                         .reduce_partial_k_argument =
+                             reduce_partial_k_argument,
+                     };
+                     for (auto const& expression : expressions) {
+                         auto const probed =
+                             combdsl::detail::has_next_redex(
+                                 expression, options);
+                         auto const reduced =
+                             combdsl::detail::reduce_next_redex(
+                                 expression, options).has_value();
+                         agrees = agrees && probed == reduced;
+                     }
+                 }
+             }
+             std::cout << agrees;
+         },
+         "1");
+    test("eval completes at the exact step limit",
+         [] {
+             std::vector<std::size_t> reports;
+             std::istringstream input;
+             std::ostringstream output;
+             auto const outcome = combdsl::eval_with_outcome(
+                 repeated_identity_expression(3),
+                 output,
+                 input,
+                 false,
+                 [&reports](std::size_t reductions) {
+                     reports.push_back(reductions);
+                 },
+                 3);
+             std::cout << (outcome ==
+                 combdsl::evaluation_outcome::completed) << '/';
+             for (auto reductions : reports) {
+                 std::cout << reductions;
+             }
+             std::cout << '/' << output.str();
+         },
+         "1/123/x\n");
+    test("eval resets its step limit and resumes the same expression",
+         [] {
+             std::vector<std::size_t> reports;
+             std::vector<std::size_t> pauses;
+             std::istringstream input;
+             std::ostringstream output;
+             auto const outcome = combdsl::eval_with_outcome(
+                 repeated_identity_expression(5),
+                 output,
+                 input,
+                 false,
+                 [&reports](std::size_t reductions) {
+                     reports.push_back(reductions);
+                 },
+                 2,
+                 [&pauses](std::size_t reductions) {
+                     pauses.push_back(reductions);
+                     return true;
+                 });
+             std::cout << (outcome ==
+                 combdsl::evaluation_outcome::completed) << '/';
+             for (auto reductions : reports) {
+                 std::cout << reductions;
+             }
+             std::cout << '/';
+             for (auto reductions : pauses) {
+                 std::cout << reductions;
+             }
+             std::cout << '/' << output.str();
+         },
+         "1/12345/22/I(I(Ix))\nIx\nx\n");
+    test("eval can cancel at an interactive step limit",
+         [] {
+             std::istringstream input;
+             std::ostringstream output;
+             auto const outcome = combdsl::eval_with_outcome(
+                 repeated_identity_expression(5),
+                 output,
+                 input,
+                 false,
+                 evaluation_progress_callback{},
+                 2,
+                 [](std::size_t) { return false; });
+             std::cout << (outcome ==
+                 combdsl::evaluation_outcome::cancelled) << '/'
+                       << output.str();
+         },
+         "1/I(I(Ix))\n");
+    test("zero step limit grants one reduction after each resume",
+         [] {
+             std::vector<std::size_t> pauses;
+             std::istringstream input;
+             std::ostringstream output;
+             auto const outcome = combdsl::eval_with_outcome(
+                 repeated_identity_expression(2),
+                 output,
+                 input,
+                 false,
+                 evaluation_progress_callback{},
+                 0,
+                 [&pauses](std::size_t reductions) {
+                     pauses.push_back(reductions);
+                     return true;
+                 });
+             std::cout << (outcome ==
+                 combdsl::evaluation_outcome::completed) << '/';
+             for (auto reductions : pauses) {
+                 std::cout << reductions;
+             }
+             std::cout << '/' << output.str();
+         },
+         "1/01/I(Ix)\nIx\nx\n");
+    test("zero step limit leaves a reducible expression unchanged",
+         [] {
+             std::vector<std::size_t> reports;
+             std::istringstream input;
+             std::ostringstream output;
+             auto const outcome = combdsl::eval_with_outcome(
+                 repeated_identity_expression(2),
+                 output,
+                 input,
+                 false,
+                 [&reports](std::size_t reductions) {
+                     reports.push_back(reductions);
+                 },
+                 0);
+             std::cout << (outcome ==
+                 combdsl::evaluation_outcome::step_limit_reached) << '/'
+                       << reports.size() << '/' << output.str();
+         },
+         "1/0/I(Ix)\n");
+    test("zero step limit still recognizes normal form",
+         [] {
+             std::istringstream input;
+             std::ostringstream output;
+             auto const outcome = combdsl::eval_with_outcome(
+                 quote(x), output, input, false,
+                 evaluation_progress_callback{}, 0);
+             std::cout << (outcome ==
+                 combdsl::evaluation_outcome::completed) << '/'
+                       << output.str();
+         },
+         "1/x\n");
+    test("off step limit permits unrestricted evaluation",
+         [] {
+             std::vector<std::size_t> reports;
+             std::istringstream input;
+             std::ostringstream output;
+             auto const outcome = combdsl::eval_with_outcome(
+                 repeated_identity_expression(2),
+                 output,
+                 input,
+                 false,
+                 [&reports](std::size_t reductions) {
+                     reports.push_back(reductions);
+                 },
+                 std::nullopt);
+             std::cout << (outcome ==
+                 combdsl::evaluation_outcome::completed) << '/';
+             for (auto reductions : reports) {
+                 std::cout << reductions;
+             }
+             std::cout << '/' << output.str();
+         },
+         "1/12/x\n");
+    test("step count resets for each evaluation",
+         [] {
+             auto run = [] {
+                 std::istringstream input;
+                 std::ostringstream output;
+                 auto const outcome = combdsl::eval_with_outcome(
+                     repeated_identity_expression(2),
+                     output,
+                     input,
+                     false,
+                     evaluation_progress_callback{},
+                     1);
+                 return std::pair{outcome, output.str()};
+             };
+             auto const first = run();
+             auto const second = run();
+             std::cout << (first.first ==
+                 combdsl::evaluation_outcome::step_limit_reached)
+                       << (second.first ==
+                 combdsl::evaluation_outcome::step_limit_reached)
+                       << '/' << first.second << second.second;
+         },
+         "11/Ix\nIx\n");
+    test("single step run stops cleanly at its step limit",
+         [] {
+             std::istringstream input;
+             std::ostringstream output;
+             auto const outcome =
+                 combdsl::single_step_run_with_outcome(
+                     repeated_identity_expression(3),
+                     output,
+                     input,
+                     false,
+                     evaluation_progress_callback{},
+                     2);
+             std::cout << (outcome ==
+                 combdsl::evaluation_outcome::step_limit_reached) << '/'
+                       << output.str();
+         },
+         "1/I(Ix)\nIx\n");
+    test("single step run completes at the exact step limit",
+         [] {
+             std::istringstream input;
+             std::ostringstream output;
+             auto const outcome =
+                 combdsl::single_step_run_with_outcome(
+                     repeated_identity_expression(3),
+                     output,
+                     input,
+                     false,
+                     evaluation_progress_callback{},
+                     3);
+             std::cout << (outcome ==
+                 combdsl::evaluation_outcome::completed) << '/'
+                       << output.str();
+         },
+         "1/I(Ix)\nIx\nx\n");
+    test("single step run resumes with a reset limit count",
+         [] {
+             std::vector<std::size_t> pauses;
+             std::istringstream input;
+             std::ostringstream output;
+             auto const outcome =
+                 combdsl::single_step_run_with_outcome(
+                     repeated_identity_expression(3),
+                     output,
+                     input,
+                     false,
+                     evaluation_progress_callback{},
+                     1,
+                     [&pauses](std::size_t reductions) {
+                         pauses.push_back(reductions);
+                         return true;
+                     });
+             std::cout << (outcome ==
+                 combdsl::evaluation_outcome::completed) << '/';
+             for (auto reductions : pauses) {
+                 std::cout << reductions;
+             }
+             std::cout << '/' << output.str();
+         },
+         "1/11/I(Ix)\nIx\nx\n");
+    test("zero step single step run prints the unchanged expression",
+         [] {
+             std::istringstream input;
+             std::ostringstream output;
+             auto const outcome =
+                 combdsl::single_step_run_with_outcome(
+                     repeated_identity_expression(2),
+                     output,
+                     input,
+                     false,
+                     evaluation_progress_callback{},
+                     0);
+             std::cout << (outcome ==
+                 combdsl::evaluation_outcome::step_limit_reached) << '/'
+                       << output.str();
+         },
+         "1/I(Ix)\n");
+    test("zero step single step run grants one reduction after resume",
+         [] {
+             std::vector<std::size_t> pauses;
+             std::istringstream input;
+             std::ostringstream output;
+             auto const outcome =
+                 combdsl::single_step_run_with_outcome(
+                     repeated_identity_expression(2),
+                     output,
+                     input,
+                     false,
+                     evaluation_progress_callback{},
+                     0,
+                     [&pauses](std::size_t reductions) {
+                         pauses.push_back(reductions);
+                         return true;
+                     });
+             std::cout << (outcome ==
+                 combdsl::evaluation_outcome::completed) << '/';
+             for (auto reductions : pauses) {
+                 std::cout << reductions;
+             }
+             std::cout << '/' << output.str();
+         },
+         "1/01/I(Ix)\nIx\nx\n");
     test("eval prints only reduced expression",
          [&] { eval(quoted_ski_x); },
          "x\n");
@@ -5394,6 +5836,31 @@ int main() {
          },
          "x\n"
          "Interrupted. Press Enter to resume; type q or Q then Enter to quit.\n");
+    test("eval delegates SIGINT resume decisions to a callback",
+         [&] {
+             std::istringstream input("unused\n");
+             std::ostringstream output;
+             std::size_t callback_count = 0;
+             auto const outcome = combdsl::eval_with_outcome(
+                 interrupting_identity_expression(quote(x)),
+                 output,
+                 input,
+                 false,
+                 evaluation_progress_callback{},
+                 std::nullopt,
+                 combdsl::evaluation_step_limit_callback{},
+                 [&callback_count] {
+                     ++callback_count;
+                     return false;
+                 });
+             std::cout
+                 << (outcome ==
+                             combdsl::evaluation_outcome::cancelled
+                         ? "cancelled"
+                         : "wrong")
+                 << '/' << callback_count << '/' << output.str();
+         },
+         "cancelled/1/x\n");
     test("eval resumes after SIGINT",
          [&] {
              auto const previous =
@@ -6074,6 +6541,33 @@ int main() {
          "Interrupted. Press Enter to resume; type q or Q then Enter to quit.\n"
          "Ix\n"
          "x\n");
+    test("single step run delegates SIGINT resume decisions to a callback",
+         [&] {
+             std::istringstream input("unused\n");
+             interrupt_on_flush_buffer buffer;
+             std::ostream output(&buffer);
+             std::size_t callback_count = 0;
+             auto const outcome =
+                 combdsl::single_step_run_with_outcome(
+                     quoted_ski_x,
+                     output,
+                     input,
+                     false,
+                     evaluation_progress_callback{},
+                     std::nullopt,
+                     combdsl::evaluation_step_limit_callback{},
+                     [&callback_count] {
+                         ++callback_count;
+                         return false;
+                     });
+             std::cout
+                 << (outcome ==
+                             combdsl::evaluation_outcome::cancelled
+                         ? "cancelled"
+                         : "wrong")
+                 << '/' << callback_count << '/' << buffer.str();
+         },
+         "cancelled/1/");
     test("single step run defaults to std::cin",
          [&] {
              std::istringstream input("\n");

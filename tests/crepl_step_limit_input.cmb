@@ -1,0 +1,19 @@
+step limit 2
+I(I(Ix))
+step limit 3
+I(I(Ix))
+step limit 0
+Ix
+step limit 1
+I(Ix)
+I(Ix)
+step limit off
+I(Ix)
+single step on
+step limit 2
+I(I(Ix))
+step limit off
+single step off
+I(Ix)
+step limit
+quit

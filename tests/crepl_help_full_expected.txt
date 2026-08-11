@@ -16,6 +16,16 @@ directly (for example, Mx becomes xx). Basis step "on" exposes its underlying
 definition as a separate reduction step (so Mx becomes SIIx). It may remain on
 when neither stepping mode is active; ordinary evaluation ignores it.
 
+step limit <off | num>
+Pauses each subsequent ordinary or Single Step interactive evaluation after num
+reduction steps at a time. Key Step ignores the limit. With redirected input,
+evaluation stops at the limit. The limit is off at startup, and an explicit off
+or num is required. An expression that reaches normal form on exactly the
+limiting step completes normally. In an interactive session, reaching the limit
+pauses the evaluation. Press Enter to reset the count and continue the same
+evaluation, or press q or Q to cancel it. The number must be greater than zero.
+The setting is not written to saved set-list journals.
+
 colorize [on | off]
 When "single step" or "key step" is active, it highlights the first, second,
 third, fourth, and fifth arguments of each reduction in red, tunic green, blue,

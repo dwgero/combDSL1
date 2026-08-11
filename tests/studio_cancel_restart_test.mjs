@@ -22,6 +22,14 @@ import test from "node:test";
 import vm from "node:vm";
 
 const sourceUrl = new URL("../web/app.js", import.meta.url);
+const evaluationWatchdogUrl = new URL(
+    "../web/evaluation_watchdog.js", import.meta.url);
+const evaluationWatchdogContext = vm.createContext({});
+new vm.Script(readFileSync(evaluationWatchdogUrl, "utf8"), {
+    filename: evaluationWatchdogUrl.pathname,
+}).runInContext(evaluationWatchdogContext);
+const realEvaluationWatchdog =
+    evaluationWatchdogContext.combdslEvaluationWatchdog;
 
 const childElements = root => root.childNodes.flatMap(child => [
     ...(child instanceof FakeElement ? [child] : []),
@@ -105,9 +113,16 @@ class FakeElement extends FakeEventTarget {
         this.tabIndex = 0;
         this.parentNode = null;
         this._textContent = "";
+        this.focusCount = 0;
     }
 
     append(...children) {
+        if (this.childNodes.length === 0 && this._textContent !== "") {
+            const existingText = new FakeTextNode(this._textContent);
+            existingText.parentNode = this;
+            this.childNodes.push(existingText);
+            this._textContent = "";
+        }
         for (const child of children) {
             const node = typeof child === "string"
                 ? new FakeTextNode(child)
@@ -161,7 +176,9 @@ class FakeElement extends FakeEventTarget {
         this.selectionEnd = end;
     }
 
-    focus() {}
+    focus() {
+        ++this.focusCount;
+    }
 
     click() {
         this.dispatch("click");
@@ -222,7 +239,7 @@ class FakeWorker extends FakeEventTarget {
     }
 }
 
-const createHarness = ({historyValues = []} = {}) => {
+const createHarness = ({historyValues = [], watchdog} = {}) => {
     FakeWorker.instances = [];
     const animationFrames = [];
     const elements = new Map();
@@ -235,6 +252,7 @@ const createHarness = ({historyValues = []} = {}) => {
         "save",
         "load",
         "replacement-replace",
+        "step-limit-resume",
         "help",
         "combinator-info",
         "about",
@@ -249,6 +267,8 @@ const createHarness = ({historyValues = []} = {}) => {
         "nothing-to-save-dialog",
         "replacement-dialog",
         "replacement-message",
+        "step-limit-dialog",
+        "step-limit-message",
         "help-dialog",
         "combinator-info-dialog",
         "about-dialog",
@@ -296,7 +316,7 @@ const createHarness = ({historyValues = []} = {}) => {
         create: () => inputHistory,
         createCommandCompleter: () => () => undefined,
     };
-    const evaluationWatchdog = {
+    const evaluationWatchdog = watchdog ?? {
         timeoutMs: 1000,
         createProgressState: () => ({sequence: 0, reductions: 0}),
         acceptProgress: () => true,
@@ -357,6 +377,60 @@ const createHarness = ({historyValues = []} = {}) => {
         },
         selection,
         workers: FakeWorker.instances,
+    };
+};
+
+const beginLimitedEvaluation = (harness, limit, expression) => {
+    const source = harness.element("source");
+    const worker = harness.workers[0];
+
+    worker.send({type: "ready", setList: ""});
+    harness.flushAnimationFrames();
+
+    source.value = `step limit ${limit}`;
+    harness.pressEnter();
+    harness.flushAnimationFrames();
+    const limitInspection = worker.messages.filter(
+        message => message.type === "inspect-definition").at(-1);
+    worker.send({
+        type: "definition-inspection-result",
+        id: limitInspection.id,
+        result: {
+            success: true,
+            definition: false,
+            displayOnly: false,
+            showAll: false,
+            find: false,
+            replacement: "",
+            stepLimitCommand: true,
+            stepLimitEnabled: true,
+            stepLimit: limit,
+        },
+    });
+
+    source.value = expression;
+    harness.pressEnter();
+    harness.flushAnimationFrames();
+    const expressionInspection = worker.messages.filter(
+        message => message.type === "inspect-definition").at(-1);
+    worker.send({
+        type: "definition-inspection-result",
+        id: expressionInspection.id,
+        result: {
+            success: true,
+            definition: false,
+            displayOnly: false,
+            showAll: false,
+            find: false,
+            replacement: "",
+        },
+    });
+    harness.flushAnimationFrames();
+
+    return {
+        worker,
+        requestId: expressionInspection.id,
+        outputEntry: harness.element("output").lastElementChild,
     };
 };
 
@@ -676,7 +750,7 @@ test("routes every dependency alias as display-only", () => {
         });
         assert.equal(
             harness.element("output").textContent,
-            `\n${commandOutput.trimEnd()}`);
+            `${command}\n${commandOutput.trimEnd()}`);
     }
 });
 
@@ -779,6 +853,508 @@ test("routes typed references commands as silent saved definitions", () => {
             message => message.type === "load");
         assert.equal(restore?.source, updatedSetList);
     }
+});
+
+test("applies and disables a typed step limit for later evaluations", () => {
+    const harness = createHarness();
+    const source = harness.element("source");
+    const worker = harness.workers[0];
+
+    worker.send({type: "ready", setList: ""});
+    harness.flushAnimationFrames();
+
+    source.value = "step limit 2";
+    harness.pressEnter();
+    harness.flushAnimationFrames();
+    const limitInspection = worker.messages.find(
+        message => message.type === "inspect-definition");
+    worker.send({
+        type: "definition-inspection-result",
+        id: limitInspection.id,
+        result: {
+            success: true,
+            definition: false,
+            displayOnly: false,
+            showAll: false,
+            find: false,
+            replacement: "",
+            stepLimitCommand: true,
+            stepLimitEnabled: true,
+            stepLimit: 2,
+        },
+    });
+
+    assert.equal(
+        worker.messages.some(message => message.type === "evaluate"),
+        false,
+    );
+    assert.equal(harness.element("status").textContent, "Ready");
+    assert.equal(
+        harness.element("source-history").textContent,
+        "step limit 2",
+    );
+
+    source.value = "IIIx";
+    harness.pressEnter();
+    harness.flushAnimationFrames();
+    const expressionInspection = worker.messages.filter(
+        message => message.type === "inspect-definition").at(-1);
+    worker.send({
+        type: "definition-inspection-result",
+        id: expressionInspection.id,
+        result: {
+            success: true,
+            definition: false,
+            displayOnly: false,
+            showAll: false,
+            find: false,
+            replacement: "",
+        },
+    });
+    harness.flushAnimationFrames();
+    const limitedEvaluation = worker.messages.filter(
+        message => message.type === "evaluate").at(-1);
+    assert.equal(limitedEvaluation.stepLimitEnabled, true);
+    assert.equal(limitedEvaluation.stepLimit, 2);
+    const output = harness.element("output");
+    const expressionOutputEntry = output.lastElementChild;
+    const outputBeforeStepLimit = output.textContent;
+
+    worker.send({
+        type: "result",
+        id: expressionInspection.id,
+        result: {
+            success: true,
+            definition: false,
+            recoverWorker: false,
+            output: "Ix\n",
+            error: "",
+            reductions: 2,
+            limitReached: true,
+        },
+    });
+    assert.equal(
+        harness.element("status").textContent,
+        "Step limit reached",
+    );
+    assert.equal(
+        output.textContent,
+        outputBeforeStepLimit,
+        "reaching the step limit must not change Results",
+    );
+    assert.strictEqual(
+        output.lastElementChild,
+        expressionOutputEntry,
+        "the paused evaluation must retain its Results entry",
+    );
+    const stepLimitDialog = harness.element("step-limit-dialog");
+    const stepLimitResume = harness.element("step-limit-resume");
+    assert.equal(stepLimitDialog.open, true);
+    assert.equal(
+        harness.element("step-limit-message").textContent,
+        "Step limit reached after 2 steps.",
+    );
+    assert.equal(stepLimitResume.focusCount, 1);
+    assert.equal(source.readOnly, true);
+    assert.equal(
+        harness.element("source-history").textContent,
+        "step limit 2",
+        "the expression must not enter history before it finishes",
+    );
+
+    harness.flushAnimationFrames();
+    assert.equal(stepLimitResume.focusCount, 2);
+    stepLimitDialog.close("resume");
+    assert.equal(worker.messages.at(-1).type, "resume");
+    assert.equal(worker.messages.at(-1).id, expressionInspection.id);
+    assert.equal(worker.terminated, false);
+    assert.equal(source.readOnly, true);
+    assert.equal(harness.element("status").textContent, "Resuming…");
+    assert.equal(output.textContent, outputBeforeStepLimit);
+    assert.strictEqual(output.lastElementChild, expressionOutputEntry);
+
+    worker.send({type: "eval-started", id: expressionInspection.id});
+    worker.send({
+        type: "result",
+        id: expressionInspection.id,
+        result: {
+            success: true,
+            definition: false,
+            recoverWorker: false,
+            output: "x\n",
+            error: "",
+            reductions: 3,
+            limitReached: false,
+        },
+    });
+    assert.equal(harness.element("status").textContent, "Ready");
+    assert.equal(source.readOnly, false);
+    assert.equal(source.value, "");
+    assert.strictEqual(
+        output.lastElementChild,
+        expressionOutputEntry,
+        "the resumed result must finish in the original Results entry",
+    );
+    assert.equal(
+        expressionOutputEntry.textContent,
+        "IIIx\nx",
+        "the original entry must receive only the final result",
+    );
+    assert.equal(
+        harness.element("source-history").textContent,
+        "step limit 2IIIx",
+    );
+    assert.equal(
+        harness.element("source-history").textContent.includes(
+            "[step limit]"),
+        false,
+    );
+
+    source.value = "step limit off";
+    harness.pressEnter();
+    harness.flushAnimationFrames();
+    const offInspection = worker.messages.filter(
+        message => message.type === "inspect-definition").at(-1);
+    worker.send({
+        type: "definition-inspection-result",
+        id: offInspection.id,
+        result: {
+            success: true,
+            definition: false,
+            displayOnly: false,
+            showAll: false,
+            find: false,
+            replacement: "",
+            stepLimitCommand: true,
+            stepLimitEnabled: false,
+            stepLimit: 0,
+        },
+    });
+
+    source.value = "Ix";
+    harness.pressEnter();
+    harness.flushAnimationFrames();
+    const unlimitedInspection = worker.messages.filter(
+        message => message.type === "inspect-definition").at(-1);
+    worker.send({
+        type: "definition-inspection-result",
+        id: unlimitedInspection.id,
+        result: {
+            success: true,
+            definition: false,
+            displayOnly: false,
+            showAll: false,
+            find: false,
+            replacement: "",
+        },
+    });
+    harness.flushAnimationFrames();
+    const unlimitedEvaluation = worker.messages.filter(
+        message => message.type === "evaluate").at(-1);
+    assert.equal(unlimitedEvaluation.stepLimitEnabled, false);
+    assert.equal(unlimitedEvaluation.stepLimit, 0);
+});
+
+test("overwrites running step counts and refreshes the exact count at a limit", () => {
+    const harness = createHarness({watchdog: realEvaluationWatchdog});
+    const {worker, requestId, outputEntry} =
+        beginLimitedEvaluation(harness, 2537, "BKM(BKM)");
+
+    worker.send({type: "eval-started", id: requestId});
+    worker.send({
+        type: "eval-progress",
+        id: requestId,
+        sequence: 1,
+        reductions: 1000,
+    });
+    let progressEntries = childElements(outputEntry).filter(
+        element => element.dataset.kind === "progress");
+    assert.equal(progressEntries.length, 1);
+    const progressEntry = progressEntries[0];
+    assert.equal(progressEntry.textContent, "[1000 steps so far]");
+
+    worker.send({
+        type: "eval-progress",
+        id: requestId,
+        sequence: 2,
+        reductions: 2000,
+    });
+    progressEntries = childElements(outputEntry).filter(
+        element => element.dataset.kind === "progress");
+    assert.equal(progressEntries.length, 1);
+    assert.strictEqual(progressEntries[0], progressEntry);
+    assert.equal(progressEntry.textContent, "[2000 steps so far]");
+    assert.equal(
+        outputEntry.textContent.includes("[1000 steps so far]"),
+        false,
+        "the 2000-step count must overwrite the 1000-step count",
+    );
+
+    const stepLimitDialog = harness.element("step-limit-dialog");
+    const showModal = stepLimitDialog.showModal.bind(stepLimitDialog);
+    let progressAtDialogOpen;
+    stepLimitDialog.showModal = () => {
+        progressAtDialogOpen = progressEntry.textContent;
+        showModal();
+    };
+    worker.send({
+        type: "result",
+        id: requestId,
+        result: {
+            success: true,
+            definition: false,
+            recoverWorker: false,
+            output: "partial result must remain hidden\n",
+            error: "",
+            reductions: 2537,
+            limitReached: true,
+        },
+    });
+
+    assert.equal(stepLimitDialog.open, true);
+    assert.equal(progressAtDialogOpen, "[2537 steps so far]");
+    assert.strictEqual(
+        childElements(outputEntry).find(
+            element => element.dataset.kind === "progress"),
+        progressEntry,
+    );
+    assert.equal(progressEntry.textContent, "[2537 steps so far]");
+    assert.equal(
+        outputEntry.textContent,
+        "BKM(BKM)\n[2537 steps so far]",
+    );
+});
+
+test("does not add a progress line below one thousand steps", () => {
+    const harness = createHarness({watchdog: realEvaluationWatchdog});
+    const {worker, requestId, outputEntry} =
+        beginLimitedEvaluation(harness, 999, "IIx");
+
+    worker.send({type: "eval-started", id: requestId});
+    worker.send({
+        type: "eval-progress",
+        id: requestId,
+        sequence: 1,
+        reductions: 999,
+    });
+    assert.equal(
+        childElements(outputEntry).some(
+            element => element.dataset.kind === "progress"),
+        false,
+    );
+
+    worker.send({
+        type: "result",
+        id: requestId,
+        result: {
+            success: true,
+            definition: false,
+            recoverWorker: false,
+            output: "Ix\n",
+            error: "",
+            reductions: 999,
+            limitReached: true,
+        },
+    });
+
+    assert.equal(harness.element("step-limit-dialog").open, true);
+    assert.equal(
+        childElements(outputEntry).some(
+            element => element.dataset.kind === "progress"),
+        false,
+    );
+    assert.equal(outputEntry.textContent, "IIx");
+});
+
+test("ignores the configured step limit during Key Step", () => {
+    const harness = createHarness();
+    const source = harness.element("source");
+    const worker = harness.workers[0];
+
+    worker.send({type: "ready", setList: ""});
+    harness.flushAnimationFrames();
+
+    source.value = "step limit 1";
+    harness.pressEnter();
+    harness.flushAnimationFrames();
+    const limitInspection = worker.messages.find(
+        message => message.type === "inspect-definition");
+    worker.send({
+        type: "definition-inspection-result",
+        id: limitInspection.id,
+        result: {
+            success: true,
+            definition: false,
+            displayOnly: false,
+            showAll: false,
+            find: false,
+            replacement: "",
+            stepLimitCommand: true,
+            stepLimitEnabled: true,
+            stepLimit: 1,
+        },
+    });
+
+    harness.element("key-step").click();
+    source.value = "IIx";
+    harness.pressEnter();
+    harness.flushAnimationFrames();
+    const expressionInspection = worker.messages.filter(
+        message => message.type === "inspect-definition").at(-1);
+    worker.send({
+        type: "definition-inspection-result",
+        id: expressionInspection.id,
+        result: {
+            success: true,
+            definition: false,
+            displayOnly: false,
+            showAll: false,
+            find: false,
+            replacement: "",
+        },
+    });
+    harness.flushAnimationFrames();
+    const evaluation = worker.messages.filter(
+        message => message.type === "evaluate").at(-1);
+    assert.equal(evaluation.keyStep, true);
+    assert.equal(evaluation.stepLimitEnabled, false);
+    assert.equal(evaluation.stepLimit, 0);
+
+    worker.send({
+        type: "step-ready",
+        id: expressionInspection.id,
+        result: {success: true},
+    });
+    worker.send({
+        type: "step-result",
+        id: expressionInspection.id,
+        result: {
+            success: true,
+            reduced: true,
+            complete: false,
+            definition: false,
+            output: "Ix\n",
+            error: "",
+            limitReached: false,
+        },
+    });
+
+    assert.equal(harness.element("step-limit-dialog").open, false);
+    assert.equal(
+        harness.element("output").lastElementChild.textContent,
+        "IIx\nIx",
+    );
+});
+
+test("keeps the step limit when cancellation replaces the worker", () => {
+    const harness = createHarness();
+    const source = harness.element("source");
+    const firstWorker = harness.workers[0];
+
+    firstWorker.send({type: "ready", setList: ""});
+    harness.flushAnimationFrames();
+
+    source.value = "step limit 7";
+    harness.pressEnter();
+    harness.flushAnimationFrames();
+    const limitInspection = firstWorker.messages.find(
+        message => message.type === "inspect-definition");
+    firstWorker.send({
+        type: "definition-inspection-result",
+        id: limitInspection.id,
+        result: {
+            success: true,
+            definition: false,
+            displayOnly: false,
+            showAll: false,
+            find: false,
+            replacement: "",
+            stepLimitCommand: true,
+            stepLimitEnabled: true,
+            stepLimit: 7,
+        },
+    });
+
+    source.value = "MM";
+    harness.pressEnter();
+    harness.flushAnimationFrames();
+    const loopingInspection = firstWorker.messages.filter(
+        message => message.type === "inspect-definition").at(-1);
+    firstWorker.send({
+        type: "definition-inspection-result",
+        id: loopingInspection.id,
+        result: {
+            success: true,
+            definition: false,
+            displayOnly: false,
+            showAll: false,
+            find: false,
+            replacement: "",
+        },
+    });
+    harness.flushAnimationFrames();
+    const output = harness.element("output");
+    const expressionOutputEntry = output.lastElementChild;
+    const outputBeforeStepLimit = output.textContent;
+    firstWorker.send({
+        type: "result",
+        id: loopingInspection.id,
+        result: {
+            success: true,
+            definition: false,
+            recoverWorker: false,
+            output: "MM\n",
+            error: "",
+            reductions: 7,
+            limitReached: true,
+        },
+    });
+    const stepLimitDialog = harness.element("step-limit-dialog");
+    assert.equal(stepLimitDialog.open, true);
+    assert.equal(
+        output.textContent,
+        outputBeforeStepLimit,
+        "reaching the step limit must not change Results",
+    );
+    assert.strictEqual(output.lastElementChild, expressionOutputEntry);
+    stepLimitDialog.close("cancel");
+
+    assert.equal(firstWorker.terminated, true);
+    assert.strictEqual(output.lastElementChild, expressionOutputEntry);
+    assert.equal(
+        expressionOutputEntry.textContent,
+        "MM\n[cancelled]",
+        "Cancel alone must append [cancelled] to the paused entry",
+    );
+    assertRedNotice(output, "[cancelled]");
+    assertRedNotice(harness.element("source-history"), "[cancelled]");
+    const replacementWorker = harness.workers[1];
+    replacementWorker.send({type: "ready", setList: ""});
+    harness.flushAnimationFrames();
+
+    source.value = "Ix";
+    harness.pressEnter();
+    harness.flushAnimationFrames();
+    const replacementInspection = replacementWorker.messages.find(
+        message => message.type === "inspect-definition");
+    replacementWorker.send({
+        type: "definition-inspection-result",
+        id: replacementInspection.id,
+        result: {
+            success: true,
+            definition: false,
+            displayOnly: false,
+            showAll: false,
+            find: false,
+            replacement: "",
+        },
+    });
+    harness.flushAnimationFrames();
+
+    const evaluation = replacementWorker.messages.find(
+        message => message.type === "evaluate");
+    assert.equal(evaluation.stepLimitEnabled, true);
+    assert.equal(evaluation.stepLimit, 7);
 });
 
 test("routes find as an unstepped cancellable search", () => {

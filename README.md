@@ -476,8 +476,8 @@ every `takeout` pass, and each optimizer substitution before the final
 `?=<expression>` line. Unchanged preprocessing and optimization passes are
 omitted.
 
-The names `abstract`, `all`, `captured`, `live`, `steps`, `set`, `define`,
-`show`, `remove`, `references`, `snapshot`,
+The names `abstract`, `all`, `captured`, `live`, `step`, `steps`, `limit`,
+`set`, `define`, `show`, `remove`, `references`, `snapshot`,
 `dependson`, `depends-on`, `depends`, `on`, `usedby`, `used-by`, `used`, `by`,
 `single`, `key`, `basis`, `colorize`, `about`, `birds`, `find`, `help`, `load`,
 `save`, `quit`, and `exit` are reserved words and cannot be used as names by
@@ -770,7 +770,7 @@ expression produces no output, while malformed or empty lines throw
 The `crepl` executable applies `input_escape` to each line before passing it to
 `parse_eval`, so ordinary quoted words and backslashes can be entered directly.
 When standard output is a terminal, it first prints
-`Combinator Read-Eval-Print Loop, version 2.6.1`. Long evaluations display
+`Combinator Read-Eval-Print Loop, version 2.6.5`. Long evaluations display
 the accumulated step count every 1,000 reductions by overwriting one status
 line; the line is cleared before evaluation output is printed. Its interactive
 prompt is `>`. Interactive input uses GNU Readline, so previous nonempty
@@ -791,13 +791,23 @@ enter `single step off` to return to printing only the final result. Enter
 `key step` or `key step on` to display the starting expression and wait for
 one keypress before each reduction. Any key advances immediately without
 requiring Enter, while `q` or `Q` ends the current reduction; `key step off`
-disables that mode. When standard input is redirected from a file or pipe, all
-three Key Step commands are silently ignored. Enabling either stepping mode
+disables that mode. Key Step ignores any configured step limit. When standard
+input is redirected from a file or pipe, all three Key Step commands are
+silently ignored. Enabling either stepping mode
 disables the other, while turning off an inactive mode leaves the active mode
 unchanged. Omitting `on` or `off` enables the selected mode. `basis step`,
 `basis step on`, and `basis step off` independently control whether
 named-basis expansion is shown as a separate reduction in either stepping
 mode; ordinary evaluation ignores this setting.
+Enter `step limit <off | num>` to pause each subsequent interactive evaluation
+after `num` reduction steps at a time. With redirected input, evaluation stops
+at the limit. The limit is off at startup, and the command has no default:
+either `off` or `num` must be present. An expression that reaches normal form
+on exactly the limiting reduction completes normally. When an interactive
+evaluation reaches the limit, CREPL displays the current expression and
+pauses. Press Enter to reset the step-limit count and continue the same
+evaluation, or press `q` or `Q` to cancel it. The number must be greater than
+zero. The setting is not written to saved set-list journals.
 Enter `colorize`, `colorize on`, or `colorize off` to independently control
 ANSI argument highlighting while either stepping mode is active. Colorized
 stepping uses `color_step_ansi` and prints the final normal form without color
@@ -1075,9 +1085,10 @@ The Combinator Expression box is a scrollable history with the current editable
 input at the bottom. Successful commands and expressions that reach normal form
 remain visible in submission order and are saved in the browser's local storage,
 so they return when Studio is reloaded on the same site and browser profile.
-Cancelled and timed-out expressions are retained with ` [cancelled]` and
-` [timed out]` appended, respectively; recalling them restores only the original
-expression. Parse errors are not added to the history. Press Up Arrow or Ctrl-P
+Cancelled and timed-out expressions are retained with
+` [cancelled]` and ` [timed out]` appended, respectively;
+recalling them restores only the original expression. Parse errors are not
+added to the history. Press Up Arrow or Ctrl-P
 to recall older entries, and Down Arrow or Ctrl-N to move toward newer entries
 and eventually restore the draft that was being edited. Ctrl-O submits the
 current input and, after successful completion, recalls the next history entry
@@ -1092,7 +1103,7 @@ A submitted combinator expression nevertheless always begins after a blank line
 when the Results area already contains output.
 Press Tab to complete a unique prefix for the `abstract`, `set`, `define`,
 `dependson`, `depends-on`, `depends on`, `find`, `references`, `remove`, `show`,
-`usedby`, `used-by`, or `used by` command, the `captured` or `live` definition
+`step limit`, `usedby`, `used-by`, or `used by` command, the `captured` or `live` definition
 modifier, and the `captured` or `live` references option; when no completion is
 available, Tab keeps its normal browser focus behavior. Studio accepts the same
 `abstract [steps] ?...`, `define [captured | live] name symbols = ...`,
@@ -1108,6 +1119,20 @@ Reference mode is controlled by typing `references captured` or
 `references live` in the Combinator Expression box; Studio deliberately has no
 References button. It starts captured, and its captured, live, and explicit
 `name@N` behavior is the same as CREPL's.
+
+Enter `step limit <off | num>` in the Combinator Expression box to limit each
+subsequent ordinary or Single Step evaluation to at most `num` reductions.
+Key Step ignores the setting. The limit is off at startup, requires an explicit
+option, requires `num` to be greater than zero, and deliberately has no button.
+Once an ordinary evaluation reaches 1,000 reductions, Studio overwrites one
+progress line at every completed 1,000-step milestone.
+When the limit is reached, Studio offers Cancel and Resume. Before the dialog
+opens, an existing progress line is
+refreshed to the exact cumulative step count. Aside from that refresh, the
+Results entry remains unchanged. Resume continues the same evaluation in that
+entry; Cancel adds only `[cancelled]`. The setting remains active after Studio
+replaces a cancelled or failed worker, but it is not included in saved set-list
+files.
 
 The Single Step button switches between displaying only the evaluated result
 and displaying every reduction produced by

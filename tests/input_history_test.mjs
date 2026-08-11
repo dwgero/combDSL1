@@ -44,6 +44,7 @@ test("completes unique Studio command prefixes", () => {
         "remove",
         "set",
         "show",
+        "step limit",
         "used by",
         "used-by",
         "usedby",
@@ -60,6 +61,7 @@ test("completes unique Studio command prefixes", () => {
     assert.equal(complete("rem"), "remove");
     assert.equal(complete("se"), "set");
     assert.equal(complete("sho"), "show");
+    assert.equal(complete("step l"), "step limit");
     assert.equal(complete("used b"), "used by");
     assert.equal(complete("used-"), "used-by");
     assert.equal(complete("usedb"), "usedby");
@@ -193,6 +195,26 @@ test("completes references commands and options", () => {
     assert.equal(complete("references "), undefined);
 });
 
+test("completes the required step limit command and off option", () => {
+    const completeTopLevel = createCommandCompleter(
+        ["step limit"], {appendSpaceToExact: true});
+    const completeOption = createCommandCompleter([
+        "step limit off",
+    ]);
+    const complete = source =>
+        completeTopLevel(source) ?? completeOption(source);
+
+    assert.equal(complete("step l"), "step limit ");
+    assert.equal(complete("step   lim"), "step   limit ");
+    assert.equal(complete("step limit"), "step limit ");
+    assert.equal(complete("step limit o"), "step limit off");
+    assert.equal(
+        complete("  step\tlimit  o"),
+        "  step\tlimit  off");
+    assert.equal(complete("step limit "), "step limit off");
+    assert.equal(complete("step limit 25"), undefined);
+});
+
 test("keeps references as a typed command without a UI button", () => {
     const html = readFileSync(
         new URL("../web/index.html", import.meta.url), "utf8");
@@ -320,7 +342,7 @@ test("preserves exact entries and repeated successful sources", () => {
     ]);
 });
 
-test("appends cancellation and timeout outcomes", () => {
+test("appends non-normal evaluation outcomes", () => {
     const history = createHistory();
     assert.equal(
         history.record("YI", "cancelled"),
@@ -328,9 +350,13 @@ test("appends cancellation and timeout outcomes", () => {
     assert.equal(
         history.record("BKM(BKM)", "timed out"),
         "BKM(BKM) [timed out]");
+    assert.equal(
+        history.record("IIIx", "step limit"),
+        "IIIx [step limit]");
     assert.deepEqual([...history.values()], [
         "YI [cancelled]",
         "BKM(BKM) [timed out]",
+        "IIIx [step limit]",
     ]);
 });
 
@@ -363,25 +389,31 @@ test("persists and restores structured history entries", () => {
     };
     const history = createHistory({
         storage,
-        maximumStoredEntries: 2,
+        maximumStoredEntries: 3,
     });
     history.record("Ix");
     history.record("YI", "cancelled");
     history.record("BKM(BKM)", "timed out");
+    history.record("IIIx", "step limit");
 
     assert.deepEqual(JSON.parse(stored), {
         version: 1,
         entries: [
             {source: "YI", outcome: "cancelled"},
             {source: "BKM(BKM)", outcome: "timed out"},
+            {source: "IIIx", outcome: "step limit"},
         ],
     });
     assert.deepEqual(
         [...createHistory({
             storage,
-            maximumStoredEntries: 2,
+            maximumStoredEntries: 3,
         }).values()],
-        ["YI [cancelled]", "BKM(BKM) [timed out]"],
+        [
+            "YI [cancelled]",
+            "BKM(BKM) [timed out]",
+            "IIIx [step limit]",
+        ],
     );
 });
 

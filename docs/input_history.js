@@ -92,7 +92,7 @@ globalThis.combdslInputHistory = (() => {
         "combdsl.studio.input-history.v1";
     const defaultMaximumStoredEntries = 500;
     const storedOutcomes = new Set([
-        "", "cancelled", "timed out",
+        "", "cancelled", "timed out", "step limit",
     ]);
 
     const create = ({

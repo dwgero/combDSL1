@@ -22,6 +22,7 @@ set [captured | live] <name> = [number] <expression>
                                       | store <expression> as <name> with arity <number> or 0
 show <name | name@N | all>            | display one revision or the entire set list
 single step [on | off]                | display each step of the reduction without pause
+step limit <off | num>                | limit ordinary and Single Step evaluations
 usedby <name> | used-by <name> | used by <name>
                                       | display named bases directly contained in <name>
 Commands:
@@ -48,5 +49,6 @@ set [captured | live] <name> = [number] <expression>
                                       | store <expression> as <name> with arity <number> or 0
 show <name | name@N | all>            | display one revision or the entire set list
 single step [on | off]                | display each step of the reduction without pause
+step limit <off | num>                | limit ordinary and Single Step evaluations
 usedby <name> | used-by <name> | used by <name>
                                       | display named bases directly contained in <name>

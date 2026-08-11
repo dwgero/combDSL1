@@ -33,6 +33,7 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <iomanip>
 #include <iostream>
 #include <optional>
@@ -59,7 +60,7 @@
 
 namespace {
 
-constexpr std::string_view crepl_version = "2.6.1";
+constexpr std::string_view crepl_version = "2.6.5";
 
 [[nodiscard]] bool stream_is_terminal(std::FILE* stream) noexcept {
 #if defined(_WIN32)
@@ -101,13 +102,48 @@ void print_red_message_line(
     output.flush();
 }
 
+[[nodiscard]] std::string step_limit_message(
+    std::size_t reductions) {
+    auto message = std::string("[step limit reached after ");
+    message += std::to_string(reductions);
+    message += reductions == 1 ? " step]" : " steps]";
+    return message;
+}
+
+inline constexpr std::string_view crepl_resume_prompt_suffix =
+    " Press Enter to resume; press q or Q to quit.\n";
+
+[[nodiscard]] combdsl::evaluation_step_limit_callback
+make_step_limit_callback(
+    bool enabled,
+    std::ostream& output,
+    bool use_terminal_color,
+    std::function<void()> before_prompt = {});
+
+[[nodiscard]] combdsl::evaluation_interrupt_callback
+make_interrupt_callback(
+    bool enabled,
+    std::ostream& output,
+    bool use_terminal_color,
+    std::function<void()> before_prompt = {});
+
 void report_evaluation_outcome(
     combdsl::evaluation_outcome outcome,
     std::ostream& output,
-    bool use_terminal_color) {
+    bool use_terminal_color,
+    std::optional<std::size_t> step_limit = std::nullopt) {
     if (outcome == combdsl::evaluation_outcome::cancelled) {
         print_red_message_line(
             output, "[cancelled]", use_terminal_color);
+        return;
+    }
+    if (outcome ==
+            combdsl::evaluation_outcome::step_limit_reached &&
+        step_limit) {
+        print_red_message_line(
+            output,
+            step_limit_message(*step_limit),
+            use_terminal_color);
     }
 }
 
@@ -149,13 +185,17 @@ struct completion_candidates {
     std::size_t size = 0;
 };
 
-constexpr std::array<std::string_view, 24> command_completion_candidates = {
+constexpr std::array<std::string_view, 25> command_completion_candidates = {
     "about", "abstract", "basis", "birds", "colorize", "define",
     "depends", "depends-on", "dependson", "exit", "find", "help",
     "key", "load", "quit", "references", "remove", "save", "set",
-    "show", "single", "used", "used-by", "usedby"};
+    "show", "single", "step", "used", "used-by", "usedby"};
 constexpr std::array<std::string_view, 1> step_completion_candidates = {
     "step"};
+constexpr std::array<std::string_view, 1>
+    step_limit_completion_candidates = {"limit"};
+constexpr std::array<std::string_view, 1>
+    step_limit_option_completion_candidates = {"off"};
 constexpr std::array<std::string_view, 2> toggle_completion_candidates = {
     "off", "on"};
 constexpr std::array<std::string_view, 2> help_completion_candidates = {
@@ -372,6 +412,10 @@ template<std::size_t Size>
             return make_completion_candidates(
                 definition_reference_completion_candidates);
         }
+        if (words[0] == "step") {
+            return make_completion_candidates(
+                step_limit_completion_candidates);
+        }
         if (words[0] == "colorize") {
             return make_completion_candidates(toggle_completion_candidates);
         }
@@ -421,6 +465,11 @@ template<std::size_t Size>
         (words[0] == "basis" || words[0] == "key" ||
          words[0] == "single")) {
         return make_completion_candidates(toggle_completion_candidates);
+    }
+    if (word_count == 2 && words[0] == "step" &&
+        words[1] == "limit") {
+        return make_completion_candidates(
+            step_limit_option_completion_candidates);
     }
     if (word_count == 2 && words[0] == "find" &&
         words[1] == "all") {
@@ -770,6 +819,7 @@ void print_help_brief(std::ostream& output) {
         "                                      | store <expression> as <name> with arity <number> or 0\n"
         "show <name | name@N | all>            | display one revision or the entire set list\n"
         "single step [on | off]                | display each step of the reduction without pause\n"
+        "step limit <off | num>                | limit ordinary and Single Step evaluations\n"
         "usedby <name> | used-by <name> | used by <name>\n"
         "                                      | display named bases directly contained in <name>\n";
     output.flush();
@@ -809,6 +859,19 @@ void print_help_full(std::ostream& output) {
         "a separate reduction step (so Mx becomes SIIx). It may remain "
         "on when neither stepping mode is active; ordinary evaluation "
         "ignores it.");
+    print_help_topic(
+        output,
+        "step limit <off | num>",
+        "Pauses each subsequent ordinary or Single Step interactive "
+        "evaluation after num reduction steps at a time. Key Step ignores "
+        "the limit. With redirected input, evaluation stops at the limit. "
+        "The limit is off at startup, and an explicit off or num is required. "
+        "An expression that reaches normal form on exactly the limiting step "
+        "completes normally. In an interactive session, reaching the limit "
+        "pauses the evaluation. Press Enter to reset the count and continue "
+        "the same evaluation, or press q or Q to cancel it. The number must "
+        "be greater than zero. "
+        "The setting is not written to saved set-list journals.");
     print_help_topic(
         output,
         "colorize [on | off]",
@@ -1294,15 +1357,77 @@ void write_step_output(
 
 enum class keypress_action {
     step,
+    resume,
     quit,
+    interrupted,
     end
 };
 
 bool ignore_empty_line_after_key_quit = false;
 
 #if defined(__unix__) || defined(__APPLE__)
-volatile std::sig_atomic_t keypress_interrupted = 0;
 volatile std::sig_atomic_t terminal_resize_pending = 0;
+
+termios crepl_startup_terminal_attributes{};
+bool crepl_startup_terminal_attributes_valid = false;
+
+[[nodiscard]] bool read_terminal_attributes(
+    termios& attributes) noexcept {
+    while (::tcgetattr(STDIN_FILENO, &attributes) != 0) {
+        if (errno != EINTR) {
+            return false;
+        }
+    }
+    return true;
+}
+
+[[nodiscard]] bool write_terminal_attributes(
+    termios const& attributes) noexcept {
+    while (::tcsetattr(
+               STDIN_FILENO, TCSANOW, &attributes) != 0) {
+        if (errno != EINTR) {
+            return false;
+        }
+    }
+    return true;
+}
+
+void restore_crepl_terminal_at_exit() noexcept {
+    if (!crepl_startup_terminal_attributes_valid) {
+        return;
+    }
+    static_cast<void>(write_terminal_attributes(
+        crepl_startup_terminal_attributes));
+}
+
+class scoped_crepl_terminal_restoration {
+public:
+    explicit scoped_crepl_terminal_restoration(bool enabled) noexcept {
+        if (!enabled ||
+            !read_terminal_attributes(
+                crepl_startup_terminal_attributes)) {
+            return;
+        }
+        crepl_startup_terminal_attributes_valid = true;
+        active_ = true;
+        static_cast<void>(std::atexit(
+            restore_crepl_terminal_at_exit));
+    }
+
+    scoped_crepl_terminal_restoration(
+        scoped_crepl_terminal_restoration const&) = delete;
+    scoped_crepl_terminal_restoration& operator=(
+        scoped_crepl_terminal_restoration const&) = delete;
+
+    ~scoped_crepl_terminal_restoration() {
+        if (active_) {
+            restore_crepl_terminal_at_exit();
+        }
+    }
+
+private:
+    bool active_ = false;
+};
 
 void terminal_sigwinch_handler(int) noexcept {
     terminal_resize_pending = 1;
@@ -1356,57 +1481,14 @@ void handle_pending_terminal_resize() noexcept {
     }
 }
 
-void keypress_sigint_handler(int) noexcept {
-    keypress_interrupted = 1;
-}
-
-class scoped_keypress_sigint_handler {
-public:
-    scoped_keypress_sigint_handler() noexcept {
-        keypress_interrupted = 0;
-        struct sigaction action {};
-        action.sa_handler = keypress_sigint_handler;
-        static_cast<void>(sigemptyset(&action.sa_mask));
-        action.sa_flags = 0;
-        installed_ =
-            ::sigaction(SIGINT, &action, &previous_) == 0;
-    }
-
-    scoped_keypress_sigint_handler(
-        scoped_keypress_sigint_handler const&) = delete;
-    scoped_keypress_sigint_handler& operator=(
-        scoped_keypress_sigint_handler const&) = delete;
-
-    ~scoped_keypress_sigint_handler() {
-        if (installed_) {
-            static_cast<void>(
-                ::sigaction(SIGINT, &previous_, nullptr));
-        }
-    }
-
-    [[nodiscard]] bool installed() const noexcept {
-        return installed_;
-    }
-
-    [[nodiscard]] bool interrupted() const noexcept {
-        return keypress_interrupted != 0;
-    }
-
-private:
-    struct sigaction previous_ {};
-    bool installed_ = false;
-};
 #endif
 
 class terminal_keypress_reader {
 public:
     terminal_keypress_reader() noexcept {
 #if defined(__unix__) || defined(__APPLE__)
-        while (::tcgetattr(
-                   STDIN_FILENO, &saved_attributes_) != 0) {
-            if (errno != EINTR) {
-                return;
-            }
+        if (!read_terminal_attributes(saved_attributes_)) {
+            return;
         }
 
         auto keypress_attributes = saved_attributes_;
@@ -1414,13 +1496,8 @@ public:
             static_cast<tcflag_t>(~(ICANON | ECHO));
         keypress_attributes.c_cc[VMIN] = 0;
         keypress_attributes.c_cc[VTIME] = 1;
-        while (::tcsetattr(
-                   STDIN_FILENO,
-                   TCSANOW,
-                   &keypress_attributes) != 0) {
-            if (errno != EINTR) {
-                return;
-            }
+        if (!write_terminal_attributes(keypress_attributes)) {
+            return;
         }
         restore_attributes_ = true;
 #endif
@@ -1436,14 +1513,8 @@ public:
         if (!restore_attributes_) {
             return;
         }
-        while (::tcsetattr(
-                   STDIN_FILENO,
-                   TCSANOW,
-                   &saved_attributes_) != 0) {
-            if (errno != EINTR) {
-                break;
-            }
-        }
+        static_cast<void>(
+            write_terminal_attributes(saved_attributes_));
 #endif
     }
 
@@ -1454,7 +1525,7 @@ public:
             return keypress_action::end;
         }
         if (key == 0x03) {
-            return keypress_action::end;
+            return keypress_action::interrupted;
         }
         if (key == 0 || key == 0xe0) {
             if (::_getch() == EOF) {
@@ -1464,6 +1535,9 @@ public:
         }
         if (key == 'q' || key == 'Q') {
             return keypress_action::quit;
+        }
+        if (key == '\r' || key == '\n') {
+            return keypress_action::resume;
         }
         return keypress_action::step;
 #elif defined(__unix__) || defined(__APPLE__)
@@ -1477,6 +1551,9 @@ public:
         if (*first == 'q' || *first == 'Q') {
             return keypress_action::quit;
         }
+        if (*first == '\r' || *first == '\n') {
+            return keypress_action::resume;
+        }
 
         if (*first == 0x1b) {
             consume_escape_sequence();
@@ -1489,8 +1566,11 @@ public:
         if (!std::cin.get(key)) {
             return keypress_action::end;
         }
-        return key == 'q' || key == 'Q'
-                   ? keypress_action::quit
+        if (key == 'q' || key == 'Q') {
+            return keypress_action::quit;
+        }
+        return key == '\r' || key == '\n'
+                   ? keypress_action::resume
                    : keypress_action::step;
 #endif
     }
@@ -1502,7 +1582,7 @@ private:
         unsigned char value = 0;
         for (;;) {
             handle_pending_terminal_resize();
-            if (keypress_interrupted != 0) {
+            if (combdsl::detail::evaluation_interrupt_pending()) {
                 return std::nullopt;
             }
             auto const count =
@@ -1510,7 +1590,18 @@ private:
             if (count == 1) {
                 return value;
             }
-            if (count == 0 || errno == EINTR) {
+            if (count == 0) {
+                pollfd descriptor{STDIN_FILENO, POLLIN, 0};
+                auto const poll_result =
+                    ::poll(&descriptor, 1, 0);
+                if (poll_result == 1 &&
+                    (descriptor.revents &
+                     (POLLHUP | POLLERR | POLLNVAL)) != 0) {
+                    return std::nullopt;
+                }
+                continue;
+            }
+            if (errno == EINTR) {
                 continue;
             }
             return std::nullopt;
@@ -1573,44 +1664,170 @@ private:
 };
 
 [[nodiscard]] keypress_action read_terminal_keypress() noexcept {
-#if defined(__unix__) || defined(__APPLE__)
-    scoped_keypress_sigint_handler sigint_handler;
-    if (!sigint_handler.installed()) {
-        return keypress_action::end;
+    if (combdsl::detail::consume_evaluation_interrupt()) {
+        return keypress_action::interrupted;
     }
     terminal_keypress_reader reader;
-    if (sigint_handler.interrupted()) {
-        return keypress_action::end;
-    }
     auto const action = reader.read();
-    return sigint_handler.interrupted()
-               ? keypress_action::end
+    return combdsl::detail::consume_evaluation_interrupt()
+               ? keypress_action::interrupted
                : action;
-#else
-    terminal_keypress_reader reader;
-    return reader.read();
-#endif
 }
 
-[[nodiscard]] bool terminal_key_requests_step() noexcept {
+[[nodiscard]] keypress_action terminal_keypress_action() noexcept {
     auto const action = read_terminal_keypress();
     if (action == keypress_action::quit) {
         ignore_empty_line_after_key_quit = true;
     }
-    return action == keypress_action::step;
+    return action == keypress_action::resume
+               ? keypress_action::step
+               : action;
+}
+
+[[nodiscard]] bool wait_for_crepl_resume_key(
+    terminal_keypress_reader& reader) noexcept {
+    for (;;) {
+        auto const action = reader.read();
+        if (action == keypress_action::resume) {
+            return true;
+        }
+        if (action == keypress_action::quit) {
+            ignore_empty_line_after_key_quit = true;
+            return false;
+        }
+        if (action == keypress_action::interrupted ||
+            combdsl::detail::consume_evaluation_interrupt()) {
+            continue;
+        }
+        if (action == keypress_action::end) {
+            return false;
+        }
+    }
+}
+
+[[nodiscard]] bool prompt_for_crepl_resume_key(
+    std::ostream& output,
+    std::string_view message,
+    bool use_terminal_color) {
+    terminal_keypress_reader reader;
+    write_red_message(output, message, use_terminal_color);
+    output.write(
+        crepl_resume_prompt_suffix.data(),
+        static_cast<std::streamsize>(
+            crepl_resume_prompt_suffix.size()));
+    output.flush();
+    return wait_for_crepl_resume_key(reader);
+}
+
+[[nodiscard]] combdsl::evaluation_step_limit_callback
+make_step_limit_callback(
+    bool enabled,
+    std::ostream& output,
+    bool use_terminal_color,
+    std::function<void()> before_prompt) {
+    if (!enabled) {
+        return {};
+    }
+
+    return [
+               &output,
+               use_terminal_color,
+               before_prompt = std::move(before_prompt)](
+               std::size_t reductions) {
+        if (before_prompt) {
+            before_prompt();
+        }
+        auto const message = step_limit_message(reductions);
+        return prompt_for_crepl_resume_key(
+            output, message, use_terminal_color);
+    };
+}
+
+[[nodiscard]] combdsl::evaluation_interrupt_callback
+make_interrupt_callback(
+    bool enabled,
+    std::ostream& output,
+    bool use_terminal_color,
+    std::function<void()> before_prompt) {
+    if (!enabled) {
+        return {};
+    }
+
+    return [
+               &output,
+               use_terminal_color,
+               before_prompt = std::move(before_prompt)] {
+        if (before_prompt) {
+            before_prompt();
+        }
+        return prompt_for_crepl_resume_key(
+            output, "[interrupted]", use_terminal_color);
+    };
+}
+
+[[nodiscard]] bool step_limit_exhausted(
+    std::optional<std::size_t> step_limit,
+    std::size_t reductions) noexcept {
+    return step_limit && reductions >= *step_limit;
 }
 
 [[nodiscard]] combdsl::evaluation_outcome terminal_key_step_loop(
     combdsl::quoted_expression expression,
     std::ostream& output,
-    bool basis_step) {
+    bool basis_step,
+    std::optional<std::size_t> step_limit,
+    combdsl::evaluation_step_limit_callback const&
+        step_limit_callback,
+    combdsl::evaluation_interrupt_callback const&
+        interrupt_callback) {
+    combdsl::detail::scoped_evaluation_sigint_handler sigint_handler;
     combdsl::detail::print_layout(
         output,
         "Press any key for one reduction step; press q or Q to quit.\n");
     print_expression_line(output, expression);
 
+    std::size_t reductions = 0;
+    bool allow_one_reduction_after_zero_limit = false;
     for (;;) {
-        if (!terminal_key_requests_step()) {
+        if (combdsl::detail::consume_evaluation_interrupt() &&
+            !(interrupt_callback
+                  ? interrupt_callback()
+                  : combdsl::detail::wait_for_evaluation_resume(
+                        std::cin, output))) {
+            return combdsl::evaluation_outcome::cancelled;
+        }
+        if (step_limit_exhausted(step_limit, reductions) &&
+            !allow_one_reduction_after_zero_limit) {
+            if (!combdsl::detail::has_next_redex(
+                    expression,
+                    combdsl::detail::reduction_options{
+                        .basis_step = basis_step,
+                    })) {
+                return combdsl::evaluation_outcome::completed;
+            }
+            if (!step_limit_callback) {
+                return combdsl::evaluation_outcome::step_limit_reached;
+            }
+            if (!step_limit_callback(reductions)) {
+                return combdsl::evaluation_outcome::cancelled;
+            }
+            reductions = 0;
+            allow_one_reduction_after_zero_limit =
+                step_limit && *step_limit == 0;
+            continue;
+        }
+        auto const action = terminal_keypress_action();
+        if (action == keypress_action::interrupted) {
+            auto const resume = interrupt_callback
+                ? interrupt_callback()
+                : combdsl::detail::wait_for_evaluation_resume(
+                      std::cin, output);
+            if (resume) {
+                continue;
+            }
+            return combdsl::evaluation_outcome::cancelled;
+        }
+        if (action != keypress_action::step) {
             return combdsl::evaluation_outcome::cancelled;
         }
 
@@ -1620,10 +1837,15 @@ private:
         }
 
         expression = std::move(next);
+        ++reductions;
+        allow_one_reduction_after_zero_limit = false;
         print_expression_line(output, expression);
 
-        auto following = combdsl::single_step(expression, basis_step);
-        if (same_expression(following, expression)) {
+        if (!combdsl::detail::has_next_redex(
+                expression,
+                combdsl::detail::reduction_options{
+                    .basis_step = basis_step,
+                })) {
             return combdsl::evaluation_outcome::completed;
         }
     }
@@ -1633,15 +1855,47 @@ private:
     combdsl::quoted_expression expression,
     std::ostream& output,
     std::istream& input,
-    bool basis_step) {
+    bool basis_step,
+    std::optional<std::size_t> step_limit,
+    combdsl::evaluation_step_limit_callback const&
+        step_limit_callback,
+    combdsl::evaluation_interrupt_callback const&
+        interrupt_callback) {
     combdsl::detail::scoped_evaluation_sigint_handler sigint_handler;
     bool reduced = false;
+    std::size_t reductions = 0;
+    bool allow_one_reduction_after_zero_limit = false;
     output.flush();
 
     for (;;) {
         if (!combdsl::detail::wait_after_single_step_run_interrupt(
-                input, output)) {
+                input, output, interrupt_callback)) {
             return combdsl::evaluation_outcome::cancelled;
+        }
+
+        if (step_limit_exhausted(step_limit, reductions) &&
+            !allow_one_reduction_after_zero_limit) {
+            auto const reducible = combdsl::detail::has_next_redex(
+                expression,
+                combdsl::detail::reduction_options{
+                    .basis_step = basis_step,
+                });
+            if (reduced || reducible) {
+                print_expression_line(output, expression);
+            }
+            if (!reducible) {
+                return combdsl::evaluation_outcome::completed;
+            }
+            if (!step_limit_callback) {
+                return combdsl::evaluation_outcome::step_limit_reached;
+            }
+            if (!step_limit_callback(reductions)) {
+                return combdsl::evaluation_outcome::cancelled;
+            }
+            reductions = 0;
+            allow_one_reduction_after_zero_limit =
+                step_limit && *step_limit == 0;
+            continue;
         }
 
         std::ostringstream step_output;
@@ -1651,7 +1905,7 @@ private:
         auto const no_reduction = same_expression(next, expression);
 
         if (!combdsl::detail::wait_after_single_step_run_interrupt(
-                input, output)) {
+                input, output, interrupt_callback)) {
             return combdsl::evaluation_outcome::cancelled;
         }
 
@@ -1661,24 +1915,74 @@ private:
             }
             return combdsl::evaluation_outcome::completed;
         }
-
         write_step_output(output, step_output);
         expression = std::move(next);
         reduced = true;
+        ++reductions;
+        allow_one_reduction_after_zero_limit = false;
     }
 }
 
 [[nodiscard]] combdsl::evaluation_outcome colorized_key_step_loop(
     combdsl::quoted_expression expression,
     std::ostream& output,
-    bool basis_step) {
+    bool basis_step,
+    std::optional<std::size_t> step_limit,
+    combdsl::evaluation_step_limit_callback const&
+        step_limit_callback,
+    combdsl::evaluation_interrupt_callback const&
+        interrupt_callback) {
+    combdsl::detail::scoped_evaluation_sigint_handler sigint_handler;
     combdsl::detail::print_layout(
         output,
         "Press any key for one reduction step; press q or Q to quit.\n");
     print_expression_line(output, expression);
 
+    std::size_t reductions = 0;
+    bool allow_one_reduction_after_zero_limit = false;
     for (;;) {
-        if (!terminal_key_requests_step()) {
+        if (combdsl::detail::consume_evaluation_interrupt() &&
+            !(interrupt_callback
+                  ? interrupt_callback()
+                  : combdsl::detail::wait_for_evaluation_resume(
+                        std::cin, output))) {
+            return combdsl::evaluation_outcome::cancelled;
+        }
+        if (step_limit_exhausted(step_limit, reductions) &&
+            !allow_one_reduction_after_zero_limit) {
+            if (!combdsl::detail::has_next_redex(
+                    expression,
+                    combdsl::detail::reduction_options{
+                        .basis_step = basis_step,
+                    })) {
+                return combdsl::evaluation_outcome::completed;
+            }
+            if (reductions != 0) {
+                print_expression_line(output, expression);
+            }
+            if (!step_limit_callback) {
+                return combdsl::evaluation_outcome::step_limit_reached;
+            }
+            if (!step_limit_callback(reductions)) {
+                return combdsl::evaluation_outcome::cancelled;
+            }
+            reductions = 0;
+            allow_one_reduction_after_zero_limit =
+                step_limit && *step_limit == 0;
+            continue;
+        }
+        auto const action = terminal_keypress_action();
+        if (action == keypress_action::interrupted) {
+            auto const resume = interrupt_callback
+                ? interrupt_callback()
+                : combdsl::detail::wait_for_evaluation_resume(
+                      std::cin, output);
+            if (resume) {
+                continue;
+            }
+            return combdsl::evaluation_outcome::cancelled;
+        }
+        if (action != keypress_action::step) {
             return combdsl::evaluation_outcome::cancelled;
         }
 
@@ -1692,9 +1996,14 @@ private:
 
         write_step_output(output, step_output);
         expression = std::move(next);
+        ++reductions;
+        allow_one_reduction_after_zero_limit = false;
 
-        auto following = combdsl::single_step(expression, basis_step);
-        if (same_expression(following, expression)) {
+        if (!combdsl::detail::has_next_redex(
+                expression,
+                combdsl::detail::reduction_options{
+                    .basis_step = basis_step,
+                })) {
             print_expression_line(output, expression);
             return combdsl::evaluation_outcome::completed;
         }
@@ -1706,7 +2015,12 @@ private:
     std::ostream& output,
     std::istream& input,
     bool basis_step,
-    bool key_step) {
+    bool key_step,
+    std::optional<std::size_t> step_limit,
+    combdsl::evaluation_step_limit_callback const&
+        step_limit_callback,
+    combdsl::evaluation_interrupt_callback const&
+        interrupt_callback) {
     auto parsed = combdsl::detail::parse_input(source);
     if (parsed.is_display_only) {
         print_expression_line(output, parsed.expression);
@@ -1720,19 +2034,27 @@ private:
         return colorized_key_step_loop(
             std::move(parsed.expression),
             output,
-            basis_step);
+            basis_step,
+            std::nullopt,
+            combdsl::evaluation_step_limit_callback{},
+            interrupt_callback);
     }
     return colorized_single_step_run(
         std::move(parsed.expression),
         output,
         input,
-        basis_step);
+        basis_step,
+        step_limit,
+        step_limit_callback,
+        interrupt_callback);
 }
 
 [[nodiscard]] combdsl::evaluation_outcome parse_and_terminal_key_step(
     std::string_view source,
     std::ostream& output,
-    bool basis_step) {
+    bool basis_step,
+    combdsl::evaluation_interrupt_callback const&
+        interrupt_callback) {
     auto parsed = combdsl::detail::parse_input(source);
     if (parsed.is_display_only) {
         print_expression_line(output, parsed.expression);
@@ -1742,7 +2064,12 @@ private:
         return combdsl::evaluation_outcome::completed;
     }
     return terminal_key_step_loop(
-        std::move(parsed.expression), output, basis_step);
+        std::move(parsed.expression),
+        output,
+        basis_step,
+        std::nullopt,
+        combdsl::evaluation_step_limit_callback{},
+        interrupt_callback);
 }
 
 [[nodiscard]] bool standard_output_is_terminal() noexcept {
@@ -1766,21 +2093,25 @@ public:
         clear_progress();
     }
 
-    void show_progress(std::size_t reductions) {
-        auto const message = std::to_string(reductions) + " steps";
-        destination_->sputc('\r');
+    void update_progress(std::size_t reductions) {
+        latest_reductions_ = reductions;
+        if (reductions % 1000 == 0) {
+            show_progress(reductions);
+        }
+    }
+
+    void finalize_progress_line() {
+        if (latest_reductions_ < 1000) {
+            return;
+        }
+
+        clear_progress();
+        auto const message = progress_message(latest_reductions_);
         destination_->sputn(
             message.data(),
             static_cast<std::streamsize>(message.size()));
-        for (auto length = message.size(); length < progress_width_;
-             ++length) {
-            destination_->sputc(' ');
-        }
-        if (message.size() > progress_width_) {
-            progress_width_ = message.size();
-        }
+        destination_->sputc('\n');
         destination_->pubsync();
-        progress_visible_ = true;
     }
 
 protected:
@@ -1801,6 +2132,22 @@ protected:
         if (count != 0) {
             clear_progress();
         }
+        constexpr std::string_view interrupted = "Interrupted.";
+        constexpr std::string_view styled_interrupt = "[interrupted]";
+        if (count == static_cast<std::streamsize>(interrupted.size()) &&
+            std::string_view(
+                characters, static_cast<std::size_t>(count)) ==
+                interrupted) {
+            auto const rendered = fmt::format(
+                fmt::fg(fmt::color::red), "{}", styled_interrupt);
+            auto const written = destination_->sputn(
+                rendered.data(),
+                static_cast<std::streamsize>(rendered.size()));
+            return written ==
+                    static_cast<std::streamsize>(rendered.size())
+                ? count
+                : 0;
+        }
         return destination_->sputn(characters, count);
     }
 
@@ -1809,6 +2156,29 @@ protected:
     }
 
 private:
+    [[nodiscard]] static std::string progress_message(
+        std::size_t reductions) {
+        return "[" + std::to_string(reductions) +
+               " steps so far]";
+    }
+
+    void show_progress(std::size_t reductions) {
+        auto const message = progress_message(reductions);
+        destination_->sputc('\r');
+        destination_->sputn(
+            message.data(),
+            static_cast<std::streamsize>(message.size()));
+        for (auto length = message.size(); length < progress_width_;
+             ++length) {
+            destination_->sputc(' ');
+        }
+        if (message.size() > progress_width_) {
+            progress_width_ = message.size();
+        }
+        destination_->pubsync();
+        progress_visible_ = true;
+    }
+
     void clear_progress() noexcept {
         if (!progress_visible_) {
             return;
@@ -1826,6 +2196,7 @@ private:
     }
 
     std::streambuf* destination_;
+    std::size_t latest_reductions_ = 0;
     std::size_t progress_width_ = 0;
     bool progress_visible_ = false;
 };
@@ -1844,12 +2215,15 @@ int main(int argc, char* argv[]) {
     auto const interactive_error_output =
         standard_error_is_terminal();
 #if defined(__unix__) || defined(__APPLE__)
+    scoped_crepl_terminal_restoration terminal_restoration(
+        interactive_input);
     scoped_terminal_sigwinch_handler sigwinch_handler(
         interactive_input);
 #endif
     auto active_stepping_mode = stepping_mode::none;
     bool basis_step_mode = false;
     bool colorize_mode = false;
+    std::optional<std::size_t> step_limit;
     if (interactive_output) {
         print_crepl_banner(std::cout);
         std::cout << '\n';
@@ -1943,6 +2317,13 @@ int main(int argc, char* argv[]) {
                 continue;
             }
             if (auto const command =
+                    combdsl::parse_step_limit_command(source)) {
+                step_limit = command->enabled
+                    ? std::optional{command->limit}
+                    : std::nullopt;
+                continue;
+            }
+            if (auto const command =
                     parse_mode_command(source)) {
                 if (command->kind == mode_command_kind::basis) {
                     basis_step_mode = command->enabled;
@@ -2002,6 +2383,16 @@ int main(int argc, char* argv[]) {
                 continue;
             }
             if (!interactive_output) {
+                auto const step_limit_pause =
+                    make_step_limit_callback(
+                        interactive_input,
+                        std::cout,
+                        false);
+                auto const interrupt_pause =
+                    make_interrupt_callback(
+                        interactive_input,
+                        std::cout,
+                        false);
                 auto outcome = combdsl::evaluation_outcome::completed;
                 if (active_stepping_mode == stepping_mode::single) {
                     if (colorize_mode) {
@@ -2010,13 +2401,19 @@ int main(int argc, char* argv[]) {
                             std::cout,
                             std::cin,
                             basis_step_mode,
-                            false);
+                            false,
+                            step_limit,
+                            step_limit_pause,
+                            interrupt_pause);
                     } else {
                         outcome = combdsl::parse_and_step_with_outcome(
                             escaped_source,
                             std::cout,
                             std::cin,
-                            basis_step_mode);
+                            basis_step_mode,
+                            step_limit,
+                            step_limit_pause,
+                            interrupt_pause);
                     }
                 } else if (
                     active_stepping_mode == stepping_mode::key) {
@@ -2026,12 +2423,16 @@ int main(int argc, char* argv[]) {
                             std::cout,
                             std::cin,
                             basis_step_mode,
-                            true);
+                            true,
+                            step_limit,
+                            step_limit_pause,
+                            interrupt_pause);
                     } else {
                         outcome = parse_and_terminal_key_step(
                             escaped_source,
                             std::cout,
-                            basis_step_mode);
+                            basis_step_mode,
+                            interrupt_pause);
                     }
                 } else {
                     outcome = combdsl::parse_eval_with_outcome(
@@ -2039,15 +2440,37 @@ int main(int argc, char* argv[]) {
                         std::cout,
                         std::cin,
                         false,
-                        combdsl::evaluation_progress_callback{});
+                        combdsl::evaluation_progress_callback{},
+                        step_limit,
+                        step_limit_pause,
+                        interrupt_pause);
                 }
                 report_evaluation_outcome(
-                    outcome, std::cout, false);
+                    outcome,
+                    std::cout,
+                    false,
+                    step_limit);
                 continue;
             }
 
             progress_output_buffer output_buffer(std::cout.rdbuf());
             std::ostream evaluation_output(&output_buffer);
+            auto const step_limit_pause =
+                make_step_limit_callback(
+                    interactive_input,
+                    evaluation_output,
+                    true,
+                    [&output_buffer] {
+                        output_buffer.finalize_progress_line();
+                    });
+            auto const interrupt_pause =
+                make_interrupt_callback(
+                    interactive_input,
+                    evaluation_output,
+                    true,
+                    [&output_buffer] {
+                        output_buffer.finalize_progress_line();
+                    });
             if (active_stepping_mode == stepping_mode::single) {
                 auto outcome = combdsl::evaluation_outcome::completed;
                 if (colorize_mode) {
@@ -2056,16 +2479,25 @@ int main(int argc, char* argv[]) {
                         evaluation_output,
                         std::cin,
                         basis_step_mode,
-                        false);
+                        false,
+                        step_limit,
+                        step_limit_pause,
+                        interrupt_pause);
                 } else {
                     outcome = combdsl::parse_and_step_with_outcome(
                         escaped_source,
                         evaluation_output,
                         std::cin,
-                        basis_step_mode);
+                        basis_step_mode,
+                        step_limit,
+                        step_limit_pause,
+                        interrupt_pause);
                 }
                 report_evaluation_outcome(
-                    outcome, evaluation_output, true);
+                    outcome,
+                    evaluation_output,
+                    true,
+                    step_limit);
                 continue;
             }
             if (active_stepping_mode == stepping_mode::key) {
@@ -2076,32 +2508,43 @@ int main(int argc, char* argv[]) {
                         evaluation_output,
                         std::cin,
                         basis_step_mode,
-                        true);
+                        true,
+                        step_limit,
+                        step_limit_pause,
+                        interrupt_pause);
                 } else {
                     outcome = parse_and_terminal_key_step(
                         escaped_source,
                         evaluation_output,
-                        basis_step_mode);
+                        basis_step_mode,
+                        interrupt_pause);
                 }
                 report_evaluation_outcome(
-                    outcome, evaluation_output, true);
+                    outcome,
+                    evaluation_output,
+                    true,
+                    step_limit);
                 continue;
             }
 
             combdsl::evaluation_progress_callback progress =
                 [&output_buffer](std::size_t reductions) {
-                if (reductions % 1000 == 0) {
-                    output_buffer.show_progress(reductions);
-                }
+                output_buffer.update_progress(reductions);
             };
             auto const outcome = combdsl::parse_eval_with_outcome(
                 escaped_source,
                 evaluation_output,
                 std::cin,
                 false,
-                progress);
+                progress,
+                step_limit,
+                step_limit_pause,
+                interrupt_pause);
             report_evaluation_outcome(
-                outcome, evaluation_output, true);
+                outcome,
+                evaluation_output,
+                true,
+                step_limit);
         } catch (combdsl::parse_error const& error) {
             print_red_message_line(
                 std::cerr,
