@@ -7710,6 +7710,11 @@ inline constexpr std::size_t
 inline constexpr std::size_t check_for_trips_match_candidate_count =
     check_for_match_left_trip_candidate_count +
     check_for_match_right_trip_candidate_count;
+inline constexpr std::size_t check_for_trips_match_shape_count = 2;
+inline constexpr std::size_t check_for_trips_match_column_count =
+    check_for_trips_match_shape_count *
+    check_for_match_combinator_count *
+    check_for_match_combinator_count;
 inline constexpr std::size_t check_for_quads_match_shape_count = 5;
 inline constexpr std::size_t check_for_quads_match_tuple_count =
     check_for_match_combinator_count *
@@ -7729,6 +7734,11 @@ inline constexpr std::size_t check_for_quads_match_candidate_count =
     (check_for_match_combinator_count - 1) *
         (check_for_match_combinator_count - 1) *
         check_for_pairs_match_candidate_count;
+inline constexpr std::size_t check_for_quads_match_column_count =
+    check_for_quads_match_shape_count *
+    check_for_match_combinator_count *
+    check_for_match_combinator_count *
+    check_for_match_combinator_count;
 
 struct subexpression_search_match {
     quoted_expression source_expression;
@@ -8260,6 +8270,40 @@ inline void for_each_predefined_bird_pair(
 }
 
 template <class Visitor>
+inline void visit_predefined_bird_trip_shape(
+    std::size_t shape_index,
+    quoted_expression const& first,
+    quoted_expression const& second,
+    quoted_expression const& third,
+    Visitor&& visitor) {
+    switch (shape_index) {
+    case 0:
+        visitor(first(second)(third));
+        break;
+    case 1:
+        visitor(first(second(third)));
+        break;
+    }
+}
+
+[[nodiscard]] inline std::uint8_t
+predefined_bird_trip_shape_mask(
+    quoted_expression const& first,
+    quoted_expression const& second,
+    quoted_expression const& third) noexcept {
+    std::uint8_t result = 0;
+    if (is_allowed_predefined_bird_left_trip(
+            first, second)) {
+        result |= std::uint8_t{1} << 0;
+    }
+    if (is_allowed_predefined_bird_right_trip(
+            first, second, third)) {
+        result |= std::uint8_t{1} << 1;
+    }
+    return result;
+}
+
+template <class Visitor>
 inline void for_each_predefined_bird_trip(
     Visitor&& visitor) {
     auto const& combinators =
@@ -8267,17 +8311,147 @@ inline void for_each_predefined_bird_trip(
     for (auto const& first : combinators) {
         for (auto const& second : combinators) {
             for (auto const& third : combinators) {
-                if (is_allowed_predefined_bird_left_trip(
-                        first, second)) {
-                    visitor(first(second)(third));
-                }
-
-                if (is_allowed_predefined_bird_right_trip(
-                        first, second, third)) {
-                    visitor(first(second(third)));
+                auto const shape_mask =
+                    predefined_bird_trip_shape_mask(
+                        first, second, third);
+                for (std::size_t shape_index = 0;
+                     shape_index <
+                         check_for_trips_match_shape_count;
+                     ++shape_index) {
+                    if ((shape_mask &
+                         (std::uint8_t{1} << shape_index)) != 0) {
+                        visit_predefined_bird_trip_shape(
+                            shape_index,
+                            first,
+                            second,
+                            third,
+                            visitor);
+                    }
                 }
             }
         }
+    }
+}
+
+template <class Visitor>
+inline void for_each_predefined_bird_trip_column_at(
+    std::size_t column_index,
+    Visitor&& visitor) {
+    auto const& combinators =
+        predefined_bird_combinators();
+    auto remainder = column_index;
+    auto const shape_index =
+        remainder % check_for_trips_match_shape_count;
+    remainder /= check_for_trips_match_shape_count;
+    auto const third_index =
+        remainder % check_for_match_combinator_count;
+    remainder /= check_for_match_combinator_count;
+    auto const first_index =
+        remainder % check_for_match_combinator_count;
+
+    auto const& first = combinators[first_index];
+    auto const& third = combinators[third_index];
+    for (std::size_t second_index = 0;
+         second_index < check_for_match_combinator_count;
+         ++second_index) {
+        auto const& second = combinators[second_index];
+        if ((predefined_bird_trip_shape_mask(
+                 first, second, third) &
+             (std::uint8_t{1} << shape_index)) == 0) {
+            continue;
+        }
+        auto const tuple_index =
+            (first_index * check_for_match_combinator_count +
+             second_index) *
+                check_for_match_combinator_count +
+            third_index;
+        visit_predefined_bird_trip_shape(
+            shape_index,
+            first,
+            second,
+            third,
+            [&](quoted_expression trip) {
+                visitor(
+                    tuple_index *
+                            check_for_trips_match_shape_count +
+                        shape_index,
+                    std::move(trip));
+            });
+    }
+}
+
+[[nodiscard]] inline std::uint8_t
+predefined_bird_quad_shape_mask(
+    quoted_expression const& first,
+    quoted_expression const& second,
+    quoted_expression const& third,
+    quoted_expression const& fourth) noexcept {
+    auto const pair_ab =
+        !is_excluded_match_pair(first, second);
+    auto const pair_bc =
+        !is_excluded_match_pair(second, third);
+    auto const pair_cd =
+        !is_excluded_match_pair(third, fourth);
+    auto const first_is_identity =
+        is_identity_combinator(first);
+    auto const second_is_identity =
+        is_identity_combinator(second);
+    auto const left_trip_abc =
+        pair_ab &&
+        is_allowed_predefined_bird_left_trip_head(
+            first, second);
+    auto const right_trip_abc =
+        !first_is_identity && pair_bc;
+    auto const left_trip_bcd =
+        pair_bc &&
+        is_allowed_predefined_bird_left_trip_head(
+            second, third);
+    auto const right_trip_bcd =
+        !second_is_identity && pair_cd;
+
+    std::uint8_t result = 0;
+    if (left_trip_abc) {
+        result |= std::uint8_t{1} << 0;
+    }
+    if (pair_ab && pair_cd) {
+        result |= std::uint8_t{1} << 1;
+    }
+    if (right_trip_abc) {
+        result |= std::uint8_t{1} << 2;
+    }
+    if (left_trip_bcd && !first_is_identity) {
+        result |= std::uint8_t{1} << 3;
+    }
+    if (right_trip_bcd && !first_is_identity) {
+        result |= std::uint8_t{1} << 4;
+    }
+    return result;
+}
+
+template <class Visitor>
+inline void visit_predefined_bird_quad_shape(
+    std::size_t shape_index,
+    quoted_expression const& first,
+    quoted_expression const& second,
+    quoted_expression const& third,
+    quoted_expression const& fourth,
+    Visitor&& visitor) {
+    switch (shape_index) {
+    case 0:
+        visitor(first(second)(third)(fourth));
+        break;
+    case 1:
+        visitor(first(second)(third(fourth)));
+        break;
+    case 2:
+        visitor(first(second(third))(fourth));
+        break;
+    case 3:
+        visitor(first(second(third)(fourth)));
+        break;
+    case 4:
+        visitor(first(second(third(fourth))));
+        break;
     }
 }
 
@@ -8304,54 +8478,81 @@ inline void for_each_predefined_bird_quad_at(
     auto const& second = combinators[second_index];
     auto const& third = combinators[third_index];
     auto const& fourth = combinators[fourth_index];
+    auto const shape_mask =
+        predefined_bird_quad_shape_mask(
+            first, second, third, fourth);
 
-    auto const pair_ab =
-        !is_excluded_match_pair(first, second);
-    auto const pair_bc =
-        !is_excluded_match_pair(second, third);
-    auto const pair_cd =
-        !is_excluded_match_pair(third, fourth);
-    auto const first_is_identity =
-        is_identity_combinator(first);
-    auto const second_is_identity =
-        is_identity_combinator(second);
-    auto const left_trip_abc =
-        pair_ab &&
-        is_allowed_predefined_bird_left_trip_head(
-            first, second);
-    auto const right_trip_abc =
-        !first_is_identity && pair_bc;
-    auto const left_trip_bcd =
-        pair_bc &&
-        is_allowed_predefined_bird_left_trip_head(
-            second, third);
-    auto const right_trip_bcd =
-        !second_is_identity && pair_cd;
+    for (std::size_t shape_index = 0;
+         shape_index < check_for_quads_match_shape_count;
+         ++shape_index) {
+        if ((shape_mask &
+             (std::uint8_t{1} << shape_index)) != 0) {
+            visit_predefined_bird_quad_shape(
+                shape_index,
+                first,
+                second,
+                third,
+                fourth,
+                [&](quoted_expression quad) {
+                    visitor(
+                        shape_index,
+                        std::move(quad));
+                });
+        }
+    }
+}
 
-    if (left_trip_abc) {
-        visitor(
-            std::size_t{0},
-            first(second)(third)(fourth));
-    }
-    if (pair_ab && pair_cd) {
-        visitor(
-            std::size_t{1},
-            first(second)(third(fourth)));
-    }
-    if (right_trip_abc) {
-        visitor(
-            std::size_t{2},
-            first(second(third))(fourth));
-    }
-    if (left_trip_bcd && !first_is_identity) {
-        visitor(
-            std::size_t{3},
-            first(second(third)(fourth)));
-    }
-    if (right_trip_bcd && !first_is_identity) {
-        visitor(
-            std::size_t{4},
-            first(second(third(fourth))));
+template <class Visitor>
+inline void for_each_predefined_bird_quad_column_at(
+    std::size_t column_index,
+    Visitor&& visitor) {
+    auto const& combinators =
+        predefined_bird_combinators();
+    auto remainder = column_index;
+    auto const shape_index =
+        remainder % check_for_quads_match_shape_count;
+    remainder /= check_for_quads_match_shape_count;
+    auto const fourth_index =
+        remainder % check_for_match_combinator_count;
+    remainder /= check_for_match_combinator_count;
+    auto const third_index =
+        remainder % check_for_match_combinator_count;
+    remainder /= check_for_match_combinator_count;
+    auto const first_index =
+        remainder % check_for_match_combinator_count;
+
+    auto const& first = combinators[first_index];
+    auto const& third = combinators[third_index];
+    auto const& fourth = combinators[fourth_index];
+    for (std::size_t second_index = 0;
+         second_index < check_for_match_combinator_count;
+         ++second_index) {
+        auto const& second = combinators[second_index];
+        if ((predefined_bird_quad_shape_mask(
+                 first, second, third, fourth) &
+             (std::uint8_t{1} << shape_index)) == 0) {
+            continue;
+        }
+        auto const tuple_index =
+            ((first_index * check_for_match_combinator_count +
+              second_index) *
+                 check_for_match_combinator_count +
+             third_index) *
+                check_for_match_combinator_count +
+            fourth_index;
+        visit_predefined_bird_quad_shape(
+            shape_index,
+            first,
+            second,
+            third,
+            fourth,
+            [&](quoted_expression quad) {
+                visitor(
+                    tuple_index *
+                            check_for_quads_match_shape_count +
+                        shape_index,
+                    std::move(quad));
+            });
     }
 }
 
@@ -8755,40 +8956,37 @@ check_for_trips_match(
         });
 #else
     (void)detail::predefined_bird_combinators();
-    struct trip_job {
-        std::size_t index;
-        quoted_expression expression;
-    };
     std::vector<detail::indexed_find_match> matches;
     std::mutex matches_mutex;
 
-    detail::dispatch_native_find_work<trip_job>(
-        check_for_trips_match_candidate_count,
+    detail::dispatch_native_find_work<std::size_t>(
+        check_for_trips_match_column_count,
         [&](auto&& submit) {
-            std::size_t candidate_index = 0;
-            bool accepting_work = true;
-            detail::for_each_predefined_bird_trip(
-                [&](quoted_expression trip) {
-                    auto const index = candidate_index++;
-                    if (accepting_work) {
-                        accepting_work = submit({
-                            index,
+            for (std::size_t column_index = 0;
+                 column_index <
+                     check_for_trips_match_column_count;
+                 ++column_index) {
+                if (!submit(column_index)) {
+                    break;
+                }
+            }
+        },
+        [&](std::size_t column_index) {
+            detail::for_each_predefined_bird_trip_column_at(
+                column_index,
+                [&](std::size_t candidate_index,
+                    quoted_expression trip) {
+                    if (detail::check_normalized_match(
+                            trip,
+                            symbol_list,
+                            *normalized_expression)) {
+                        std::scoped_lock lock(matches_mutex);
+                        matches.push_back({
+                            candidate_index,
                             std::move(trip),
                         });
                     }
                 });
-        },
-        [&](trip_job job) {
-            if (detail::check_normalized_match(
-                    job.expression,
-                    symbol_list,
-                    *normalized_expression)) {
-                std::scoped_lock lock(matches_mutex);
-                matches.push_back({
-                    job.index,
-                    std::move(job.expression),
-                });
-            }
         });
 
     std::ranges::sort(
@@ -8844,56 +9042,37 @@ check_for_quads_match(
             });
     }
 #else
-    struct quad_job {
-        std::size_t begin;
-        std::size_t end;
-    };
-    constexpr std::size_t tuples_per_job = 4;
-    constexpr auto quad_job_count =
-        (check_for_quads_match_tuple_count +
-         tuples_per_job - 1) /
-        tuples_per_job;
     std::vector<detail::indexed_find_match> matches;
     std::mutex matches_mutex;
 
-    detail::dispatch_native_find_work<quad_job>(
-        quad_job_count,
+    detail::dispatch_native_find_work<std::size_t>(
+        check_for_quads_match_column_count,
         [&](auto&& submit) {
-            for (std::size_t begin = 0;
-                 begin < check_for_quads_match_tuple_count;
-                 begin += tuples_per_job) {
-                if (!submit({
-                        begin,
-                        std::min(
-                            begin + tuples_per_job,
-                            check_for_quads_match_tuple_count),
-                    })) {
+            for (std::size_t column_index = 0;
+                 column_index <
+                     check_for_quads_match_column_count;
+                 ++column_index) {
+                if (!submit(column_index)) {
                     break;
                 }
             }
         },
-        [&](quad_job job) {
-            for (auto tuple_index = job.begin;
-                 tuple_index < job.end;
-                 ++tuple_index) {
-                detail::for_each_predefined_bird_quad_at(
-                    tuple_index,
-                    [&](std::size_t shape_index,
-                        quoted_expression quad) {
-                        if (detail::check_normalized_match(
-                                quad,
-                                symbol_list,
-                                *normalized_expression)) {
-                            std::scoped_lock lock(matches_mutex);
-                            matches.push_back({
-                                tuple_index *
-                                        check_for_quads_match_shape_count +
-                                    shape_index,
-                                std::move(quad),
-                            });
-                        }
-                    });
-            }
+        [&](std::size_t column_index) {
+            detail::for_each_predefined_bird_quad_column_at(
+                column_index,
+                [&](std::size_t candidate_index,
+                    quoted_expression quad) {
+                    if (detail::check_normalized_match(
+                            quad,
+                            symbol_list,
+                            *normalized_expression)) {
+                        std::scoped_lock lock(matches_mutex);
+                        matches.push_back({
+                            candidate_index,
+                            std::move(quad),
+                        });
+                    }
+                });
         });
 
     std::ranges::sort(

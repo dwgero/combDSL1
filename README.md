@@ -587,14 +587,15 @@ processing, allowing the producer to prefill the worker's next job. The pool
 uses one fewer worker than
 `std::thread::hardware_concurrency()` when more than one hardware thread is
 available, leaving one hardware thread for the producer. Each worker has one
-private pending-work slot; a trip job contains one candidate and a quad job
-contains up to four adjacent combinator tuples. Matches are tagged with their
-original candidate index and sorted after all mailboxes drain and all workers
-finish, preserving the sequential result order.
-Trip candidates are streamed instead of retained as a complete candidate
-vector, and quad candidates are constructed on demand without a full match
-bitmap or a reconstruction pass. Emscripten builds retain the single-threaded
-searches.
+private pending-work slot. Each trip or quad job contains one application-tree
+shape with every leaf fixed except the second. The worker runs that varying
+leaf through all 30 matcher combinators, applying the usual exclusions before
+constructing and checking each candidate. For example, one quad job checks the
+eligible members of the column `L(?K)S`. Matches are tagged with their original
+tuple and shape index and sorted after all mailboxes drain and all workers
+finish, preserving the sequential result order. Candidates are constructed by
+the workers on demand without a complete candidate vector, full match bitmap,
+or reconstruction pass. Emscripten builds retain the single-threaded searches.
 
 `find_combinator_matches(symbol_list, expression, options)` searches the
 catalog in increasing composition size through `options.maximum_size`. The
@@ -763,7 +764,7 @@ expression produces no output, while malformed or empty lines throw
 The `crepl` executable applies `input_escape` to each line before passing it to
 `parse_eval`, so ordinary quoted words and backslashes can be entered directly.
 When standard output is a terminal, it first prints
-`Combinator Read-Eval-Print Loop, version 2.5.3`. Long evaluations display
+`Combinator Read-Eval-Print Loop, version 2.5.4`. Long evaluations display
 the accumulated step count every 1,000 reductions by overwriting one status
 line; the line is cleared before evaluation output is printed. Its interactive
 prompt is `>`. Interactive input uses GNU Readline, so previous nonempty
@@ -996,6 +997,38 @@ and verifies that archive in the build directory, then copies its `include/fmt`
 directory to the project’s `include/fmt` directory. It can also be run directly
 with `cmake --build build --target combdsl_fmt`. Top-level CMake configuration
 therefore requires access to GitHub’s release API.
+
+### Find benchmarks
+
+Top-level native builds also build `combdsl_find_benchmark`. The benchmark is
+kept separate from CTest because its timings depend on the machine and current
+system load. Use a Release build for meaningful comparisons:
+
+```sh
+cmake -S . -B build-release -DCMAKE_BUILD_TYPE=Release
+cmake --build build-release --target combdsl_find_benchmark
+./build-release/combdsl_find_benchmark
+```
+
+The default run measures the failed `find ?x = Y` search and a failed search
+whose target requires deeper normalization. Each case has one warmup followed
+by five measured repetitions. The program reports every sample plus its
+minimum, median, mean, and maximum, and verifies that every repetition returns
+the same ordered matches. Other retained workloads can be selected explicitly:
+
+```sh
+./build-release/combdsl_find_benchmark --list
+./build-release/combdsl_find_benchmark --case matches
+./build-release/combdsl_find_benchmark --case short --repeat 10
+./build-release/combdsl_find_benchmark --case quad
+```
+
+The `quad` case performs the exhaustive size-4 search and can take minutes. It
+is never selected by the default run. Without explicit counts, `quad` runs once
+without a warmup while the other selected cases retain their normal defaults.
+Set `COMBDSL_BUILD_BENCHMARKS=OFF` to omit benchmark targets from a native
+build. Benchmarks are native-only and are not built by the Emscripten
+configuration.
 
 ### Browser WebAssembly
 

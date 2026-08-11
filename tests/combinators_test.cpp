@@ -278,11 +278,19 @@ static_assert(
 static_assert(
     combdsl::check_for_trips_match_candidate_count == 50'164);
 static_assert(
+    combdsl::check_for_trips_match_shape_count == 2);
+static_assert(
+    combdsl::check_for_trips_match_column_count == 1'800);
+static_assert(
     combdsl::check_for_match_left_trip_candidate_count == 25'050);
 static_assert(
     combdsl::check_for_match_right_trip_candidate_count == 25'114);
 static_assert(
     combdsl::check_for_quads_match_tuple_count == 810'000);
+static_assert(
+    combdsl::check_for_quads_match_shape_count == 5);
+static_assert(
+    combdsl::check_for_quads_match_column_count == 135'000);
 static_assert(
     combdsl::check_for_quads_match_candidate_count == 3'709'632);
 static_assert(
@@ -4320,6 +4328,45 @@ int main() {
              }
          },
          "50164 01010 AAA A(AA)");
+    constexpr auto trip_candidate_slot_count =
+        combdsl::check_for_match_combinator_count *
+        combdsl::check_for_match_combinator_count *
+        combdsl::check_for_match_combinator_count *
+        combdsl::check_for_trips_match_shape_count;
+    std::vector<bool> trip_candidate_slots(
+        trip_candidate_slot_count);
+    std::size_t trip_column_candidate_count = 0;
+    std::size_t nonempty_trip_column_count = 0;
+    bool duplicate_trip_column_candidate = false;
+    for (std::size_t column_index = 0;
+         column_index <
+             combdsl::check_for_trips_match_column_count;
+         ++column_index) {
+        auto const count_before_column =
+            trip_column_candidate_count;
+        combdsl::detail::for_each_predefined_bird_trip_column_at(
+            column_index,
+            [&](std::size_t candidate_index,
+                combdsl::quoted_expression) {
+                duplicate_trip_column_candidate =
+                    duplicate_trip_column_candidate ||
+                    candidate_index >= trip_candidate_slots.size() ||
+                    trip_candidate_slots[candidate_index];
+                if (candidate_index < trip_candidate_slots.size()) {
+                    trip_candidate_slots[candidate_index] = true;
+                }
+                ++trip_column_candidate_count;
+            });
+        nonempty_trip_column_count +=
+            trip_column_candidate_count != count_before_column;
+    }
+    test("trip columns cover every candidate exactly once",
+         [&] {
+             std::cout << trip_column_candidate_count << ' '
+                       << nonempty_trip_column_count << ' '
+                       << duplicate_trip_column_candidate;
+         },
+         "50164 1710 0");
 #if !defined(__EMSCRIPTEN__)
     test("native find dispatch uses worker threads",
          [] {
@@ -4694,9 +4741,71 @@ int main() {
     constexpr std::size_t h_index = 9;
     constexpr std::size_t i_index = 10;
     constexpr std::size_t k_index = 12;
+    constexpr std::size_t l_index = 13;
     constexpr std::size_t m_index = 14;
     constexpr std::size_t s_index = 21;
     constexpr std::size_t u_index = 23;
+    constexpr auto combinator_count =
+        combdsl::check_for_match_combinator_count;
+    auto const l_question_k_s_column_index =
+        ((l_index * combinator_count + k_index) *
+             combinator_count +
+         s_index) *
+            combdsl::check_for_quads_match_shape_count +
+        2;
+    std::vector<combdsl::quoted_expression>
+        l_question_k_s_column;
+    std::vector<std::size_t> l_question_k_s_indices;
+    bool l_question_k_s_contains_i = false;
+    bool l_question_k_s_matches_tuple_generator = true;
+    combdsl::detail::for_each_predefined_bird_quad_column_at(
+        l_question_k_s_column_index,
+        [&](std::size_t candidate_index,
+            combdsl::quoted_expression quad) {
+            l_question_k_s_contains_i =
+                l_question_k_s_contains_i ||
+                combdsl::detail::same_parser_definition_expression(
+                    quad,
+                    quote(L)(quote(I)(K))(S));
+            auto const tuple_index =
+                candidate_index /
+                combdsl::check_for_quads_match_shape_count;
+            auto const shape_index =
+                candidate_index %
+                combdsl::check_for_quads_match_shape_count;
+            bool found_same_tuple_candidate = false;
+            combdsl::detail::for_each_predefined_bird_quad_at(
+                tuple_index,
+                [&](std::size_t tuple_shape_index,
+                    combdsl::quoted_expression tuple_quad) {
+                    if (tuple_shape_index == shape_index) {
+                        found_same_tuple_candidate =
+                            combdsl::detail::
+                                same_parser_definition_expression(
+                                    quad, tuple_quad);
+                    }
+                });
+            l_question_k_s_matches_tuple_generator =
+                l_question_k_s_matches_tuple_generator &&
+                found_same_tuple_candidate;
+            l_question_k_s_indices.push_back(candidate_index);
+            l_question_k_s_column.push_back(std::move(quad));
+        });
+    test("quad column L(?K)S varies all eligible birds",
+         [&] {
+             std::cout << l_question_k_s_column.size() << ' '
+                       << l_question_k_s_contains_i << ' '
+                       << std::ranges::is_sorted(
+                              l_question_k_s_indices) << ' '
+                       << l_question_k_s_matches_tuple_generator;
+             if (!l_question_k_s_column.empty()) {
+                 std::cout << ' ';
+                 l_question_k_s_column.front().print_to(std::cout);
+                 std::cout << ' ';
+                 l_question_k_s_column.back().print_to(std::cout);
+             }
+         },
+         "29 0 1 1 L(AK)S L(ZK)S");
     test("quad exclusions cover every pair and triplet position",
          [&] {
              auto print_presence =

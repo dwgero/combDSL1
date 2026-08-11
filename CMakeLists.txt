@@ -49,6 +49,15 @@ endif()
 option(COMBDSL_BUILD_EXAMPLES "Build the combDSL example" ${COMBDSL_TOP_LEVEL})
 option(COMBDSL_BUILD_TESTS "Build the combDSL tests" ${COMBDSL_TOP_LEVEL})
 option(COMBDSL_BUILD_BROWSER "Build the browser WebAssembly application" OFF)
+set(COMBDSL_BUILD_BENCHMARKS_DEFAULT ${COMBDSL_TOP_LEVEL})
+if(EMSCRIPTEN)
+    set(COMBDSL_BUILD_BENCHMARKS_DEFAULT OFF)
+endif()
+option(
+    COMBDSL_BUILD_BENCHMARKS
+    "Build the native combDSL benchmarks"
+    ${COMBDSL_BUILD_BENCHMARKS_DEFAULT}
+)
 
 if(COMBDSL_TOP_LEVEL)
     if(POLICY CMP0135)
@@ -286,6 +295,32 @@ if(COMBDSL_BUILD_EXAMPLES)
 
     add_executable(combdsl_single_step examples/single_step.cpp)
     target_link_libraries(combdsl_single_step PRIVATE combdsl::combdsl)
+endif()
+
+if(COMBDSL_BUILD_BENCHMARKS)
+    if(EMSCRIPTEN)
+        message(FATAL_ERROR
+            "COMBDSL_BUILD_BENCHMARKS requires a native toolchain")
+    endif()
+    add_executable(
+        combdsl_find_benchmark
+        benchmarks/find_benchmark.cpp
+    )
+    target_link_libraries(
+        combdsl_find_benchmark
+        PRIVATE combdsl::combdsl
+    )
+    if(MSVC)
+        target_compile_options(
+            combdsl_find_benchmark
+            PRIVATE /W4 /permissive-
+        )
+    else()
+        target_compile_options(
+            combdsl_find_benchmark
+            PRIVATE -Wall -Wextra -Wpedantic
+        )
+    endif()
 endif()
 
 if(COMBDSL_BUILD_BROWSER)
