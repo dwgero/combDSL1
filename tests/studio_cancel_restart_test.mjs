@@ -680,8 +680,11 @@ test("routes every dependency alias as display-only", () => {
     }
 });
 
-test("routes typed snapshot commands as silent saved definitions", () => {
-    for (const command of ["snapshot", "snapshot on", "snapshot off"]) {
+test("routes typed references commands as silent saved definitions", () => {
+    for (const command of [
+        "references captured",
+        "references live",
+    ]) {
         const harness = createHarness();
         const source = harness.element("source");
         const worker = harness.workers[0];
@@ -737,7 +740,7 @@ test("routes typed snapshot commands as silent saved definitions", () => {
             childElements(harness.element("output")).some(
                 element => element.dataset.kind !== undefined),
             false,
-            "snapshot should not append result output",
+            "references should not append result output",
         );
 
         const save = harness.element("save");

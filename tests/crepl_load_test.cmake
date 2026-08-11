@@ -87,7 +87,7 @@ string(CONCAT loaded_definitions
     "define LoadFlip xy = yx\n"
     "set LoadI = 1 K")
 string(CONCAT expected_definitions
-    "snapshot on\n"
+    "references captured\n"
     "set LoadI = 1 I\n"
     "define LoadFlip xy = yx\n"
     "set LoadI = 1 K")
@@ -174,9 +174,9 @@ if(NOT rollback_error STREQUAL expected_rollback_error)
 endif()
 file(READ "${rollback_file}" rollback_contents)
 if(NOT rollback_contents STREQUAL
-        "snapshot on\nset Existing = 0 I")
+        "references captured\nset Existing = 0 I")
     message(FATAL_ERROR
         "failed load was not rolled back\n"
-        "expected:\nsnapshot on\nset Existing = 0 I\n"
+        "expected:\nreferences captured\nset Existing = 0 I\n"
         "actual:\n${rollback_contents}\n")
 endif()

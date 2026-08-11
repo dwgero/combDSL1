@@ -15,13 +15,13 @@ help [brief | full]                   | display help information
 key step [on | off]                   | after each step, wait for a keypress to continue
 load <filename>                       | load a set-list journal from a file
 quit                                  | end the program
+references <captured | live>          | capture name references or follow later changes
 remove <name>                         | remove a user-defined combinator name
 save <filename>                       | save the set-list journal to a file
 set [captured | live] <name> = [number] <expression>
                                       | store <expression> as <name> with arity <number> or 0
 show <name | name@N | all>            | display one revision or the entire set list
 single step [on | off]                | display each step of the reduction without pause
-snapshot [on | off]                   | capture named definitions or follow later changes
 usedby <name> | used-by <name> | used by <name>
                                       | display named bases directly contained in <name>
 Commands:
@@ -41,12 +41,12 @@ help [brief | full]                   | display help information
 key step [on | off]                   | after each step, wait for a keypress to continue
 load <filename>                       | load a set-list journal from a file
 quit                                  | end the program
+references <captured | live>          | capture name references or follow later changes
 remove <name>                         | remove a user-defined combinator name
 save <filename>                       | save the set-list journal to a file
 set [captured | live] <name> = [number] <expression>
                                       | store <expression> as <name> with arity <number> or 0
 show <name | name@N | all>            | display one revision or the entire set list
 single step [on | off]                | display each step of the reduction without pause
-snapshot [on | off]                   | capture named definitions or follow later changes
 usedby <name> | used-by <name> | used by <name>
                                       | display named bases directly contained in <name>

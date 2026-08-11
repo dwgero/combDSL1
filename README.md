@@ -451,10 +451,11 @@ is silent under `parse_eval`, `read_parse_eval`, `parse_and_step`, and
 `parse_and_key_step`. Malformed definitions are not registered.
 
 For either `set` or `define`, the optional `captured` or `live` modifier
-overrides snapshot mode for that command only. It does not change the mode for
-later input. `captured` pins unqualified user-defined names to their current
-revisions, while `live` makes them follow later redefinitions. An explicit
-modifier is retained in `set_list()` so replay preserves the override.
+overrides the current reference mode for that command only. It does not change
+the mode for later input. `captured` pins unqualified user-defined names to
+their current revisions, while `live` makes them follow later redefinitions.
+An explicit modifier is retained in `set_list()` so replay preserves the
+override.
 
 Before `takeout`, saturated named bases in the expression are applied,
 including reachable saturated bases nested inside other applications.
@@ -476,7 +477,7 @@ every `takeout` pass, and each optimizer substitution before the final
 omitted.
 
 The names `abstract`, `all`, `captured`, `live`, `steps`, `set`, `define`,
-`show`, `remove`, `snapshot`,
+`show`, `remove`, `references`, `snapshot`,
 `dependson`, `depends-on`, `depends`, `on`, `usedby`, `used-by`, `used`, `by`,
 `single`, `key`, `basis`, `colorize`, `about`, `birds`, `find`, `help`, `load`,
 `save`, `quit`, and `exit` are reserved words and cannot be used as names by
@@ -630,17 +631,22 @@ arity and stored expression makes no change and does not increment the version.
 Removing and later adding a name again continues its existing version sequence;
 the earlier revisions remain available.
 
-The typed command `snapshot [on | off]` controls how subsequent unqualified
-name references are parsed when a `set` or `define` command has no
-`captured` or `live` modifier. Snapshot mode starts on, and bare `snapshot`
-means `snapshot on`. With snapshot mode on, an unqualified reference such as `foo`
-captures the current immutable revision of `foo`. With snapshot mode off, an
+The typed command `references <captured | live>` controls how subsequent
+unqualified name references are parsed when a `set` or `define` command has no
+`captured` or `live` modifier. References start captured. In captured mode, an
+unqualified reference such as `foo` captures the current immutable revision of
+`foo`. In live mode, an
 unqualified `foo` is a live reference that follows later redefinitions of
 `foo`. An explicit reference such as `foo@2` is always frozen to that exact
 revision, regardless of the current mode. Changing the mode does not alter
 references that were parsed earlier. The command is silent under the
 evaluation and stepping entry points, but it is a state-changing command and
 is recorded in `set_list()` according to the journal compaction rules below.
+For compatibility with older saved journals, the legacy `snapshot on` and
+`snapshot off` spellings are still accepted and are
+canonicalized immediately to `references captured` or `references live`.
+They are accepted only for compatibility and are omitted from command help and
+completion.
 
 Before accepting a changed definition, the parser resolves its frozen and live
 references and rejects it only if the resulting revision graph would contain a
@@ -713,22 +719,22 @@ parse_eval("User x");       // still prints: x
 ```
 
 `set_list()` returns a replayable journal. It contains every changed user `set`
-or `define`, every successful `remove`, and every snapshot-mode command entered
-after the first such mutation. Snapshot commands entered before the first
+or `define`, every successful `remove`, and every `references` command entered
+after the first such mutation. `references` commands entered before the first
 `set`, `define`, or `remove` are compacted to the last one because only that
-mode can affect the first mutation. If no snapshot command precedes that first
-mutation, the journal begins with `snapshot on`. A history containing only
-snapshot commands likewise saves only the last one. Bare `snapshot` is stored
-in its canonical `snapshot on` form. Equivalent no-op definitions and rejected
-commands are omitted, but older changed definitions and snapshot commands
-after the first mutation are never compacted away. Keeping the remaining order
+setting can affect the first mutation. If no `references` command precedes that
+first mutation, the journal begins with `references captured`. A history
+containing only `references` commands likewise saves only the last one.
+Equivalent no-op definitions and rejected commands are omitted, but older changed
+definitions and `references` commands after the first mutation are never
+compacted away. Keeping the remaining order
 preserves revision numbers, removals, mode changes, and the distinction between
 frozen and live references when the journal is replayed. Explicit `captured`
 and `live` modifiers remain on their canonical `set` or `define` lines. A
 `set` declaration always includes its arity, including `0`; a `define`
 declaration includes its defining symbols. Quotes and backslashes appear
 exactly as a user would enter them. Passing each line through `input_escape`
-and then to `parse` recreates the definitions and snapshot semantics:
+and then to `parse` recreates the definitions and reference semantics:
 
 ```cpp
 auto definitions = set_list();
@@ -764,19 +770,19 @@ expression produces no output, while malformed or empty lines throw
 The `crepl` executable applies `input_escape` to each line before passing it to
 `parse_eval`, so ordinary quoted words and backslashes can be entered directly.
 When standard output is a terminal, it first prints
-`Combinator Read-Eval-Print Loop, version 2.6.0`. Long evaluations display
+`Combinator Read-Eval-Print Loop, version 2.6.1`. Long evaluations display
 the accumulated step count every 1,000 reductions by overwriting one status
 line; the line is cleared before evaluation output is printed. Its interactive
 prompt is `>`. Interactive input uses GNU Readline, so previous nonempty
 commands can be recalled with Up Arrow or Ctrl-P, including commands from
 earlier interactive sessions. Press Tab to complete command words and supported
 options, including `captured` and `live` after `set` or `define`, and
-`snapshot on` and `snapshot off`; whitespace already entered between words is
-preserved. Save and load
-each remember their own most recently successful filename across interactive
+`references captured` and `references live`; whitespace already entered
+between words is preserved. Save and load each remember their own most recently
+successful filename across interactive
 sessions, initially `set_list.cmb`; Tab at either filename position restores
 it. Only command history and these two filenames persist automatically between
-CREPL processes; user definitions and the active snapshot mode return only when
+CREPL processes; user definitions and the active reference mode return only when
 their saved journal is loaded. The two state files are `~/.crepl/history` and
 `~/.crepl/settings`. Redirected input does not read or change this state.
 Redirected output contains no progress status. Enter
@@ -798,14 +804,16 @@ stepping uses `color_step_ansi` and prints the final normal form without color
 at the left margin. When Basis Step is on, a basis expansion colors only the
 basis name before the step and its stored contents after the step, both red;
 all arguments remain uncolored. Ordinary evaluation ignores this setting.
-Enter `snapshot`, `snapshot on`, or `snapshot off` to control how names in
-subsequent expressions and definitions are bound. Snapshot mode is on at
-startup, and bare `snapshot` turns it on. With it on, unqualified names freeze
-their current revisions; with it off, they stay live. Explicit `name@N`
-references are always frozen. Snapshot commands produce no output and are
-included in the saved definition journal. Before the first `set`, `define`, or
-`remove`, only the last snapshot command is saved; if there is none, the journal
-begins with `snapshot on`. Later snapshot commands stay in chronological order.
+Enter `references captured` or `references live` to control how names in
+subsequent expressions and definitions are bound. References are captured at
+startup. In captured mode, unqualified names freeze their current revisions;
+in live mode, they stay live. Explicit `name@N` references are always frozen.
+`references` commands
+produce no output and are included in the saved definition journal. Before the
+first `set`, `define`, or
+`remove`, only the last `references` command is saved; if there is none, the
+journal begins with `references captured`. Later `references` commands stay in
+chronological order.
 The mode commands themselves produce no output. Enter `help` or `help brief`
 to display the command summary; enter `help full` to display detailed help.
 Enter `load <filename>` to replay a saved set-list journal without evaluating
@@ -819,8 +827,8 @@ to that file. The filename is the remainder of the command after surrounding
 whitespace is removed, so it may contain spaces. The command replaces an
 existing file, writes no trailing newline, and reports `Nothing to save` without
 touching the file when the journal is empty.
-The file is the replayable journal, including its compacted initial snapshot
-mode, all later snapshot-mode commands, all changed redefinitions, and removals,
+The file is the replayable journal, including its compacted initial reference
+mode, all later `references` commands, all changed redefinitions, and removals,
 so loading it recreates the same versions and binding semantics. Enter
 `remove <name>` to remove a user-defined
 combinator name without discarding its historical revisions. Pre-defined names
@@ -845,7 +853,8 @@ Enter `define [captured | live] <name> <symbol_list> =
 <combinator_expression>` to create a named basis. Enter
 `set [captured | live] <name> = [arity] <combinator_expression>` to store an
 expression directly. Both commands are silent. The optional modifier overrides
-snapshot mode for that command only and is retained in the saved journal.
+the current reference mode for that command only and is retained in the saved
+journal.
 Enter `find [all] [num] ?<symbol_list> = <combinator_expression>` to search
 the pre-defined bird catalog. The `?` is required and marks the unknown
 combinator expression. The optional number must be from one through four and
@@ -1074,17 +1083,17 @@ and eventually restore the draft that was being edited. Ctrl-O submits the
 current input and, after successful completion, recalls the next history entry
 for editing. Parse errors, `Nothing to show`, cancellation, and timeout messages
 are displayed in red and do not themselves add a blank line after them. A
-successfully registered `set`, `define`, `remove`, or `snapshot` command leaves
-only that submitted command line, with no output beneath it.
+successfully registered `set`, `define`, `remove`, or `references` command
+leaves only that submitted command line, with no output beneath it.
 The following result begins on the next line without an intervening blank line.
 A successful `show` command is also followed without an intervening blank line.
 In Combinator Studio, a nonempty `show all` ends with a red `[show end]` line.
 A submitted combinator expression nevertheless always begins after a blank line
 when the Results area already contains output.
 Press Tab to complete a unique prefix for the `abstract`, `set`, `define`,
-`dependson`, `depends-on`, `depends on`, `find`, `remove`, `show`, `snapshot`,
+`dependson`, `depends-on`, `depends on`, `find`, `references`, `remove`, `show`,
 `usedby`, `used-by`, or `used by` command, the `captured` or `live` definition
-modifier, and the `on` or `off` snapshot option; when no completion is
+modifier, and the `captured` or `live` references option; when no completion is
 available, Tab keeps its normal browser focus behavior. Studio accepts the same
 `abstract [steps] ?...`, `define [captured | live] name symbols = ...`,
 `set [captured | live] name = ...`, and
@@ -1095,10 +1104,10 @@ is shown as `?=<bird_expression>`, and a no-match message is red. A search
 ignores the stepping and color modes, displays `Searching…`, and can be stopped
 with Cancel; cancelling restarts the worker while preserving user definitions.
 
-Snapshot mode is controlled only by typing `snapshot`, `snapshot on`, or
-`snapshot off` in the Combinator Expression box; Studio deliberately has no
-Snapshot button. It starts on, bare `snapshot` means on, and its frozen, live,
-and explicit `name@N` behavior is the same as CREPL's.
+Reference mode is controlled by typing `references captured` or
+`references live` in the Combinator Expression box; Studio deliberately has no
+References button. It starts captured, and its captured, live, and explicit
+`name@N` behavior is the same as CREPL's.
 
 The Single Step button switches between displaying only the evaluated result
 and displaying every reduction produced by
@@ -1132,19 +1141,19 @@ Clicking on it aborts a long-running or infinite-looping reduction.
 The Save button downloads the replayable `set_list()` journal as
 `set_list.cmb`, with explicit arities and user-facing quoting that can be
 entered again. Before the first `set`, `define`, or `remove`, it preserves only
-the last snapshot-mode command; if there is none, the file starts with
-`snapshot on`. It preserves every later snapshot-mode command, every changed
-definition and redefinition, and every removal, allowing replay to reconstruct
-the same revision numbers and frozen or live references. Equivalent no-op
-definitions are not included. If there are no saved commands, Save opens a
-dialog that says `Nothing to save` instead. When a command entered in the
-browser would change a user definition, a confirmation dialog shows
+the last `references` command; if there is none, the file starts with
+`references captured`. It preserves every later `references` command, every
+changed definition and redefinition, and every removal, allowing replay to
+reconstruct the same revision numbers and frozen or live references.
+Equivalent no-op definitions are not included. If there are no saved commands,
+Save opens a dialog that says `Nothing to save` instead. When a command entered
+in the browser would change a user definition, a confirmation dialog shows
 `About to replace name=arity expression`; Cancel preserves the existing
 definition, while Replace is initially focused so Enter confirms it.
 
 The Load
 button opens a file picker filtered for `.cmb` files and replays its definitions,
-removals, and snapshot commands in file order by applying
+removals, and `references` commands in file order by applying
 `parse(input_escape(record))` to each saved record; file redefinitions are
 applied silently and the expressions are not evaluated. A parser failure is
 reported with the file name, one-based line
@@ -1167,7 +1176,7 @@ accumulated reduction count. Automatic worker failure uses the same timeout
 message; `[cancelled]` is reserved for user cancellation.
 
 The Help button
-summarizes the stepping, definition, versioning, snapshot, saving, and loading
+summarizes the stepping, definition, versioning, reference, saving, and loading
 options in a scrollable dialog.
 
 The Bird Info button displays the names and reductions of all the pre-defined

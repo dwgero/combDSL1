@@ -40,9 +40,10 @@ test("completes unique Studio command prefixes", () => {
         "depends-on",
         "dependson",
         "find",
+        "references",
+        "remove",
         "set",
         "show",
-        "snapshot",
         "used by",
         "used-by",
         "usedby",
@@ -54,9 +55,11 @@ test("completes unique Studio command prefixes", () => {
     assert.equal(complete("depends-"), "depends-on");
     assert.equal(complete("dependso"), "dependson");
     assert.equal(complete("fin"), "find");
+    assert.equal(complete("re"), undefined);
+    assert.equal(complete("ref"), "references");
+    assert.equal(complete("rem"), "remove");
     assert.equal(complete("se"), "set");
     assert.equal(complete("sho"), "show");
-    assert.equal(complete("sna"), "snapshot");
     assert.equal(complete("used b"), "used by");
     assert.equal(complete("used-"), "used-by");
     assert.equal(complete("usedb"), "usedby");
@@ -169,33 +172,35 @@ test("completes captured and live definition modifiers", () => {
     assert.equal(complete("define foo"), undefined);
 });
 
-test("completes snapshot commands and options", () => {
+test("completes references commands and options", () => {
     const completeTopLevel = createCommandCompleter(
-        ["snapshot"], {appendSpaceToExact: true});
+        ["references"], {appendSpaceToExact: true});
     const completeOption = createCommandCompleter([
-        "snapshot off",
-        "snapshot on",
+        "references captured",
+        "references live",
     ]);
     const complete = source =>
         completeTopLevel(source) ?? completeOption(source);
 
-    assert.equal(complete("sna"), "snapshot ");
-    assert.equal(complete("snapshot"), "snapshot ");
-    assert.equal(complete("snapshot of"), "snapshot off");
-    assert.equal(complete("snapshot on"), undefined);
-    assert.equal(complete("  snapshot\tof"), "  snapshot\toff");
-    assert.equal(complete("snapshot o"), undefined);
-    assert.equal(complete("snapshot "), undefined);
+    assert.equal(complete("ref"), "references ");
+    assert.equal(complete("references"), "references ");
+    assert.equal(complete("references cap"), "references captured");
+    assert.equal(complete("references live"), undefined);
+    assert.equal(
+        complete("  references\tcap"),
+        "  references\tcaptured");
+    assert.equal(complete("references l"), "references live");
+    assert.equal(complete("references "), undefined);
 });
 
-test("keeps snapshot as a typed command without a UI button", () => {
+test("keeps references as a typed command without a UI button", () => {
     const html = readFileSync(
         new URL("../web/index.html", import.meta.url), "utf8");
 
-    assert.match(html, /snapshot \[on \| off\]/);
+    assert.match(html, /references &lt;captured \| live&gt;/);
     assert.doesNotMatch(
         html,
-        /<button\b[^>]*\bid=["']snapshot["']/i);
+        /<button\b[^>]*\bid=["']references["']/i);
 });
 
 test("completes unambiguous abstract command forms", () => {

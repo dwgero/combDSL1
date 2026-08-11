@@ -4067,10 +4067,10 @@ struct stored_parser_definition {
     registered_parser_basis_ptr basis;
     std::vector<registered_parser_basis_ptr> dependencies;
     bool was_referred_to = false;
-    bool snapshot_command = false;
+    bool references_command = false;
 
     [[nodiscard]] bool is_removal() const noexcept {
-        return basis == nullptr && !snapshot_command;
+        return basis == nullptr && !references_command;
     }
 };
 
@@ -5076,7 +5076,7 @@ registered_parser_lookup_snapshot() {
         parser_snapshot_enabled()};
 }
 
-inline void register_parser_snapshot_mode(
+inline void register_parser_reference_mode(
     bool enabled,
     std::string user_source) {
     std::lock_guard transaction_lock(
@@ -5086,7 +5086,7 @@ inline void register_parser_snapshot_mode(
     if (std::ranges::all_of(
             definitions,
             [](stored_parser_definition const& definition) {
-                return definition.snapshot_command;
+                return definition.references_command;
             })) {
         definitions.clear();
     }
@@ -5229,8 +5229,8 @@ template <class Expression>
     }
 
     std::string result;
-    if (!definitions.front().snapshot_command) {
-        result = "snapshot on";
+    if (!definitions.front().references_command) {
+        result = "references captured";
     }
     for (auto const& definition : definitions) {
         if (!result.empty()) {
@@ -5386,7 +5386,9 @@ public:
             begins_command("define");
         auto const is_remove_definition =
             begins_command("remove");
-        auto const is_snapshot_command =
+        auto const is_references_command =
+            begins_command("references");
+        auto const is_legacy_snapshot_command =
             begins_command("snapshot");
         auto const is_show_command =
             begins_command("show");
@@ -5404,25 +5406,28 @@ public:
             begins_command("used");
         auto const is_definition =
             is_set_definition || is_define_definition ||
-            is_remove_definition || is_snapshot_command;
+            is_remove_definition || is_references_command ||
+            is_legacy_snapshot_command;
         auto result = is_set_definition
             ? parse_set_definition()
             : is_define_definition
                 ? parse_define_definition()
                 : is_remove_definition
                     ? parse_remove_definition()
-                    : is_snapshot_command
-                        ? parse_snapshot_command()
-                        : is_show_command
-                            ? parse_show_command()
-                            : is_find_command
-                                ? parse_find_command()
-                                : is_abstract_command
-                                    ? parse_abstract_command()
-                                    : is_depended_on_by_command
-                                        ? parse_dependency_command(
-                                              parser_dependency_direction::
-                                                  depended_on_by)
+                    : is_references_command
+                        ? parse_references_command(false)
+                        : is_legacy_snapshot_command
+                            ? parse_references_command(true)
+                            : is_show_command
+                                ? parse_show_command()
+                                : is_find_command
+                                    ? parse_find_command()
+                                    : is_abstract_command
+                                        ? parse_abstract_command()
+                                        : is_depended_on_by_command
+                                            ? parse_dependency_command(
+                                                  parser_dependency_direction::
+                                                      depended_on_by)
                                         : is_uses_command
                                             ? parse_dependency_command(
                                                   parser_dependency_direction::
@@ -5450,10 +5455,21 @@ private:
         quoted_expression after;
     };
 
-    [[nodiscard]] quoted_expression parse_snapshot_command() {
-        constexpr std::size_t keyword_size = 8;
+    [[nodiscard]] quoted_expression parse_references_command(
+        bool legacy_snapshot) {
+        auto const keyword_size = legacy_snapshot
+            ? std::size_t{8}
+            : std::size_t{10};
         position_ += keyword_size;
         skip_whitespace();
+
+        if (at_end()) {
+            throw parse_error(
+                position_,
+                legacy_snapshot
+                    ? "expected 'on' or 'off'"
+                    : "expected 'captured' or 'live'");
+        }
 
         bool enabled = true;
         if (!at_end()) {
@@ -5465,27 +5481,34 @@ private:
             }
             auto const option = source_.substr(
                 option_position, option_end - option_position);
-            if (option == "on") {
+            if ((!legacy_snapshot && option == "captured") ||
+                (legacy_snapshot && option == "on")) {
                 enabled = true;
-            } else if (option == "off") {
+            } else if ((!legacy_snapshot && option == "live") ||
+                       (legacy_snapshot && option == "off")) {
                 enabled = false;
             } else {
                 throw parse_error(
-                    option_position, "expected 'on' or 'off'");
+                    option_position,
+                    legacy_snapshot
+                        ? "expected 'on' or 'off'"
+                        : "expected 'captured' or 'live'");
             }
             position_ = option_end;
             skip_whitespace();
             if (!at_end()) {
-                fail("unexpected input after snapshot option");
+                fail(legacy_snapshot
+                    ? "unexpected input after snapshot option"
+                    : "unexpected input after references option");
             }
         }
 
         std::string canonical = enabled
-            ? "snapshot on"
-            : "snapshot off";
+            ? "references captured"
+            : "references live";
         if (definition_mode_ ==
             parser_definition_mode::register_definitions) {
-            register_parser_snapshot_mode(enabled, canonical);
+            register_parser_reference_mode(enabled, canonical);
         }
         return quote(std::move(canonical));
     }
@@ -6756,6 +6779,7 @@ private:
             name == "captured" ||
             name == "live" ||
             name == "steps" ||
+            name == "references" ||
             name == "snapshot" ||
             name == "set" ||
             name == "define" ||
@@ -7343,7 +7367,8 @@ private:
     };
     auto const is_definition =
         begins_command("set") || begins_command("define") ||
-        begins_command("remove") || begins_command("snapshot");
+        begins_command("remove") || begins_command("references") ||
+        begins_command("snapshot");
 
     if (is_definition) {
         std::lock_guard transaction_lock(

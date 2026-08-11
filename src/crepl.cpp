@@ -59,7 +59,7 @@
 
 namespace {
 
-constexpr std::string_view crepl_version = "2.6.0";
+constexpr std::string_view crepl_version = "2.6.1";
 
 [[nodiscard]] bool stream_is_terminal(std::FILE* stream) noexcept {
 #if defined(_WIN32)
@@ -152,8 +152,8 @@ struct completion_candidates {
 constexpr std::array<std::string_view, 24> command_completion_candidates = {
     "about", "abstract", "basis", "birds", "colorize", "define",
     "depends", "depends-on", "dependson", "exit", "find", "help",
-    "key", "load", "quit", "remove", "save", "set", "show",
-    "single", "snapshot", "used", "used-by", "usedby"};
+    "key", "load", "quit", "references", "remove", "save", "set",
+    "show", "single", "used", "used-by", "usedby"};
 constexpr std::array<std::string_view, 1> step_completion_candidates = {
     "step"};
 constexpr std::array<std::string_view, 2> toggle_completion_candidates = {
@@ -368,8 +368,9 @@ template<std::size_t Size>
             words[0] == "single") {
             return make_completion_candidates(step_completion_candidates);
         }
-        if (words[0] == "snapshot") {
-            return make_completion_candidates(toggle_completion_candidates);
+        if (words[0] == "references") {
+            return make_completion_candidates(
+                definition_reference_completion_candidates);
         }
         if (words[0] == "colorize") {
             return make_completion_candidates(toggle_completion_candidates);
@@ -762,13 +763,13 @@ void print_help_brief(std::ostream& output) {
         "key step [on | off]                   | after each step, wait for a keypress to continue\n"
         "load <filename>                       | load a set-list journal from a file\n"
         "quit                                  | end the program\n"
+        "references <captured | live>          | capture name references or follow later changes\n"
         "remove <name>                         | remove a user-defined combinator name\n"
         "save <filename>                       | save the set-list journal to a file\n"
         "set [captured | live] <name> = [number] <expression>\n"
         "                                      | store <expression> as <name> with arity <number> or 0\n"
         "show <name | name@N | all>            | display one revision or the entire set list\n"
         "single step [on | off]                | display each step of the reduction without pause\n"
-        "snapshot [on | off]                   | capture named definitions or follow later changes\n"
         "usedby <name> | used-by <name> | used by <name>\n"
         "                                      | display named bases directly contained in <name>\n";
     output.flush();
@@ -850,7 +851,7 @@ void print_help_full(std::ostream& output) {
     write_wrapped_paragraph(
         output,
         "The optional \"captured\" or \"live\" modifier on set and "
-        "define overrides snapshot mode for that command only, without "
+        "define overrides the reference mode for that command only, without "
         "changing the mode for later input. Captured references pin current "
         "revisions; live references follow later redefinitions. An explicit "
         "modifier is retained in the saved set list.");
@@ -873,21 +874,20 @@ void print_help_full(std::ostream& output) {
         "although a frozen revision can contain live references. Recursive "
         "\"define\" remains allowed.");
     output << '\n'
-           << "snapshot [on | off]\n";
+           << "references <captured | live>\n";
     write_wrapped_paragraph(
         output,
         "Controls how unqualified user-defined names in subsequently parsed "
         "input are stored when set or define has no captured/live modifier. "
-        "Snapshot mode is on initially, and the bare "
-        "\"snapshot\" command also turns it on. When on, each reference "
+        "References are captured initially. In captured mode, each reference "
         "captures the current immutable revision and prints as \"name@N\". "
-        "When off, each reference remains live, prints as \"name\", and "
+        "In live mode, each reference remains live, prints as \"name\", and "
         "follows later redefinitions. Each changed \"set\" or \"define\" "
         "creates the next revision. An explicit \"name@N\" reference is "
         "always immutable regardless of the mode. Before the first saved "
-        "set, define, or remove, only the last explicit snapshot command is "
-        "saved. If there is none, the saved set list begins with \"snapshot "
-        "on\". Later snapshot commands remain in chronological order.");
+        "set, define, or remove, only the last explicit \"references\" command is "
+        "saved. If there is none, the saved set list begins with \"references "
+        "captured\". Later \"references\" commands remain in chronological order.");
     output << '\n'
            << "show <name | name@N | all>\n";
     write_wrapped_paragraph(

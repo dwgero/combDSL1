@@ -162,33 +162,33 @@ def main():
         output = reader.read_until(b">")
         require_completed_line(output, b"key   step   off \n")
 
-        write_all(master, b"snap\t\n")
+        write_all(master, b"ref\t\n")
         output = reader.read_until(b">")
-        require_completed_line(output, b"snapshot \n")
-        if b"Parse error" in normalized(output):
+        require_completed_line(output, b"references \n")
+        if b"Parse error" not in normalized(output):
             raise AssertionError(
-                f"expected successful snapshot command; received {output!r}")
+                f"expected bare references parse error; received {output!r}")
 
-        write_all(master, b"snapshot   of\t\n")
+        write_all(master, b"references   cap\t\n")
         output = reader.read_until(b">")
-        require_completed_line(output, b"snapshot   off \n")
+        require_completed_line(output, b"references   captured \n")
         if b"Parse error" in normalized(output):
             raise AssertionError(
-                f"expected successful snapshot off; received {output!r}")
+                f"expected successful references captured; received {output!r}")
 
-        write_all(master, b"snapshot   on\t\n")
+        write_all(master, b"references   live\t\n")
         output = reader.read_until(b">")
-        require_completed_line(output, b"snapshot   on \n")
+        require_completed_line(output, b"references   live \n")
         if b"Parse error" in normalized(output):
             raise AssertionError(
-                f"expected successful snapshot on; received {output!r}")
+                f"expected successful references live; received {output!r}")
 
         write_all(master, b"sav\t\t\n")
         output = reader.read_until(b">")
         require_completed_line(output, b"save set_list.cmb \n")
         if b"Saved set_list.cmb\n" not in normalized(output):
             raise AssertionError(
-                f"expected snapshot commands to be saved; received {output!r}")
+                f"expected references commands to be saved; received {output!r}")
 
         write_all(master, b"set CompleteGone = 1 I\n")
         output = reader.read_until(b">")

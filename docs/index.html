@@ -362,9 +362,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             color: #c33;
         }
     </style>
-    <script src="./evaluation_watchdog.js?v=2.6.0" defer></script>
-    <script src="./input_history.js?v=2.6.0" defer></script>
-    <script src="./app.js?v=2.6.0" defer></script>
+    <script src="./evaluation_watchdog.js?v=2.6.1" defer></script>
+    <script src="./input_history.js?v=2.6.1" defer></script>
+    <script src="./app.js?v=2.6.1" defer></script>
 </head>
 <body>
     <main aria-labelledby="studio-title">
@@ -501,7 +501,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             Press <kbd>Tab</kbd> to complete a unique prefix for
             <code>abstract</code>, <code>set</code>, <code>define</code>,
             the dependency commands described below, <code>find</code>,
-            <code>remove</code>, <code>show</code>, or <code>snapshot</code>,
+            <code>references</code>, <code>remove</code>, or <code>show</code>,
             including supported command options.
             <br><br>
             <code>set [captured | live] name =
@@ -525,8 +525,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             <code>define Exyzwv = xy(zwv)</code>
             <br><br>
             The optional <code>captured</code> or <code>live</code> modifier
-            on <code>set</code> and <code>define</code> overrides snapshot mode
-            for that command only without changing the mode for later input.
+            on <code>set</code> and <code>define</code> overrides the current
+            reference mode for that command only without changing the mode for
+            later input.
             Captured references pin current revisions; live references follow
             later redefinitions. An explicit modifier is retained in the
             saved set list.
@@ -557,17 +558,16 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             is later added again. The removal remains in the chronological
             saved set list. Pre-defined names cannot be removed.
         </div>
-        <h2 class="help-subheading">Snapshot Mode</h2>
+        <h2 class="help-subheading">Reference Mode</h2>
         <div class="help-section">
-            <code>snapshot [on | off]</code><br>
+            <code>references &lt;captured | live&gt;</code><br>
             Enter this command in the Combinator Expression or Command box to
             control how named references parsed afterward are stored when a
             <code>set</code> or <code>define</code> command has no
-            <code>captured</code> or <code>live</code> modifier. Snapshot mode
-            is on by default, and <code>snapshot</code> without an option also
-            turns it on. With snapshot mode on, an unqualified
+            <code>captured</code> or <code>live</code> modifier. References are
+            captured by default. In captured mode, an unqualified
             <code>name</code> reference pins the current immutable
-            <code>name@N</code> version. With it off, an unqualified
+            <code>name@N</code> version. In live mode, an unqualified
             <code>name</code> reference remains live and follows later changes
             to the current version. An explicit <code>name@N</code> reference
             always pins that exact immutable version, regardless of the mode.
@@ -579,10 +579,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             version-qualified references cannot do so by themselves. Recursive
             <code>define</code> remains supported through <code>Y</code>. Before
             the first <code>set</code>, <code>define</code>, or
-            <code>remove</code>, only the last explicit snapshot command is
+            <code>remove</code>, only the last explicit
+            <code>references</code> command is
             saved. If there is none, the saved set list begins with
-            <code>snapshot on</code>. Later snapshot commands remain in
-            chronological order.
+            <code>references captured</code>. Later <code>references</code>
+            commands remain in chronological order.
         </div>
         <h2 class="help-subheading">Inspecting Dependencies</h2>
         <div class="help-section">
@@ -646,13 +647,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             with default filename <code>set_list.cmb</code>. Before the first
             <code>set</code>,
             <code>define</code>, or <code>remove</code>, the replayable journal
-            includes only the last typed <code>snapshot</code> command; if there
-            is none, it starts with <code>snapshot on</code>. It includes every
-            later snapshot command, changed definition and redefinition, and
+            includes only the last typed <code>references</code> command; if
+            there is none, it starts with <code>references captured</code>. It
+            includes every later <code>references</code> command, changed
+            definition and redefinition, and
             removal. Replaying it preserves revision numbers and the original
             frozen or live references.
             The Load button reads a <code>.cmb</code> file from your computer
-            and replays its definitions, removals, and snapshot-mode changes in
+            and replays its definitions, removals, and reference-mode changes in
             order, applying redefinitions without confirmation.
         </div>
         <form method="dialog" class="dialog-controls">
@@ -762,7 +764,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             data-dialog-initial-focus>About</h2>
         <div class="license-text">
             <!-- Keep this version and the app.js cache key in sync. -->
-            <p>Combinator Studio, version 2.6.0<br>
+            <p>Combinator Studio, version 2.6.1<br>
                 Part of the C++ Combinator DSL<br>
                 Copyright (C) 2026  David W. Gero</p>
             <p>This program is free software: you can redistribute it and/or modify

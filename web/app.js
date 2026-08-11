@@ -41,10 +41,10 @@
         "depends-on",
         "dependson",
         "find",
+        "references",
         "remove",
         "set",
         "show",
-        "snapshot",
         "used by",
         "used-by",
         "usedby",
@@ -60,10 +60,10 @@
                 "set live",
             ],
             {appendSpaceToExact: true});
-    const completeSnapshotCommand =
+    const completeReferencesCommand =
         inputHistoryTools.createCommandCompleter([
-            "snapshot off",
-            "snapshot on",
+            "references captured",
+            "references live",
         ]);
     const abstractCommandCompleters = [
         "abstract ?",
@@ -106,7 +106,7 @@
             completeDefinitionReferenceMode(source) ??
             completeAbstractCommand(source) ??
             completeShowAll(source) ??
-            completeSnapshotCommand(source) ??
+            completeReferencesCommand(source) ??
             completeFindCommand(source);
     const form = document.querySelector("#evaluation-form");
     const sourceBox = document.querySelector("#source-box");

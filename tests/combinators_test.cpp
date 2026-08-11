@@ -1224,7 +1224,7 @@ int main() {
          parse(input_escape("set LZero = I")), "LZero");
     test("set list shows a default zero arity",
          [] { std::cout << set_list(); },
-         "snapshot on\nset LZero = 0 I");
+         "references captured\nset LZero = 0 I");
     test("set list registers a dependent basis",
          parse(input_escape("set LUse = 1 LZero")), "LUse");
     test("set list registers a binary basis",
@@ -1239,7 +1239,7 @@ int main() {
          parse(input_escape("set LRaw = 1 K \"a b()\\c\"")), "LRaw");
 
     const std::string expected_set_list =
-        "snapshot on\n"
+        "references captured\n"
         "set LZero = 0 I\n"
         "set LUse = 1 LZero\n"
         "set LPair = 2 K\n"
@@ -1269,7 +1269,7 @@ int main() {
     test("set list accepts a later duplicate definition",
          parse(input_escape("set LPair = 1 I")), "LPair");
     const std::string expected_redefined_set_list =
-        "snapshot on\n"
+        "references captured\n"
         "set LZero = 0 I\n"
         "set LUse = 1 LZero\n"
         "set LPair = 2 K\n"
@@ -1564,19 +1564,47 @@ int main() {
          },
          "complete");
 
-    test("snapshot is classified as a state-mutating definition",
+    test("references is classified as a state-mutating definition",
          [] {
              auto inspected = combdsl::detail::parse_input(
-                 "snapshot off",
+                 "references live",
                  combdsl::detail::parser_definition_mode::
                      inspect_definitions);
              std::cout << inspected.is_definition
                        << inspected.is_display_only;
          },
          "10");
-    test("snapshot off enables live references",
-         parse("snapshot off"), "snapshot off");
-    test("snapshot is a reserved definition name",
+    test_parse_failure(
+        "bare references requires a mode", "references", 10,
+        "expected 'captured' or 'live'");
+    test("references live enables live references",
+         parse("references live"), "references live");
+    test("references command prefixes remain ordinary input",
+         parse("referencesx"), "referencesx");
+    test("references is a reserved definition name",
+         [] {
+             try {
+                 static_cast<void>(parse("set references = I"));
+             } catch (parse_error const& error) {
+                 std::cout << error.detail();
+             }
+         },
+         "references is a reserved word");
+    test("references rejects an unknown option",
+         [] {
+             try {
+                 static_cast<void>(parse("references maybe"));
+             } catch (parse_error const& error) {
+                 std::cout << error.detail();
+             }
+         },
+         "expected 'captured' or 'live'");
+    test("legacy snapshot commands use the new canonical form",
+         parse("snapshot off"), "references live");
+    test_parse_failure(
+        "bare legacy snapshot requires a mode", "snapshot", 8,
+        "expected 'on' or 'off'");
+    test("legacy snapshot remains a reserved definition name",
          [] {
              try {
                  static_cast<void>(parse("set snapshot = I"));
@@ -1585,17 +1613,8 @@ int main() {
              }
          },
          "snapshot is a reserved word");
-    test("snapshot rejects an unknown option",
-         [] {
-             try {
-                 static_cast<void>(parse("snapshot maybe"));
-             } catch (parse_error const& error) {
-                 std::cout << error.detail();
-             }
-         },
-         "expected 'on' or 'off'");
 
-    test("captured set overrides snapshot off",
+    test("captured set overrides references live",
          [] {
              static_cast<void>(parse(
                  "set CmdCapT = 2 I"));
@@ -1604,14 +1623,14 @@ int main() {
              parse("show CmdCapS").print_to(std::cout);
          },
          "arity:1 CmdCapT@1");
-    test("captured define overrides snapshot off",
+    test("captured define overrides references live",
          [] {
              static_cast<void>(parse(
                  "define captured CmdCapD x = CmdCapT x"));
              parse("show CmdCapD").print_to(std::cout);
          },
          "arity:1 CmdCapT@1");
-    test("captured overrides do not change snapshot off",
+    test("captured overrides do not change references live",
          [] {
              static_cast<void>(parse(
                  "set CmdAmbLS = 1 CmdCapT"));
@@ -1648,7 +1667,7 @@ int main() {
 
     test("live target gets its first immutable revision",
          parse("set LiveTarget = 1 I"), "LiveTarget");
-    test("snapshot off stores an unqualified live reference",
+    test("references live stores an unqualified live reference",
          parse("set LiveUse = 1 LiveTarget"), "LiveUse");
     test("show prints a live reference without a version",
          parse("show LiveUse"), "arity:1 LiveTarget");
@@ -1663,7 +1682,7 @@ int main() {
         "show LiveUse@2", 5,
         "LiveUse@2 is not a defined name");
     test_parse_failure(
-        "snapshot off rejects a direct live cycle",
+        "references live rejects a direct live cycle",
         "set LiveTarget = 1 LiveTarget", 4,
         "LiveTarget would have a circular definition\n"
         "LiveTarget -> LiveTarget");
@@ -1672,7 +1691,7 @@ int main() {
     test("a second live binding can refer to the target",
          parse("set LiveOther = 1 LiveTarget"), "LiveOther");
     test_parse_failure(
-        "snapshot off rejects an indirect live cycle",
+        "references live rejects an indirect live cycle",
         "set LiveTarget = 1 LiveOther", 4,
         "LiveTarget would have a circular definition\n"
         "LiveTarget -> LiveOther -> LiveTarget");
@@ -1709,9 +1728,9 @@ int main() {
     test("the newer live reference follows the re-added target",
          single_step(parse("SharedLiveB x")), "Sx");
 
-    test("snapshot on restores frozen references",
-         parse("snapshot on"), "snapshot on");
-    test("live set overrides snapshot on",
+    test("references captured restores captured references",
+         parse("references captured"), "references captured");
+    test("live set overrides references captured",
          [] {
              static_cast<void>(parse(
                  "set CmdLiveT = 2 I"));
@@ -1720,14 +1739,14 @@ int main() {
              parse("show CmdLiveS").print_to(std::cout);
          },
          "arity:1 CmdLiveT");
-    test("live define overrides snapshot on",
+    test("live define overrides references captured",
          [] {
              static_cast<void>(parse(
                  "define live CmdLiveD x = CmdLiveT x"));
              parse("show CmdLiveD").print_to(std::cout);
          },
          "arity:1 CmdLiveT");
-    test("live overrides do not change snapshot on",
+    test("live overrides do not change references captured",
          [] {
              static_cast<void>(parse(
                  "set CmdAmbCS = 1 CmdLiveT"));
@@ -1767,13 +1786,13 @@ int main() {
          },
          "11");
     test_parse_failure(
-        "live override applies circularity checks under snapshot on",
+        "live override applies circularity checks under references captured",
         "set live CmdLiveT = 2 CmdLiveT", 9,
         "CmdLiveT would have a circular definition\n"
         "CmdLiveT -> CmdLiveT");
     test("a frozen target gets its first revision",
          parse("set FrozenTarget = 1 I"), "FrozenTarget");
-    test("snapshot on captures the current revision",
+    test("references captured captures the current revision",
          parse("set FrozenUse = 1 FrozenTarget"), "FrozenUse");
     test("show prints the captured revision suffix",
          parse("show FrozenUse"), "arity:1 FrozenTarget@1");
@@ -1787,13 +1806,13 @@ int main() {
          parse("show FrozenTarget"), "arity:1 FrozenUse@1");
 
     test("mixed-cycle setup uses live references",
-         parse("snapshot off"), "snapshot off");
+         parse("references live"), "references live");
     test("mixed-cycle target starts without a dependency",
          parse("set MixedCycleA = 1 R"), "MixedCycleA");
     test("mixed-cycle dependent keeps a live edge",
          parse("set MixedCycleB = 1 MixedCycleA"), "MixedCycleB");
     test("mixed-cycle replacement uses a frozen edge",
-         parse("snapshot on"), "snapshot on");
+         parse("references captured"), "references captured");
     test_parse_failure(
         "a frozen revision containing a live edge closes a cycle",
         "set MixedCycleA = 1 MixedCycleB", 4,
@@ -1806,13 +1825,13 @@ int main() {
     test("recursive define remains evaluable",
          parse("show RecVersion"), "arity:1 YI");
     test("define-cycle setup uses live references",
-         parse("snapshot off"), "snapshot off");
+         parse("references live"), "references live");
     test("define-cycle target starts independently",
          parse("set DefineCycleA = 1 I"), "DefineCycleA");
     test("define-cycle dependent keeps a live edge",
          parse("set DefineCycleB = 1 DefineCycleA"), "DefineCycleB");
     test("define-cycle replacement uses a frozen edge",
-         parse("snapshot on"), "snapshot on");
+         parse("references captured"), "references captured");
     test_parse_failure(
         "define rejects a cycle through another live binding",
         "define DefineCycleA x = DefineCycleB", 7,
@@ -1845,22 +1864,22 @@ int main() {
          },
          "combdsl::basis name cannot end in a version suffix: CppVersion@1");
 
-    test("snapshot history records a replay sequence",
+    test("references history records a replay sequence",
          [] {
-             static_cast<void>(parse("snapshot off"));
+             static_cast<void>(parse("references live"));
              static_cast<void>(parse("set ReplayTarget = 1 I"));
              static_cast<void>(parse(
                  "set ReplayUse = 1 ReplayTarget"));
              static_cast<void>(parse("set ReplayTarget = 1 K"));
-             static_cast<void>(parse("snapshot on"));
+             static_cast<void>(parse("references captured"));
              static_cast<void>(parse("remove ReplayTarget"));
              static_cast<void>(parse("set ReplayTarget = 1 S"));
              constexpr std::string_view suffix =
-                 "snapshot off\n"
+                 "references live\n"
                  "set ReplayTarget = 1 I\n"
                  "set ReplayUse = 1 ReplayTarget\n"
                  "set ReplayTarget = 1 K\n"
-                 "snapshot on\n"
+                 "references captured\n"
                  "remove ReplayTarget\n"
                  "set ReplayTarget = 1 S";
              std::cout << (set_list().ends_with(suffix)

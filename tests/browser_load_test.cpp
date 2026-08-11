@@ -182,13 +182,19 @@ int main() {
           "Error while loading file fatal.cmb: setup loading error\n"
           "Errors are preventing any changes from being made");
 
-    auto const first_snapshot = load_set_list(
-        "snapshot on\n"
-        "snapshot off\n");
-    check("leading snapshot commands compact to the last one",
-          first_snapshot.success &&
-          first_snapshot.loaded == 2 &&
-          combdsl::set_list() == "snapshot off");
+    auto const legacy_snapshot = load_set_list("snapshot off\n");
+    check("a legacy snapshot command selects and records live references",
+          legacy_snapshot.success &&
+          legacy_snapshot.loaded == 1 &&
+          combdsl::set_list() == "references live");
+
+    auto const first_references = load_set_list(
+        "references captured\n"
+        "references live\n");
+    check("leading references commands compact to the last one",
+          first_references.success &&
+          first_references.loaded == 2 &&
+          combdsl::set_list() == "references live");
 
     auto const successful = load_set_list(
         "set FileGood = 0 I\n"
@@ -201,12 +207,20 @@ int main() {
     check("an error-free load commits its definitions",
           defined_name("FileGood") &&
           defined_name("FileUse"));
-    check("the compacted leading snapshot precedes definitions",
+    check("the legacy mode creates a live reference",
+          shown_definition("FileUse") == "arity:1 FileGood");
+    check("the compacted leading references command precedes definitions",
           combdsl::set_list().starts_with(
-              "snapshot off\nset FileGood = 0 I"));
+              "references live\nset FileGood = 0 I"));
     check("an error-free load has no diagnostic messages",
           format_file_load_diagnostics(
               "successful.cmb", successful).empty());
+    auto const legacy_live_update = load_set_list(
+        "set FileGood = 0 K\n");
+    check("a dependency loaded after legacy snapshot off follows changes",
+          legacy_live_update.success &&
+          stepped_expression("FileUse x") == "Kx" &&
+          combdsl::set_list().find("snapshot") == std::string::npos);
 
     auto const unreferenced_removal = load_set_list(
         "set FileGone = 0 I\n"
@@ -299,23 +313,23 @@ int main() {
           shown_definition("FileCycle@2") == "arity:0 I" &&
           shown_definition("FileCycle@3") == "arity:0 K");
 
-    auto const snapshot_only_off = load_set_list("snapshot off\n");
-    check("a snapshot-only file persists its mode and history",
-          snapshot_only_off.success &&
-          snapshot_only_off.loaded == 1 &&
+    auto const references_only_live = load_set_list("references live\n");
+    check("a references-only file persists its mode and history",
+          references_only_live.success &&
+          references_only_live.loaded == 1 &&
           !combdsl::detail::registered_parser_lookup_snapshot()
                .snapshot_enabled &&
-          combdsl::set_list().ends_with("snapshot off"));
+          combdsl::set_list().ends_with("references live"));
 
-    auto const before_failed_snapshot = combdsl::set_list();
-    auto const failed_snapshot = load_set_list(
-        "snapshot on\n"
+    auto const before_failed_references = combdsl::set_list();
+    auto const failed_references = load_set_list(
+        "references captured\n"
         "@\n");
-    check("a failed load rolls back snapshot mode and history",
-          !failed_snapshot.success &&
+    check("a failed load rolls back reference mode and history",
+          !failed_references.success &&
           !combdsl::detail::registered_parser_lookup_snapshot()
                .snapshot_enabled &&
-          combdsl::set_list() == before_failed_snapshot);
+          combdsl::set_list() == before_failed_references);
 
     static_cast<void>(
         combdsl::parse("set FileLiveTarget = 1 I"));
@@ -340,10 +354,10 @@ int main() {
           stepped_expression("FileLiveUse x") == "Kx");
 
     auto const replay_modes = load_set_list(
-        "snapshot off\n"
+        "references live\n"
         "set FileModeTarget = 1 I\n"
         "set FileModeLive = 1 FileModeTarget\n"
-        "snapshot on\n"
+        "references captured\n"
         "set FileModeFrozen = 1 FileModeTarget\n"
         "set FileModeTarget = 1 K\n"
         "remove FileModeTarget\n"
@@ -365,13 +379,13 @@ int main() {
               .snapshot_enabled);
 
     auto const replay_overrides = load_set_list(
-        "snapshot on\n"
+        "references captured\n"
         "set FileOT = 2 I\n"
         "set live FileOL = 1 FileOT\n"
-        "snapshot off\n"
+        "references live\n"
         "define captured FileOC x = FileOT x\n"
         "set FileOT = 2 K\n"
-        "snapshot on\n");
+        "references captured\n");
     check("a successful load replays per-definition overrides",
           replay_overrides.success &&
           replay_overrides.loaded == 7 &&
