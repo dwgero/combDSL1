@@ -19,12 +19,15 @@
 #include <combdsl/combinators.hpp>
 #include <combdsl/color_step_ansi.hpp>
 
+#include <algorithm>
+#include <chrono>
 #include <csignal>
 #include <cstdlib>
 #include <functional>
 #include <iostream>
 #if !defined(__EMSCRIPTEN__)
 #include <latch>
+#include <semaphore>
 #endif
 #include <memory>
 #include <sstream>
@@ -4318,7 +4321,7 @@ int main() {
          },
          "50164 01010 AAA A(AA)");
 #if !defined(__EMSCRIPTEN__)
-    test("native find dispatch uses idle worker slots",
+    test("native find dispatch uses worker threads",
          [] {
              constexpr std::size_t job_count = 64;
              std::array<std::atomic<unsigned>, job_count>
@@ -4342,16 +4345,26 @@ int main() {
                      }
                  },
                  [&](std::size_t job) {
-                     if (job < 3) {
-                         {
-                             std::scoped_lock lock(
-                                 worker_threads_mutex);
+                     bool first_job_for_worker = false;
+                     {
+                         std::scoped_lock lock(
+                             worker_threads_mutex);
+                         auto const worker_thread =
+                             std::this_thread::get_id();
+                         if (std::find(
+                                 worker_threads.begin(),
+                                 worker_threads.end(),
+                                 worker_thread) ==
+                             worker_threads.end()) {
                              worker_threads.push_back(
-                                 std::this_thread::get_id());
+                                 worker_thread);
+                             first_job_for_worker = true;
                          }
-                         first_workers_started.count_down();
-                         first_workers_started.wait();
                      }
+                     if (first_job_for_worker) {
+                         first_workers_started.count_down();
+                     }
+                     first_workers_started.wait();
                      if (std::this_thread::get_id() ==
                          producer_thread) {
                          ran_on_producer.store(true);
@@ -4372,6 +4385,54 @@ int main() {
                        << worker_threads.size();
          },
          "64 1 1 3");
+    test("native find dispatch repeatedly prefills busy worker slot",
+         [] {
+             constexpr std::size_t job_count = 1024;
+             std::array<std::atomic<unsigned>, job_count>
+                 seen{};
+             std::binary_semaphore processing{0};
+             std::binary_semaphore successor_submitted{0};
+             std::atomic<bool> all_prefilled = true;
+             combdsl::detail::dispatch_native_find_work<
+                 std::size_t>(
+                 job_count,
+                 [&](auto&& submit) {
+                     if (!submit(0)) {
+                         all_prefilled.store(false);
+                         return;
+                     }
+                     for (std::size_t job = 1;
+                          job < job_count;
+                          ++job) {
+                         processing.acquire();
+                         if (!submit(job)) {
+                             all_prefilled.store(false);
+                             return;
+                         }
+                         successor_submitted.release();
+                     }
+                 },
+                 [&](std::size_t job) {
+                     if (job + 1 < job_count) {
+                         processing.release();
+                         if (!successor_submitted
+                                 .try_acquire_for(
+                                     std::chrono::seconds{2})) {
+                             all_prefilled.store(false);
+                         }
+                     }
+                     seen[job].fetch_add(1);
+                 },
+                 2);
+             bool exactly_once = true;
+             for (auto const& count : seen) {
+                 exactly_once = exactly_once &&
+                     count.load() == 1;
+             }
+             std::cout << all_prefilled.load() << ' '
+                       << exactly_once;
+         },
+         "1 1");
     test("native find dispatch propagates worker exceptions",
          [] {
              bool all_caught = true;
@@ -4408,6 +4469,50 @@ int main() {
              std::cout << all_caught;
          },
          "1");
+    test("native find dispatch drops prefetched work on failure",
+         [] {
+             std::latch first_work_started{1};
+             std::binary_semaphore second_work_submitted{0};
+             std::atomic<bool> prefilled = false;
+             std::atomic<bool> second_work_processed = false;
+             bool second_work_accepted = false;
+             bool failure_caught = false;
+             try {
+                 combdsl::detail::dispatch_native_find_work<
+                     std::size_t>(
+                     2,
+                     [&](auto&& submit) {
+                         static_cast<void>(submit(0));
+                         first_work_started.wait();
+                         second_work_accepted = submit(1);
+                         if (second_work_accepted) {
+                             second_work_submitted.release();
+                         }
+                     },
+                     [&](std::size_t work) {
+                         if (work == 0) {
+                             first_work_started.count_down();
+                             prefilled.store(
+                                 second_work_submitted
+                                     .try_acquire_for(
+                                         std::chrono::seconds{2}));
+                             throw std::runtime_error(
+                                 "prefilled worker failure");
+                         }
+                         second_work_processed.store(true);
+                     },
+                     2);
+             } catch (std::runtime_error const& error) {
+                 failure_caught =
+                     std::string_view(error.what()) ==
+                     "prefilled worker failure";
+             }
+             std::cout << prefilled.load() << ' '
+                       << second_work_accepted << ' '
+                       << !second_work_processed.load() << ' '
+                       << failure_caught;
+         },
+         "1 1 1 1");
     test("native find dispatch propagates generator exceptions",
          [] {
              try {
@@ -4464,6 +4569,8 @@ int main() {
                  std::array<std::atomic<unsigned>, job_count>
                      seen{};
                  std::latch first_batch_started{4};
+                 std::mutex worker_threads_mutex;
+                 std::vector<std::thread::id> worker_threads;
                  combdsl::detail::dispatch_native_find_work<
                      std::size_t>(
                      job_count,
@@ -4477,10 +4584,27 @@ int main() {
                          }
                      },
                      [&](std::size_t job) {
-                         if (job < 4) {
+                         bool first_job_for_worker = false;
+                         {
+                             std::scoped_lock lock(
+                                 worker_threads_mutex);
+                             auto const worker_thread =
+                                 std::this_thread::get_id();
+                             if (std::find(
+                                     worker_threads.begin(),
+                                     worker_threads.end(),
+                                     worker_thread) ==
+                                 worker_threads.end()) {
+                                 worker_threads.push_back(
+                                     worker_thread);
+                                 first_job_for_worker = true;
+                             }
+                         }
+                         if (first_job_for_worker) {
                              first_batch_started.count_down();
-                             first_batch_started.wait();
-                         } else if (
+                         }
+                         first_batch_started.wait();
+                         if (
                              (job + repetition) % 3 == 0) {
                              std::this_thread::yield();
                          }

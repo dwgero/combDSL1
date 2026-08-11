@@ -581,14 +581,16 @@ a repeated or excessively large expression. A stopped normalization is treated
 as a non-match, preventing a divergent candidate from blocking the remaining
 candidates.
 Native `check_for_trips_match` and `check_for_quads_match` use the calling
-thread as a producer and dynamically hand each generated job to an idle
-`std::jthread` worker. The pool uses one fewer worker than
+thread as a producer and dynamically hand each generated job to a private
+worker mailbox. A worker empties its mailbox into thread-local storage before
+processing, allowing the producer to prefill the worker's next job. The pool
+uses one fewer worker than
 `std::thread::hardware_concurrency()` when more than one hardware thread is
 available, leaving one hardware thread for the producer. Each worker has one
-private work slot; a trip job contains one candidate and a quad job contains
-up to four adjacent combinator tuples. Matches are tagged with their original
-candidate index and sorted after all workers become idle, preserving the
-sequential result order.
+private pending-work slot; a trip job contains one candidate and a quad job
+contains up to four adjacent combinator tuples. Matches are tagged with their
+original candidate index and sorted after all mailboxes drain and all workers
+finish, preserving the sequential result order.
 Trip candidates are streamed instead of retained as a complete candidate
 vector, and quad candidates are constructed on demand without a full match
 bitmap or a reconstruction pass. Emscripten builds retain the single-threaded

@@ -8427,11 +8427,15 @@ inline void dispatch_native_find_work(
         slots.push_back(std::make_unique<worker_slot>());
     }
 
-    auto const all_idle_mask =
+    auto const all_worker_mask =
         worker_count == native_find_worker_limit
             ? std::numeric_limits<std::uint64_t>::max()
             : (std::uint64_t{1} << worker_count) - 1;
-    std::atomic<std::uint64_t> idle_worker_bits = 0;
+    // The cross-atomic state/wakeup handshakes rely on the default
+    // sequentially consistent ordering of all four state atomics.
+    std::atomic<std::uint64_t> empty_worker_bits =
+        all_worker_mask;
+    std::atomic<std::uint64_t> waiting_worker_bits = 0;
     std::atomic<bool> producer_waiting = false;
     std::atomic<bool> stopping = false;
     std::atomic<std::size_t> failure_worker = worker_count;
@@ -8448,40 +8452,67 @@ inline void dispatch_native_find_work(
                     auto& slot = *slots[worker_index];
                     auto const worker_mask =
                         std::uint64_t{1} << worker_index;
-                    auto publish_idle = [&] {
-                        idle_worker_bits.fetch_or(worker_mask);
+                    auto notify_producer = [&] {
                         if (producer_waiting.load()) {
                             producer_semaphore.release();
                         }
                     };
 
-                    publish_idle();
-
                     for (;;) {
-                        slot.ready.acquire();
                         if (stopping.load()) {
                             return;
                         }
-                        try {
-                            Work work = std::move(*slot.work);
-                            slot.work.reset();
-                            std::invoke(
-                                process,
-                                std::move(work));
-                        } catch (...) {
-                            slot.failure =
-                                std::current_exception();
-                            auto expected = worker_count;
-                            static_cast<void>(
-                                failure_worker.compare_exchange_strong(
-                                    expected,
-                                    worker_index));
-                            stopping.store(true);
-                            publish_idle();
-                            return;
+                        if ((empty_worker_bits.load() &
+                             worker_mask) == 0) {
+                            try {
+                                Work work =
+                                    std::move(*slot.work);
+                                slot.work.reset();
+                                // The mailbox can be filled again while
+                                // this work is being processed locally.
+                                empty_worker_bits.fetch_or(
+                                    worker_mask);
+                                notify_producer();
+                                // A generator or peer-worker failure
+                                // cancels work that has not started.
+                                if (stopping.load()) {
+                                    return;
+                                }
+                                std::invoke(
+                                    process,
+                                    std::move(work));
+                            } catch (...) {
+                                slot.failure =
+                                    std::current_exception();
+                                auto expected = worker_count;
+                                static_cast<void>(
+                                    failure_worker
+                                        .compare_exchange_strong(
+                                            expected,
+                                            worker_index));
+                                stopping.store(true);
+                                notify_producer();
+                                return;
+                            }
+                            continue;
                         }
 
-                        publish_idle();
+                        waiting_worker_bits.fetch_or(
+                            worker_mask);
+                        notify_producer();
+
+                        // Recheck after registering as waiting. The
+                        // side that clears the waiting bit owns the
+                        // wakeup: the worker continues directly, or the
+                        // producer releases the semaphore below.
+                        if (((empty_worker_bits.load() &
+                              worker_mask) == 0) &&
+                            (waiting_worker_bits.fetch_and(
+                                 ~worker_mask) &
+                             worker_mask) != 0) {
+                            continue;
+                        }
+                        slot.ready.acquire();
                     }
                 });
         }
@@ -8500,33 +8531,38 @@ inline void dispatch_native_find_work(
         std::rethrow_exception(startup_failure);
     }
 
-    auto wait_for_worker_state = [&](auto&& ready) {
-        auto idle = idle_worker_bits.load();
-        while (!std::invoke(ready, idle) &&
+    auto wait_for_worker_state =
+        [&](std::atomic<std::uint64_t>& state,
+            auto&& ready) {
+        auto value = state.load();
+        while (!std::invoke(ready, value) &&
                !stopping.load()) {
             producer_waiting.store(true);
-            idle = idle_worker_bits.load();
-            if (!std::invoke(ready, idle) &&
+            value = state.load();
+            if (!std::invoke(ready, value) &&
                 !stopping.load()) {
                 producer_semaphore.acquire();
             }
             producer_waiting.store(false);
             while (producer_semaphore.try_acquire()) {
             }
-            idle = idle_worker_bits.load();
+            value = state.load();
         }
-        return idle;
+        return value;
     };
 
     static_cast<void>(wait_for_worker_state(
-        [&](std::uint64_t idle) {
-            return idle == all_idle_mask;
+        waiting_worker_bits,
+        [&](std::uint64_t waiting) {
+            return waiting == all_worker_mask;
         }));
 
-    // The generator invokes submit only on the producer thread, so one
-    // producer owns all idle-bit claims.
+    // generate must invoke submit synchronously on this producer thread
+    // and must not retain it. process may be invoked concurrently, so
+    // any state it shares between workers must be synchronized.
     auto submit = [&](Work work) {
-        auto const idle = wait_for_worker_state(
+        auto const empty = wait_for_worker_state(
+            empty_worker_bits,
             [](std::uint64_t available) {
                 return available != 0;
             });
@@ -8535,13 +8571,18 @@ inline void dispatch_native_find_work(
         }
         auto const worker_index =
             static_cast<std::size_t>(
-                std::countr_zero(idle));
+                std::countr_zero(empty));
         auto const worker_mask =
             std::uint64_t{1} << worker_index;
         slots[worker_index]->work.emplace(
             std::move(work));
-        idle_worker_bits.fetch_and(~worker_mask);
-        slots[worker_index]->ready.release();
+        empty_worker_bits.fetch_and(~worker_mask);
+        // If the producer clears the waiting bit, it owns the wakeup.
+        if ((waiting_worker_bits.fetch_and(
+                 ~worker_mask) &
+             worker_mask) != 0) {
+            slots[worker_index]->ready.release();
+        }
         return true;
     };
 
@@ -8555,9 +8596,17 @@ inline void dispatch_native_find_work(
     }
 
     if (!generator_failure && !stopping.load()) {
+        // First drain every mailbox, then wait until all local work is
+        // complete and every worker has registered as waiting.
         static_cast<void>(wait_for_worker_state(
-            [&](std::uint64_t idle) {
-                return idle == all_idle_mask;
+            empty_worker_bits,
+            [&](std::uint64_t empty) {
+                return empty == all_worker_mask;
+            }));
+        static_cast<void>(wait_for_worker_state(
+            waiting_worker_bits,
+            [&](std::uint64_t waiting) {
+                return waiting == all_worker_mask;
             }));
     }
     stopping.store(true);
