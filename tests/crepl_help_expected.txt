@@ -17,6 +17,7 @@ load <filename>                       | load a set-list journal from a file
 quit                                  | end the program
 references <captured | live>          | capture name references or follow later changes
 remove <name>                         | remove a user-defined combinator name
+revisions <name>                      | display every retained revision of <name>
 save <filename>                       | save the set-list journal to a file
 set [captured | live] <name> = [number] <expression>
                                       | store <expression> as <name> with arity <number> or 0
@@ -44,6 +45,7 @@ load <filename>                       | load a set-list journal from a file
 quit                                  | end the program
 references <captured | live>          | capture name references or follow later changes
 remove <name>                         | remove a user-defined combinator name
+revisions <name>                      | display every retained revision of <name>
 save <filename>                       | save the set-list journal to a file
 set [captured | live] <name> = [number] <expression>
                                       | store <expression> as <name> with arity <number> or 0

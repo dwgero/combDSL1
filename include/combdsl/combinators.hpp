@@ -4350,12 +4350,21 @@ inline void single_step_run(
 
 namespace detail {
 
+enum class parser_reference_mode {
+    captured,
+    live
+};
+
 class registered_parser_basis {
 public:
     registered_parser_basis(
-        std::string name, bool predefined, std::size_t version = 0)
+        std::string name,
+        bool predefined,
+        std::size_t version = 0,
+        std::optional<parser_reference_mode> reference_mode =
+            std::nullopt)
         : name_(std::move(name)), predefined_(predefined),
-          version_(version) {}
+          version_(version), reference_mode_(reference_mode) {}
 
     virtual ~registered_parser_basis() = default;
 
@@ -4371,12 +4380,18 @@ public:
         return version_;
     }
 
+    [[nodiscard]] std::optional<parser_reference_mode>
+    reference_mode() const noexcept {
+        return reference_mode_;
+    }
+
     [[nodiscard]] virtual quoted_expression expression() const = 0;
 
 private:
     std::string name_;
     bool predefined_;
     std::size_t version_;
+    std::optional<parser_reference_mode> reference_mode_;
 };
 
 template <class Basis>
@@ -4386,9 +4401,12 @@ public:
         std::string name,
         Basis const& basis,
         bool predefined,
-        std::size_t version = 0)
+        std::size_t version = 0,
+        std::optional<parser_reference_mode> reference_mode =
+            std::nullopt)
         : registered_parser_basis(
-              std::move(name), predefined, version),
+              std::move(name), predefined, version,
+              reference_mode),
           basis_(std::make_shared<Basis>(basis)) {}
 
     [[nodiscard]] quoted_expression expression() const override {
@@ -5247,6 +5265,12 @@ void register_parser_basis(std::string_view name, Basis const& basis) {
     if (existing == entries.end()) {
         auto& versions = parser_basis_version_registry()[
             std::string(name)];
+        if (!versions.empty()) {
+            auto message = std::string(
+                "combdsl::basis name is already user-defined: ");
+            message += name;
+            throw std::invalid_argument(message);
+        }
         auto registration =
             std::make_shared<registered_parser_basis_model<Basis>>(
                 std::string(name), basis, true,
@@ -5322,6 +5346,7 @@ register_parser_definition_basis(
     quoted_expression const& basis,
     std::string user_source,
     std::vector<registered_parser_basis_ptr> dependencies,
+    parser_reference_mode reference_mode,
     bool reject_circular,
     std::vector<std::string>& circular_path) {
     if (is_primitive_name(name)) {
@@ -5367,7 +5392,7 @@ register_parser_definition_basis(
         std::make_shared<
             registered_parser_basis_model<quoted_expression>>(
             std::string(name), basis, false,
-            versions.size() + 1);
+            versions.size() + 1, reference_mode);
     definitions.push_back({
         std::move(user_source), std::string(name), registration,
         std::move(dependencies), false});
@@ -5528,7 +5553,9 @@ parser_dependency_names(
             continue;
         }
         if (left_basis->predefined() !=
-            right_basis->predefined()) {
+                right_basis->predefined() ||
+            left_basis->reference_mode() !=
+                right_basis->reference_mode()) {
             return false;
         }
         if (!same_parser_basis_definition(
@@ -5562,6 +5589,8 @@ parser_dependency_names(
             if (left_basis->predefined() !=
                     right_basis->predefined() ||
                 left_basis->version() != right_basis->version() ||
+                left_basis->reference_mode() !=
+                    right_basis->reference_mode() ||
                 !same_parser_basis_definition(
                     left_basis->expression(),
                     right_basis->expression())) {
@@ -5793,11 +5822,6 @@ enum class parser_definition_mode {
     inspect_definitions
 };
 
-enum class parser_reference_mode {
-    captured,
-    live
-};
-
 struct parsed_input {
     quoted_expression expression;
     bool is_definition;
@@ -5848,6 +5872,8 @@ public:
             begins_command("snapshot");
         auto const is_show_command =
             begins_command("show");
+        auto const is_revisions_command =
+            begins_command("revisions");
         auto const is_find_command =
             begins_command("find");
         auto const is_abstract_command =
@@ -5876,6 +5902,8 @@ public:
                             ? parse_references_command(true)
                             : is_show_command
                                 ? parse_show_command()
+                                : is_revisions_command
+                                    ? parse_revisions_command()
                                 : is_find_command
                                     ? parse_find_command()
                                     : is_abstract_command
@@ -5896,7 +5924,8 @@ public:
         return {
             std::move(result),
             is_definition,
-            is_show_command || is_find_command ||
+            is_show_command || is_revisions_command ||
+                is_find_command ||
                 is_abstract_command ||
                 is_depended_on_by_command || is_uses_command,
             is_show_all_,
@@ -6062,6 +6091,9 @@ private:
             result,
             std::move(user_source),
             std::move(dependencies),
+            snapshot_enabled_
+                ? parser_reference_mode::captured
+                : parser_reference_mode::live,
             true);
         return result;
     }
@@ -6135,6 +6167,96 @@ private:
         std::ostringstream output;
         output << "arity:" << basis.arity() << ' ';
         basis.body().print_to(output);
+        return quote(std::move(output).str());
+    }
+
+    [[nodiscard]] quoted_expression parse_revisions_command() {
+        constexpr std::size_t keyword_size = 9;
+        position_ += keyword_size;
+        skip_whitespace();
+
+        auto const name_position = position_;
+        if (at_end()) {
+            fail("missing combinator name");
+        }
+        auto const [name_text, parsed_name_position] =
+            parse_definition_basis_name_token();
+        if (auto versioned = parse_versioned_basis_name(
+                name_text, parsed_name_position)) {
+            static_cast<void>(versioned);
+            throw parse_error(
+                parsed_name_position + name_text.rfind('@'),
+                "version suffix is not allowed in a revisions name");
+        }
+        basis_label name = [&] {
+            try {
+                return basis_label(name_text);
+            } catch (std::length_error const& error) {
+                throw parse_error(
+                    parsed_name_position + 15, error.what());
+            } catch (std::invalid_argument const& error) {
+                throw parse_error(parsed_name_position, error.what());
+            }
+        }();
+        skip_whitespace();
+        if (!at_end()) {
+            fail("unexpected input after name");
+        }
+
+        if (is_primitive_name(name.view())) {
+            auto message = std::string(name.view());
+            message += " is a fundamental name and has no revisions";
+            throw parse_error(name_position, message);
+        }
+
+        auto const versions = registered_versions_.find(name.view());
+        if (versions == registered_versions_.end() ||
+            versions->second.empty()) {
+            auto message = unescape_input(name.view());
+            message += " is not a defined name";
+            throw parse_error(name_position, message);
+        }
+
+        registered_parser_basis_ptr current_basis;
+        if (auto const current = registered_bases_.find(name.view());
+            current != registered_bases_.end()) {
+            current_basis = current->second;
+        }
+
+        std::ostringstream output;
+        for (std::size_t index = 0;
+             index < versions->second.size(); ++index) {
+            if (index != 0) {
+                output << '\n';
+            }
+            auto const& revision = versions->second[index];
+            auto expression = revision->expression();
+            auto const& root = quoted_access::root(expression);
+            if (root->kind() != quoted_node_kind::basis) {
+                throw std::logic_error(
+                    "combdsl::registered parser basis is not a basis");
+            }
+            auto const& basis =
+                static_cast<quoted_basis_node_base const&>(*root);
+            output << unescape_input(revision->name()) << '@'
+                   << revision->version() << " arity:"
+                   << basis.arity() << ' ';
+            basis.body().print_to(output);
+            if (revision->predefined()) {
+                output << " [pre-defined]";
+            } else {
+                output << (revision->reference_mode() ==
+                                   parser_reference_mode::captured
+                               ? " [captured]"
+                               : " [live]");
+            }
+            if (revision == current_basis) {
+                output << " [current]";
+            } else if (!current_basis &&
+                       index + 1 == versions->second.size()) {
+                output << " [removed]";
+            }
+        }
         return quote(std::move(output).str());
     }
 
@@ -6597,7 +6719,10 @@ private:
             name_position,
             result,
             std::move(user_source),
-            std::move(dependencies));
+            std::move(dependencies),
+            snapshot_enabled_
+                ? parser_reference_mode::captured
+                : parser_reference_mode::live);
         return result;
     }
 
@@ -6607,6 +6732,7 @@ private:
         quoted_expression const& result,
         std::string user_source,
         std::vector<registered_parser_basis_ptr> dependencies,
+        parser_reference_mode reference_mode,
         bool reject_circular = true) {
         parser_definition_change change;
         std::vector<std::string> circular_path;
@@ -6628,6 +6754,7 @@ private:
                 result,
                 std::move(user_source),
                 std::move(dependencies),
+                reference_mode,
                 reject_circular,
                 circular_path);
         }
@@ -7238,6 +7365,7 @@ private:
             name == "step" ||
             name == "steps" ||
             name == "references" ||
+            name == "revisions" ||
             name == "snapshot" ||
             name == "set" ||
             name == "define" ||

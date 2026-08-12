@@ -42,6 +42,7 @@ test("completes unique Studio command prefixes", () => {
         "find",
         "references",
         "remove",
+        "revisions",
         "set",
         "show",
         "step limit",
@@ -59,6 +60,7 @@ test("completes unique Studio command prefixes", () => {
     assert.equal(complete("re"), undefined);
     assert.equal(complete("ref"), "references");
     assert.equal(complete("rem"), "remove");
+    assert.equal(complete("rev"), "revisions");
     assert.equal(complete("se"), "set");
     assert.equal(complete("sho"), "show");
     assert.equal(complete("step l"), "step limit");
@@ -108,6 +110,21 @@ test("completes the remove command with its delimiter", () => {
     assert.equal(complete("remove"), "remove ");
     assert.equal(complete("  rem"), "  remove ");
     assert.equal(complete("remove "), undefined);
+});
+
+test("completes the revisions command with its delimiter", () => {
+    const complete = createCommandCompleter([
+        "references",
+        "remove",
+        "revisions",
+    ], {appendSpaceToExact: true});
+
+    assert.equal(complete("re"), undefined);
+    assert.equal(complete("rev"), "revisions ");
+    assert.equal(complete("revisions"), "revisions ");
+    assert.equal(complete("  rev"), "  revisions ");
+    assert.equal(complete("revisions "), undefined);
+    assert.equal(complete("revisions Foo"), undefined);
 });
 
 test("completes dependency commands with their delimiter", () => {
@@ -223,6 +240,16 @@ test("keeps references as a typed command without a UI button", () => {
     assert.doesNotMatch(
         html,
         /<button\b[^>]*\bid=["']references["']/i);
+});
+
+test("keeps revisions as a typed command without a UI button", () => {
+    const html = readFileSync(
+        new URL("../web/index.html", import.meta.url), "utf8");
+
+    assert.match(html, /<code>revisions name<\/code>/);
+    assert.doesNotMatch(
+        html,
+        /<button\b[^>]*\bid=["']revisions["']/i);
 });
 
 test("completes unambiguous abstract command forms", () => {

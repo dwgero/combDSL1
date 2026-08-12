@@ -58,6 +58,14 @@ void check(std::string_view title, bool condition) {
     return output.str();
 }
 
+[[nodiscard]] std::string shown_revisions(std::string_view name) {
+    std::string command = "revisions ";
+    command += name;
+    std::ostringstream output;
+    combdsl::parse(command).print_to(output);
+    return output.str();
+}
+
 [[nodiscard]] std::string stepped_expression(std::string_view source) {
     std::ostringstream output;
     combdsl::single_step(combdsl::parse(source)).print_to(output);
@@ -402,6 +410,41 @@ int main() {
               std::string::npos &&
           combdsl::detail::registered_parser_lookup_snapshot()
               .snapshot_enabled);
+
+    auto const replay_revision_modes = load_set_list(
+        "references captured\n"
+        "set FileRevMode = 1 I\n"
+        "references live\n"
+        "set FileRevMode = 2 K\n"
+        "remove FileRevMode\n"
+        "set captured FileRevMode = 3 S\n");
+    auto const replayed_revisions = shown_revisions("FileRevMode");
+    check("a successful load preserves chronological revision modes",
+          replay_revision_modes.success &&
+          replay_revision_modes.loaded == 6 &&
+          replayed_revisions ==
+              "FileRevMode@1 arity:1 I [captured]\n"
+              "FileRevMode@2 arity:2 K [live]\n"
+              "FileRevMode@3 arity:3 S [captured] [current]" &&
+          !combdsl::detail::registered_parser_lookup_snapshot()
+               .snapshot_enabled);
+
+    auto const before_failed_revision_mode_load = combdsl::set_list();
+    auto const before_failed_revision_mode =
+        combdsl::detail::registered_parser_lookup_snapshot()
+            .snapshot_enabled;
+    auto const failed_revision_mode_load = load_set_list(
+        "references captured\n"
+        "set live FileRevMode = 4 C\n"
+        "@\n");
+    check("a failed load restores revision output and mode metadata",
+          !failed_revision_mode_load.success &&
+          shown_revisions("FileRevMode") == replayed_revisions &&
+          !defined_name("FileRevMode@4") &&
+          combdsl::set_list() == before_failed_revision_mode_load &&
+          combdsl::detail::registered_parser_lookup_snapshot()
+                  .snapshot_enabled ==
+              before_failed_revision_mode);
 
     auto const before_predefined_error = combdsl::set_list();
     auto const predefined_error = load_set_list(

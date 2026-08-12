@@ -222,6 +222,18 @@ def main():
         write_all(master, b"set DepUser = 1 DepSource\n")
         reader.read_until(b">")
 
+        write_all(master, b"rev\tDepSource\n")
+        output = reader.read_until(b">")
+        require_completed_line(output, b"revisions DepSource\n")
+        normalized_output = normalized(output)
+        if b"Parse error" in normalized_output:
+            raise AssertionError(
+                f"expected successful revisions; received {output!r}")
+        if (b"DepSource@1 arity:1 I [live] [current]\n"
+                not in normalized_output):
+            raise AssertionError(
+                f"expected revision listing; received {output!r}")
+
         write_all(master, b"dependso\tDepSource\n")
         output = reader.read_until(b">")
         require_completed_line(output, b"dependson DepSource\n")

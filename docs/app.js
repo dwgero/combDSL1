@@ -43,6 +43,7 @@
         "find",
         "references",
         "remove",
+        "revisions",
         "set",
         "show",
         "step limit",

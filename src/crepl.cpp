@@ -60,7 +60,7 @@
 
 namespace {
 
-constexpr std::string_view crepl_version = "2.7.1";
+constexpr std::string_view crepl_version = "2.7.3";
 
 [[nodiscard]] bool stream_is_terminal(std::FILE* stream) noexcept {
 #if defined(_WIN32)
@@ -185,11 +185,12 @@ struct completion_candidates {
     std::size_t size = 0;
 };
 
-constexpr std::array<std::string_view, 25> command_completion_candidates = {
+constexpr std::array<std::string_view, 26> command_completion_candidates = {
     "about", "abstract", "basis", "birds", "colorize", "define",
     "depends", "depends-on", "dependson", "exit", "find", "help",
-    "key", "load", "quit", "references", "remove", "save", "set",
-    "show", "single", "step", "used", "used-by", "usedby"};
+    "key", "load", "quit", "references", "remove", "revisions",
+    "save", "set", "show", "single", "step", "used", "used-by",
+    "usedby"};
 constexpr std::array<std::string_view, 1> step_completion_candidates = {
     "step"};
 constexpr std::array<std::string_view, 1>
@@ -814,6 +815,7 @@ void print_help_brief(std::ostream& output) {
         "quit                                  | end the program\n"
         "references <captured | live>          | capture name references or follow later changes\n"
         "remove <name>                         | remove a user-defined combinator name\n"
+        "revisions <name>                      | display every retained revision of <name>\n"
         "save <filename>                       | save the set-list journal to a file\n"
         "set [captured | live] <name> = [number] <expression>\n"
         "                                      | store <expression> as <name> with arity <number> or 0\n"
@@ -960,6 +962,21 @@ void print_help_full(std::ostream& output) {
         "revision. For example, \"show E\" for the Eagle bird would display "
         "\"arity:5 BDD\". The \"show all\" form displays the entire saved set "
         "list, or \"Nothing to show\" when it is empty.");
+    output << '\n'
+           << "revisions <name>\n";
+    write_wrapped_paragraph(
+        output,
+        "Displays every retained immutable revision of the unversioned name "
+        "in ascending version order, including revisions retained after the "
+        "current name is removed. Each user-defined line begins with "
+        "\"Name@N arity:A body\" and ends with either \"[captured]\" or "
+        "\"[live]\" to identify the effective reference mode used when that "
+        "revision was parsed; the current revision also ends with "
+        "\"[current]\". The "
+        "latest revision of a removed name ends with \"[removed]\" instead "
+        "of \"[current]\". A pre-defined name has one revision ending with "
+        "\"[pre-defined] [current]\". The fundamental names S, K, I, and Y "
+        "are unversioned and cannot be queried.");
     output << '\n'
            << "remove <name>\n";
     write_wrapped_paragraph(

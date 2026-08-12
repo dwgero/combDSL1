@@ -362,9 +362,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             color: #c33;
         }
     </style>
-    <script src="./evaluation_watchdog.js?v=2.7.1" defer></script>
-    <script src="./input_history.js?v=2.7.1" defer></script>
-    <script src="./app.js?v=2.7.1" defer></script>
+    <script src="./evaluation_watchdog.js?v=2.7.3" defer></script>
+    <script src="./input_history.js?v=2.7.3" defer></script>
+    <script src="./app.js?v=2.7.3" defer></script>
 </head>
 <body>
     <main aria-labelledby="studio-title">
@@ -537,8 +537,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             Press <kbd>Tab</kbd> to complete a unique prefix for
             <code>abstract</code>, <code>set</code>, <code>define</code>,
             the dependency commands described below, <code>find</code>,
-            <code>references</code>, <code>remove</code>, <code>show</code>,
-            or <code>step limit</code>, including supported command options.
+            <code>references</code>, <code>remove</code>,
+            <code>revisions</code>, <code>show</code>, or
+            <code>step limit</code>, including supported command options.
             <br><br>
             <code>set [captured | live] name =
                 combinator_expression</code><br>
@@ -585,6 +586,21 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             <code>show all</code> displays the entire saved set list followed
             by a red <code>[show end]</code> marker, or
             <code>Nothing to show</code> without the marker when it is empty.
+            <br><br>
+            <code>revisions name</code><br>
+            Displays every retained immutable revision of the unversioned
+            <code>name</code> in ascending version order, including revisions
+            retained after the current name is removed. Each user-defined line
+            begins with <code>Name@N arity:A body</code> and ends with either
+            <code>[captured]</code> or <code>[live]</code> to identify the
+            effective reference mode used when that revision was parsed; the
+            current revision also ends with <code>[current]</code>. The latest revision of a
+            removed name ends with
+            <code>[removed]</code> instead of <code>[current]</code>. A
+            pre-defined name has one revision ending with
+            <code>[pre-defined] [current]</code>. The fundamental names
+            <code>S</code>, <code>K</code>, <code>I</code>, and <code>Y</code>
+            are unversioned and cannot be queried.
             <br><br>
             <code>remove name</code><br>
             The <code>remove</code> command removes a user-defined combinator
@@ -801,7 +817,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             data-dialog-initial-focus>About</h2>
         <div class="license-text">
             <!-- Keep this version and the app.js cache key in sync. -->
-            <p>Combinator Studio, version 2.7.1<br>
+            <p>Combinator Studio, version 2.7.3<br>
                 Part of the C++ Combinator DSL<br>
                 Copyright (C) 2026  David W. Gero</p>
             <p>This program is free software: you can redistribute it and/or modify

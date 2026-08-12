@@ -652,6 +652,31 @@ test("labels the active-evaluation control Pause", () => {
     );
 });
 
+test("completes revisions as a typed Studio command", () => {
+    const harness = createHarness({
+        inputHistoryTools: createPopulatedHistoryTools([]),
+    });
+    const source = harness.element("source");
+    source.value = "rev";
+    source.setSelectionRange(3, 3);
+
+    const event = source.dispatch("keydown", {
+        key: "Tab",
+        isComposing: false,
+        shiftKey: false,
+        ctrlKey: false,
+        metaKey: false,
+        altKey: false,
+    });
+
+    assert.equal(event.defaultPrevented, true);
+    assert.equal(source.value, "revisions ");
+    assert.deepEqual(
+        [source.selectionStart, source.selectionEnd],
+        [10, 10],
+    );
+});
+
 for (const [description, steppingMode] of [
     ["ordinary evaluation", undefined],
     ["automatic Single Step", "single-step"],
@@ -1090,6 +1115,71 @@ test("routes abstract steps as display-only with modes enabled", () => {
         assert.equal(evaluation.basisStep, false);
         assert.equal(evaluation.colorize, false);
     }
+});
+
+test("routes revisions as compact display-only output", () => {
+    const harness = createHarness();
+    const source = harness.element("source");
+    const worker = harness.workers[0];
+    const command = "revisions StudioBird";
+    const revisions =
+        "StudioBird@1 arity:1 I [captured]\n" +
+        "StudioBird@2 arity:1 K [live] [current]\n";
+
+    worker.send({type: "ready", setList: ""});
+    harness.flushAnimationFrames();
+    harness.element("single-step").click();
+    harness.element("basis-step").click();
+    harness.element("colorize").click();
+
+    source.value = command;
+    harness.pressEnter();
+    harness.flushAnimationFrames();
+    const inspection = worker.messages.find(
+        message => message.type === "inspect-definition");
+    worker.send({
+        type: "definition-inspection-result",
+        id: inspection.id,
+        result: {
+            success: true,
+            definition: false,
+            displayOnly: true,
+            showAll: false,
+            find: false,
+            replacement: "",
+        },
+    });
+    harness.flushAnimationFrames();
+
+    const evaluation = worker.messages.find(
+        message => message.type === "evaluate");
+    assert.equal(evaluation.source, command);
+    assert.equal(evaluation.singleStep, false);
+    assert.equal(evaluation.keyStep, false);
+    assert.equal(evaluation.basisStep, false);
+    assert.equal(evaluation.colorize, false);
+
+    worker.send({
+        type: "result",
+        id: inspection.id,
+        result: {
+            success: true,
+            definition: false,
+            recoverWorker: false,
+            output: revisions,
+            error: "",
+            reductions: 0,
+        },
+    });
+
+    const outputEntry = harness.element("output").lastElementChild;
+    assert.equal(
+        outputEntry.textContent,
+        `${command}\n${revisions.trimEnd()}`,
+    );
+    assert.equal(outputEntry.dataset.compactAfter, "true");
+    assert.equal(outputEntry.textContent.includes("[show end]"), false);
+    assert.equal(harness.element("source-history").textContent, command);
 });
 
 test("routes captured and live definitions as silent commands", () => {

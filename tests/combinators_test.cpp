@@ -1917,6 +1917,91 @@ int main() {
     test("replay history continues versions across removal",
          parse("show ReplayTarget@3"), "arity:1 S");
 
+    test("revisions reports an implicit captured current revision",
+         [] {
+             static_cast<void>(parse(
+                 "set RevModeTarget = 1 I"));
+             parse("revisions RevModeTarget").print_to(std::cout);
+         },
+         "RevModeTarget@1 arity:1 I [captured] [current]");
+    test("revisions reports changed revisions in chronological order",
+         [] {
+             static_cast<void>(parse(
+                 "set live RevModeTarget = 2 K"));
+             parse("revisions RevModeTarget").print_to(std::cout);
+         },
+         "RevModeTarget@1 arity:1 I [captured]\n"
+         "RevModeTarget@2 arity:2 K [live] [current]");
+    test("revisions retains implicit live and explicit captured modes",
+         [] {
+             static_cast<void>(parse("references live"));
+             static_cast<void>(parse(
+                 "set RevModeUse = 1 RevModeTarget"));
+             static_cast<void>(parse(
+                 "set captured RevModeUse = 1 RevModeTarget"));
+             static_cast<void>(parse("references captured"));
+             parse("revisions RevModeUse").print_to(std::cout);
+         },
+         "RevModeUse@1 arity:1 RevModeTarget [live]\n"
+         "RevModeUse@2 arity:1 RevModeTarget@2 "
+         "[captured] [current]");
+    test("an opposite-mode no-op does not create a revision",
+         [] {
+             static_cast<void>(parse("set RevNoop = 1 I"));
+             static_cast<void>(parse(
+                 "set live RevNoop = 1 I"));
+             parse("revisions RevNoop").print_to(std::cout);
+         },
+         "RevNoop@1 arity:1 I [captured] [current]");
+    test("revisions marks the latest revision of a removed name",
+         [] {
+             static_cast<void>(parse("remove RevModeTarget"));
+             parse("revisions RevModeTarget").print_to(std::cout);
+         },
+         "RevModeTarget@1 arity:1 I [captured]\n"
+         "RevModeTarget@2 arity:2 K [live] [removed]");
+    test("revisions marks only the current re-added revision",
+         [] {
+             static_cast<void>(parse(
+                 "set RevModeTarget = 3 S"));
+             parse("revisions RevModeTarget").print_to(std::cout);
+         },
+         "RevModeTarget@1 arity:1 I [captured]\n"
+         "RevModeTarget@2 arity:2 K [live]\n"
+         "RevModeTarget@3 arity:3 S [captured] [current]");
+    test("revisions identifies a pre-defined current revision",
+         parse("revisions M"),
+         "M@1 arity:1 SII [pre-defined] [current]");
+    test("revisions is display only",
+         [] {
+             auto const parsed =
+                 combdsl::detail::parse_input("revisions M");
+             std::cout << parsed.is_display_only
+                       << parsed.is_definition
+                       << parsed.is_show_all;
+         },
+         "100");
+    test_parse_failure(
+        "revisions rejects a fundamental name",
+        "revisions S", 10,
+        "S is a fundamental name and has no revisions");
+    test_parse_failure(
+        "revisions rejects an unknown name",
+        "revisions MissingRev", 10,
+        "MissingRev is not a defined name");
+    test_parse_failure(
+        "revisions rejects a versioned name",
+        "revisions RevModeTarget@1", 23);
+    test_parse_failure(
+        "revisions requires a name", "revisions", 9,
+        "missing combinator name");
+    test_parse_failure(
+        "revisions rejects trailing input",
+        "revisions RevModeTarget extra", 24,
+        "unexpected input after name");
+    test("revisions command prefixes remain ordinary input",
+         parse("revisionsx"), "revisionsx");
+
     test_parse_failure(
         "remove requires a name", "remove ", 7,
         "missing combinator name");
@@ -2766,6 +2851,20 @@ int main() {
                  : "missing");
          },
          "preserved");
+    test("a C++ basis cannot take a removed user name",
+         [] {
+             static_cast<void>(parse("set RemovedLateCpp=I"));
+             static_cast<void>(parse("remove RemovedLateCpp"));
+             try {
+                 static_cast<void>(basis("RemovedLateCpp", 0, K));
+                 std::cout << "accepted\n";
+             } catch (std::invalid_argument const& error) {
+                 std::cout << error.what() << '\n';
+             }
+             parse("revisions RemovedLateCpp").print_to(std::cout);
+         },
+         "combdsl::basis name is already user-defined: RemovedLateCpp\n"
+         "RemovedLateCpp@1 arity:0 I [captured] [removed]");
     test("parse left association reduction", single_step(parse("KIxy")),
          "Iy");
     test("parse parentheses override association",
@@ -3167,6 +3266,7 @@ int main() {
         "steps", "set",
         "define", "show", "single", "key", "basis", "colorize",
         "about", "birds", "find", "help", "load", "remove", "save",
+        "revisions",
         "dependson", "depends-on", "depends", "on", "usedby",
         "used-by", "used", "by", "quit", "exit"};
     for (auto const name : reserved_definition_names) {

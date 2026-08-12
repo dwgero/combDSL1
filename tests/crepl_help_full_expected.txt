@@ -87,6 +87,16 @@ while "show name@N" displays that exact immutable revision. For example, "show
 E" for the Eagle bird would display "arity:5 BDD". The "show all" form displays
 the entire saved set list, or "Nothing to show" when it is empty.
 
+revisions <name>
+Displays every retained immutable revision of the unversioned name in ascending
+version order, including revisions retained after the current name is removed.
+Each user-defined line begins with "Name@N arity:A body" and ends with either
+"[captured]" or "[live]" to identify the effective reference mode used when that
+revision was parsed; the current revision also ends with "[current]". The latest
+revision of a removed name ends with "[removed]" instead of "[current]". A
+pre-defined name has one revision ending with "[pre-defined] [current]". The
+fundamental names S, K, I, and Y are unversioned and cannot be queried.
+
 remove <name>
 Removes a user-defined combinator name without discarding its immutable
 revisions. Frozen references remain fixed. Live references retain the most
