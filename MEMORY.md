@@ -1,6 +1,6 @@
 ### 🚨 Current Focus & Active Blockers
-- **Context:** The root INSTALL guide and CMake configuration now document and verify the complete native, test and Emscripten build toolchains.
-- **Next Step:** No active blocker. Native and Emscripten builds and all 24 tests pass; the build-requirements work is complete on main.
+- **Context:** Product version 2.7.0 is synchronized across CREPL and Studio and published as Sites version 260.
+- **Next Step:** No active blocker. Native and Emscripten builds pass, all 24 tests pass, and the live Studio About dialog shows 2.7.0.
 
 ### 🛠️ Architectural Discoveries (Codex Insights)
 - Ordinary Studio evaluation must run in bounded Web Worker slices so a Pause message can be handled between slices.
@@ -24,3 +24,4 @@
 - 2026-08-11: Added Pause, step-limit, and worker-protocol regressions; all 24 project tests and 36 focused tests pass.
 - 2026-08-11: Synchronized product version 2.6.6 and published Sites version 259.
 - 2026-08-11: Added the root INSTALL guide and target-scoped CMake checks for language standards and every native, test and browser build tool.
+- 2026-08-11: Released product version 2.7.0 and published Sites version 260 after full native and browser verification.
