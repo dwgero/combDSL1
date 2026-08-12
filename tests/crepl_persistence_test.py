@@ -50,10 +50,13 @@ def start_session(executable, working_directory, home):
     return child, master, PtyReader(master)
 
 
-def finish_session(child, master, reader):
+def finish_session(child, master, reader, exit_command=None):
     child_reaped = False
     try:
-        write_all(master, b"\x04")
+        if exit_command is None:
+            write_all(master, b"\x04")
+        else:
+            write_all(master, exit_command + b"\n")
         reader.read_to_end()
         status = wait_for_child(child)
         child_reaped = True
@@ -178,6 +181,62 @@ def check_noninteractive_isolation(
     if after != before:
         raise AssertionError(
             "noninteractive input changed persistent state")
+
+
+def check_exit_commands_not_persisted(
+        executable, working_directory, home):
+    expected_history = "show I\n"
+    history_path = os.path.join(home, ".crepl", "history")
+
+    child, master, reader = start_session(
+        executable, working_directory, home)
+    try:
+        reader.read_until(b">")
+        output = send_command(master, reader, b"show I")
+        require_completed_line(output, b"show I\n")
+    except Exception:
+        os.close(master)
+        try:
+            os.kill(child, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        try:
+            os.waitpid(child, 0)
+        except ChildProcessError:
+            pass
+        raise
+    else:
+        finish_session(child, master, reader, b"  exit  ")
+
+    with open(history_path, encoding="utf-8") as history_file:
+        history = history_file.read()
+    if history != expected_history:
+        raise AssertionError(
+            f"exit was added to command history: {history!r}")
+
+    child, master, reader = start_session(
+        executable, working_directory, home)
+    try:
+        reader.read_until(b">")
+    except Exception:
+        os.close(master)
+        try:
+            os.kill(child, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        try:
+            os.waitpid(child, 0)
+        except ChildProcessError:
+            pass
+        raise
+    else:
+        finish_session(child, master, reader, b"\tquit\t")
+
+    with open(history_path, encoding="utf-8") as history_file:
+        history = history_file.read()
+    if history != expected_history:
+        raise AssertionError(
+            f"quit was added to command history: {history!r}")
 
 
 def check_restored_state(executable, working_directory, home):
@@ -310,6 +369,11 @@ def main():
             Path(state_directory),
         )
         check_restored_state(executable, working_directory, home)
+
+        exit_home = os.path.join(temporary, "exit-home")
+        os.makedirs(exit_home)
+        check_exit_commands_not_persisted(
+            executable, working_directory, exit_home)
 
 
 if __name__ == "__main__":

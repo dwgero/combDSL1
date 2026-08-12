@@ -774,8 +774,9 @@ When standard output is a terminal, it first prints
 the accumulated step count every 1,000 reductions by overwriting one status
 line; the line is cleared before evaluation output is printed. Its interactive
 prompt is `>`. Interactive input uses GNU Readline, so previous nonempty
-commands can be recalled with Up Arrow or Ctrl-P, including commands from
-earlier interactive sessions. Press Tab to complete command words and supported
+commands other than `exit` and `quit` can be recalled with Up Arrow or
+Ctrl-P, including commands from earlier interactive sessions. Press Tab to
+complete command words and supported
 options, including `captured` and `live` after `set` or `define`, and
 `references captured` and `references live`; whitespace already entered
 between words is preserved. Save and load each remember their own most recently

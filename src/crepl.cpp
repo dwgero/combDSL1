@@ -2251,12 +2251,6 @@ int main(int argc, char* argv[]) {
             }
             source = line;
             std::free(line);
-            if (!source.empty()) {
-                add_history(source.c_str());
-                if (persistence) {
-                    append_persistent_history(*persistence);
-                }
-            }
         } else if (!std::getline(std::cin, source)) {
             break;
         }
@@ -2269,6 +2263,12 @@ int main(int argc, char* argv[]) {
         if (is_exact_command(source, "quit") ||
             is_exact_command(source, "exit")) {
             break;
+        }
+        if (interactive_input && !source.empty()) {
+            add_history(source.c_str());
+            if (persistence) {
+                append_persistent_history(*persistence);
+            }
         }
 
         try {
