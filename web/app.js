@@ -294,8 +294,10 @@
         sourceText,
         outcome = "",
     ) => {
-        appendSourceHistoryEntry(
-            inputHistory.record(sourceText, outcome));
+        const entry = inputHistory.record(sourceText, outcome);
+        if (entry !== undefined) {
+            appendSourceHistoryEntry(entry);
+        }
     };
 
     inputHistory.values().forEach(appendSourceHistoryEntry);
@@ -1536,6 +1538,22 @@
                 : inputHistory.next();
             if (recalled !== undefined) {
                 setSourceText(recalled);
+            }
+            return;
+        }
+
+        const removeHistory =
+            (!event.ctrlKey && event.key === "Backspace") ||
+            (event.ctrlKey &&
+                ["d", "h"].includes(event.key.toLowerCase()));
+        if (!event.isComposing && !event.shiftKey &&
+            !event.metaKey && !event.altKey && !source.readOnly &&
+            removeHistory) {
+            const removed = inputHistory.removeCurrent();
+            if (removed !== undefined) {
+                event.preventDefault();
+                sourceHistory.childNodes[removed.index]?.remove();
+                setSourceText(removed.nextSource);
             }
             return;
         }

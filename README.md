@@ -770,7 +770,7 @@ expression produces no output, while malformed or empty lines throw
 The `crepl` executable applies `input_escape` to each line before passing it to
 `parse_eval`, so ordinary quoted words and backslashes can be entered directly.
 When standard output is a terminal, it first prints
-`Combinator Read-Eval-Print Loop, version 2.7.0`. Long evaluations display
+`Combinator Read-Eval-Print Loop, version 2.7.1`. Long evaluations display
 the accumulated step count every 1,000 reductions by overwriting one status
 line; the line is cleared before evaluation output is printed. Its interactive
 prompt is `>`. Interactive input uses GNU Readline, so previous nonempty
@@ -1094,7 +1094,10 @@ added to the history. Press Up Arrow or Ctrl-P
 to recall older entries, and Down Arrow or Ctrl-N to move toward newer entries
 and eventually restore the draft that was being edited. Ctrl-O submits the
 current input and, after successful completion, recalls the next history entry
-for editing. Parse errors, `Nothing to show`, cancellation, and timeout messages
+for editing. While an entry is recalled, Ctrl-D, Backspace, or Ctrl-H removes
+it from the displayed and persistent history. Consecutive submissions of the
+same exact input create only one history entry. Parse errors,
+`Nothing to show`, cancellation, and timeout messages
 are displayed in red and do not themselves add a blank line after them. A
 successfully registered `set`, `define`, `remove`, or `references` command
 leaves only that submitted command line, with no output beneath it.

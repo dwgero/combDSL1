@@ -329,16 +329,42 @@ test("retains successful sources in submission order", () => {
     ]);
 });
 
-test("preserves exact entries and repeated successful sources", () => {
+test("preserves exact entries and suppresses adjacent duplicate sources", () => {
     const history = createHistory();
     history.record("  show M  ");
     history.record("Ix");
+    assert.equal(history.record("Ix"), undefined);
+    assert.equal(history.record("Ix", "cancelled"), undefined);
+    history.record("Kx");
     history.record("Ix");
 
     assert.deepEqual([...history.values()], [
         "  show M  ",
         "Ix",
+        "Kx",
         "Ix",
+    ]);
+});
+
+test("does not persist an adjacent duplicate source", () => {
+    let writes = 0;
+    let stored = null;
+    const storage = {
+        getItem() {
+            return stored;
+        },
+        setItem(_key, value) {
+            ++writes;
+            stored = value;
+        },
+    };
+    const history = createHistory({storage});
+
+    history.record("YI", "cancelled");
+    assert.equal(history.record("YI", "timed out"), undefined);
+    assert.equal(writes, 1);
+    assert.deepEqual(JSON.parse(stored).entries, [
+        {source: "YI", outcome: "cancelled"},
     ]);
 });
 
@@ -436,6 +462,79 @@ test("recalls raw sources and restores the editable draft", () => {
     assert.equal(history.next(), undefined);
     assert.equal(history.previous("new draft"), "BKM(BKM)");
     assert.equal(history.next(), "new draft");
+});
+
+test("removes the current recalled entry and persists the deletion", () => {
+    let stored = null;
+    const storage = {
+        getItem() {
+            return stored;
+        },
+        setItem(_key, value) {
+            stored = value;
+        },
+    };
+    const history = createHistory({storage});
+    history.record("A");
+    history.record("B", "cancelled");
+    history.record("C");
+
+    assert.equal(history.removeCurrent(), undefined);
+    assert.equal(history.previous("draft"), "C");
+    assert.equal(history.previous("ignored"), "B");
+
+    const removedB = history.removeCurrent();
+    assert.equal(removedB.index, 1);
+    assert.equal(removedB.nextSource, "C");
+    assert.deepEqual([...history.values()], ["A", "C"]);
+    assert.deepEqual(JSON.parse(stored).entries, [
+        {source: "A", outcome: ""},
+        {source: "C", outcome: ""},
+    ]);
+
+    const removedC = history.removeCurrent();
+    assert.equal(removedC.index, 1);
+    assert.equal(removedC.nextSource, "draft");
+    assert.deepEqual([...history.values()], ["A"]);
+    assert.equal(history.removeCurrent(), undefined);
+    assert.equal(history.previous("new draft"), "A");
+
+    const removedA = history.removeCurrent();
+    assert.equal(Object.isFrozen(removedA), true);
+    assert.equal(removedA.index, 0);
+    assert.equal(removedA.nextSource, "new draft");
+    assert.deepEqual([...history.values()], []);
+    assert.equal(history.previous("ignored"), undefined);
+    assert.equal(history.next(), undefined);
+});
+
+test("removes loaded history entries by their visible index", () => {
+    let stored = JSON.stringify({
+        version: 1,
+        entries: [
+            {source: "A", outcome: ""},
+            {source: "B", outcome: "timed out"},
+        ],
+    });
+    const history = createHistory({
+        storage: {
+            getItem() {
+                return stored;
+            },
+            setItem(_key, value) {
+                stored = value;
+            },
+        },
+    });
+
+    assert.equal(history.previous(""), "B");
+    const removed = history.removeCurrent();
+    assert.equal(removed.index, 1);
+    assert.equal(removed.nextSource, "");
+    assert.deepEqual([...history.values()], ["A"]);
+    assert.deepEqual(JSON.parse(stored).entries, [
+        {source: "A", outcome: ""},
+    ]);
 });
 
 test("operates on a line and resumes at its next history entry", () => {

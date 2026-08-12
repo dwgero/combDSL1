@@ -185,6 +185,10 @@ globalThis.combdslInputHistory = (() => {
                 source: String(source),
                 outcome: String(outcome),
             };
+            if (entries.at(-1)?.source === entry.source) {
+                resetNavigation();
+                return undefined;
+            }
             entries.push(entry);
             resetNavigation();
             persist();
@@ -215,6 +219,22 @@ globalThis.combdslInputHistory = (() => {
                 : entries[position].source;
         };
 
+        const removeCurrent = () => {
+            if (position === entries.length) {
+                return undefined;
+            }
+
+            const index = position;
+            entries.splice(index, 1);
+            persist();
+            return Object.freeze({
+                index,
+                nextSource: position === entries.length
+                    ? draft ?? ""
+                    : entries[position].source,
+            });
+        };
+
         const prepareOperateAndGetNext = () => {
             const operation = Object.freeze({});
             operateAndGetNextPositions.set(
@@ -241,6 +261,7 @@ globalThis.combdslInputHistory = (() => {
             prepareOperateAndGetNext,
             previous,
             record,
+            removeCurrent,
             resetNavigation,
             resumeOperateAndGetNext,
             values,

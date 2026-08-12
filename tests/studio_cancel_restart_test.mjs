@@ -32,6 +32,14 @@ new vm.Script(readFileSync(evaluationWatchdogUrl, "utf8"), {
 }).runInContext(evaluationWatchdogContext);
 const realEvaluationWatchdog =
     evaluationWatchdogContext.combdslEvaluationWatchdog;
+const inputHistoryUrl = new URL(
+    "../web/input_history.js", import.meta.url);
+const inputHistoryContext = vm.createContext({});
+new vm.Script(readFileSync(inputHistoryUrl, "utf8"), {
+    filename: inputHistoryUrl.pathname,
+}).runInContext(inputHistoryContext);
+const realInputHistoryTools =
+    inputHistoryContext.combdslInputHistory;
 
 const childElements = root => root.childNodes.flatMap(child => [
     ...(child instanceof FakeElement ? [child] : []),
@@ -169,6 +177,17 @@ class FakeElement extends FakeEventTarget {
         this.attributes.delete(name);
     }
 
+    remove() {
+        if (this.parentNode === null) {
+            return;
+        }
+        const index = this.parentNode.childNodes.indexOf(this);
+        if (index !== -1) {
+            this.parentNode.childNodes.splice(index, 1);
+        }
+        this.parentNode = null;
+    }
+
     querySelector() {
         return null;
     }
@@ -241,7 +260,11 @@ class FakeWorker extends FakeEventTarget {
     }
 }
 
-const createHarness = ({historyValues = [], watchdog} = {}) => {
+const createHarness = ({
+    historyValues = [],
+    inputHistoryTools: suppliedInputHistoryTools,
+    watchdog,
+} = {}) => {
     FakeWorker.instances = [];
     const animationFrames = [];
     const elements = new Map();
@@ -317,10 +340,11 @@ const createHarness = ({historyValues = [], watchdog} = {}) => {
         resetNavigation: () => {},
         previous: () => undefined,
         next: () => undefined,
+        removeCurrent: () => undefined,
         prepareOperateAndGetNext: () => undefined,
         resumeOperateAndGetNext: () => undefined,
     };
-    const inputHistoryTools = {
+    const inputHistoryTools = suppliedInputHistoryTools ?? {
         create: () => inputHistory,
         createCommandCompleter: () => () => undefined,
     };
@@ -410,6 +434,18 @@ const createHarness = ({historyValues = [], watchdog} = {}) => {
         selection,
         workers: FakeWorker.instances,
     };
+};
+
+const createPopulatedHistoryTools = entries => {
+    const history = realInputHistoryTools.create();
+    for (const [source, outcome = ""] of entries) {
+        history.record(source, outcome);
+    }
+    return Object.freeze({
+        create: () => history,
+        createCommandCompleter:
+            realInputHistoryTools.createCommandCompleter,
+    });
 };
 
 const beginLimitedEvaluation = (harness, limit, expression) => {
@@ -752,6 +788,145 @@ test("keeps selected history text while blank clicks focus input", () => {
         [source.selectionStart, source.selectionEnd],
         [source.value.length, source.value.length],
     );
+});
+
+for (const [description, key, ctrlKey] of [
+    ["Backspace", "Backspace", false],
+    ["Ctrl-H", "h", true],
+    ["Ctrl-D", "d", true],
+]) {
+    test(`${description} removes the recalled history item`, () => {
+        const harness = createHarness({
+            inputHistoryTools: createPopulatedHistoryTools([
+                ["A"],
+                ["B", "cancelled"],
+                ["C"],
+            ]),
+        });
+        const source = harness.element("source");
+        const displayedHistory = harness.element("source-history");
+        const originalRows = [...displayedHistory.childNodes];
+        source.value = "draft";
+
+        source.dispatch("keydown", {
+            key: "ArrowUp",
+            ctrlKey: false,
+            isComposing: false,
+            shiftKey: false,
+            metaKey: false,
+            altKey: false,
+        });
+        source.dispatch("keydown", {
+            key: "ArrowUp",
+            ctrlKey: false,
+            isComposing: false,
+            shiftKey: false,
+            metaKey: false,
+            altKey: false,
+        });
+        assert.equal(source.value, "B");
+
+        const removal = source.dispatch("keydown", {
+            key,
+            ctrlKey,
+            isComposing: false,
+            shiftKey: false,
+            metaKey: false,
+            altKey: false,
+        });
+
+        assert.equal(removal.defaultPrevented, true);
+        assert.equal(source.value, "C");
+        assert.deepEqual(
+            [source.selectionStart, source.selectionEnd],
+            [1, 1],
+        );
+        assert.deepEqual(
+            displayedHistory.childNodes.map(row => row.textContent),
+            ["A", "C"],
+        );
+        assert.strictEqual(displayedHistory.childNodes[0], originalRows[0]);
+        assert.strictEqual(displayedHistory.childNodes[1], originalRows[2]);
+        assert.equal(originalRows[1].parentNode, null);
+    });
+}
+
+test("history-removal keys retain their normal behavior on the live draft", () => {
+    const harness = createHarness({
+        inputHistoryTools: createPopulatedHistoryTools([["A"]]),
+    });
+    const source = harness.element("source");
+    const displayedHistory = harness.element("source-history");
+    source.value = "draft";
+
+    for (const [key, ctrlKey] of [
+        ["Backspace", false],
+        ["h", true],
+        ["d", true],
+    ]) {
+        const event = source.dispatch("keydown", {
+            key,
+            ctrlKey,
+            isComposing: false,
+            shiftKey: false,
+            metaKey: false,
+            altKey: false,
+        });
+        assert.equal(event.defaultPrevented, false);
+        assert.equal(source.value, "draft");
+    }
+    assert.deepEqual(
+        displayedHistory.childNodes.map(row => row.textContent),
+        ["A"],
+    );
+});
+
+test("does not display an adjacent duplicate history entry", () => {
+    const harness = createHarness({
+        inputHistoryTools: createPopulatedHistoryTools([["Ix"]]),
+    });
+    const source = harness.element("source");
+    const displayedHistory = harness.element("source-history");
+    const originalRow = displayedHistory.childNodes[0];
+    const worker = harness.workers[0];
+
+    worker.send({type: "ready", setList: ""});
+    harness.flushAnimationFrames();
+    source.value = "Ix";
+    harness.pressEnter();
+    harness.flushAnimationFrames();
+    const inspection = worker.messages.find(
+        message => message.type === "inspect-definition");
+    worker.send({
+        type: "definition-inspection-result",
+        id: inspection.id,
+        result: {
+            success: true,
+            definition: false,
+            displayOnly: false,
+            showAll: false,
+            find: false,
+            replacement: "",
+        },
+    });
+    harness.flushAnimationFrames();
+    worker.send({
+        type: "result",
+        id: inspection.id,
+        result: {
+            success: true,
+            definition: false,
+            recoverWorker: false,
+            output: "x\n",
+            error: "",
+            reductions: 1,
+            limitReached: false,
+        },
+    });
+
+    assert.equal(displayedHistory.childNodes.length, 1);
+    assert.strictEqual(displayedHistory.childNodes[0], originalRow);
+    assert.equal(displayedHistory.textContent, "Ix");
 });
 
 test("replays a submission after cancellation and definition restore", () => {

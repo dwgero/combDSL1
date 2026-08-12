@@ -362,9 +362,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             color: #c33;
         }
     </style>
-    <script src="./evaluation_watchdog.js?v=2.7.0" defer></script>
-    <script src="./input_history.js?v=2.7.0" defer></script>
-    <script src="./app.js?v=2.7.0" defer></script>
+    <script src="./evaluation_watchdog.js?v=2.7.1" defer></script>
+    <script src="./input_history.js?v=2.7.1" defer></script>
+    <script src="./app.js?v=2.7.1" defer></script>
 </head>
 <body>
     <main aria-labelledby="studio-title">
@@ -525,9 +525,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             press <kbd>Down Arrow</kbd> or <kbd>Ctrl-N</kbd> to move toward
             newer entries and restore the current draft. <kbd>Ctrl-O</kbd>
             submits the current input and, after successful completion,
-            recalls the next history entry for editing. Cancelled and timed-out
-            entries are recalled without their displayed status labels. Parse
-            errors are not saved.
+            recalls the next history entry for editing. While an entry is
+            recalled, <kbd>Ctrl-D</kbd>, <kbd>Backspace</kbd>, or
+            <kbd>Ctrl-H</kbd> removes it from the displayed and persistent
+            history. Consecutive submissions of the same exact input create
+            only one history entry. Cancelled and timed-out entries are recalled
+            without their displayed status labels. Parse errors are not saved.
         </div>
         <h2 class="help-subheading">Adding Combinators</h2>
         <div class="help-section">
@@ -798,7 +801,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             data-dialog-initial-focus>About</h2>
         <div class="license-text">
             <!-- Keep this version and the app.js cache key in sync. -->
-            <p>Combinator Studio, version 2.7.0<br>
+            <p>Combinator Studio, version 2.7.1<br>
                 Part of the C++ Combinator DSL<br>
                 Copyright (C) 2026  David W. Gero</p>
             <p>This program is free software: you can redistribute it and/or modify
