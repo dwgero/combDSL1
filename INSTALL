@@ -1,0 +1,136 @@
+C++ Combinator DSL build and installation requirements
+======================================================
+
+The complete build consists of a native C++ library, examples, CREPL,
+benchmarks and tests, plus a separate Emscripten build of Combinator Studio.
+The complete native CREPL dependency build is POSIX-oriented.  Use Linux,
+macOS, or WSL on Windows.
+
+Required tools
+--------------
+
+The tools needed depend on which CMake options are enabled:
+
+* CMake 3.20 or newer is required for every CMake build.  This is stronger
+  than a 3.2 minimum because the current build uses newer CMake facilities,
+  including string(JSON), FindPython3 and REQUIRED find_program calls.
+* A C++ compiler and standard library with C++20 support are required for all
+  C++ targets.
+* A C compiler with C11 support is required.  The verified C compiler is
+  passed to the downloaded ncurses and readline builds used by CREPL.
+* Native threading support is required for native builds.
+* GNU Make, installed as either make or gmake, is required when
+  COMBDSL_BUILD_EXAMPLES is enabled.  BSD make is not sufficient for the
+  ncurses and readline dependency builds.
+* Git is required when COMBDSL_BUILD_EXAMPLES is enabled so CMake can obtain
+  the pinned readline source revision.
+* A normal POSIX userland is required by the ncurses and readline configure,
+  build and installation scripts.  CMake explicitly checks for sed, awk and
+  install; those scripts exercise the shell and also use conventional tools
+  such as grep, expr, mkdir, rm, cp and ln.
+* Python 3.7 or newer is required on UNIX when CREPL and the test suite are
+  enabled.  It runs three interactive CREPL tests covering completion,
+  persistence, and terminal behavior and color.  Those tests use forkpty,
+  signals and termios and do not run under native Windows.
+* Node.js 18 or newer and npm are required when COMBDSL_BUILD_TESTS is
+  enabled.  Node.js runs the Studio tests through node --test.  npm is also
+  required by the separate Sites packaging and publishing workflow.
+* An activated Emscripten SDK providing emcmake, emcc and em++ is required
+  only when COMBDSL_BUILD_BROWSER is enabled.
+
+CMake verifies the listed compiler-language support and executable tools
+where applicable.  The remaining filesystem, POSIX-userland and network
+requirements are exercised during the build.  Checks are scoped to their
+consumers: a project which only includes combDSL as a header-only subproject
+is not required to install CREPL, test, browser or publishing tools.
+
+Network access and downloaded dependencies
+------------------------------------------
+
+A top-level configuration requires TLS-enabled network access to query the
+latest fmt release metadata from GitHub.  A complete build additionally
+obtains:
+
+* the verified archive for that latest fmt release from GitHub;
+* the current ncurses source archive from invisible-island.net; and
+* readline at pinned revision 553d6bb272f26400d6d4d1cac7c1df84c447449b
+  from the sailfishos-mirror/readline GitHub repository.
+
+fmt, ncurses and readline do not need to be installed beforehand.  CMake
+handles the downloads and archive extraction, so separate curl, tar and unzip
+programs are not required.
+
+The dependency build needs a writable source tree.  It creates or updates
+bin, lib, include/fmt, include/ncurses, include/readline, ncurses, readline and
+share beneath the repository root.  The current ncurses configuration may
+also install terminal descriptions in /usr/local/share/terminfo, which must be
+writable for that installation step.
+
+Complete native build and test
+------------------------------
+
+From the repository root:
+
+    cmake -S . -B build
+    cmake --build build
+    ctest --test-dir build --output-on-failure
+
+The default top-level native configuration enables examples, CREPL, tests and
+benchmarks.  It produces build/crepl, build/combdsl_example,
+build/combdsl_single_step, the test executables and
+build/combdsl_find_benchmark.  CREPL is also copied to bin/crepl.
+
+The principal options are:
+
+    -DCOMBDSL_BUILD_EXAMPLES=ON|OFF
+    -DCOMBDSL_BUILD_TESTS=ON|OFF
+    -DCOMBDSL_BUILD_BENCHMARKS=ON|OFF
+    -DCOMBDSL_BUILD_BROWSER=ON|OFF
+
+Set an option to OFF to omit its targets and their associated tool checks.
+
+Benchmarks
+----------
+
+Use a Release build for meaningful native benchmark timings:
+
+    cmake -S . -B build-release -DCMAKE_BUILD_TYPE=Release
+    cmake --build build-release --target combdsl_find_benchmark
+    ./build-release/combdsl_find_benchmark
+
+The exhaustive quad benchmark is not part of the default benchmark run and
+can take minutes:
+
+    ./build-release/combdsl_find_benchmark --case quad
+
+Combinator Studio WebAssembly build
+-----------------------------------
+
+Activate Emscripten, use a separate build directory, and provide a writable
+Emscripten cache:
+
+    EM_CACHE="$PWD/build-emscripten-cache" emcmake cmake -S . -B build-browser \
+        -DCOMBDSL_BUILD_BROWSER=ON \
+        -DCOMBDSL_BUILD_EXAMPLES=OFF \
+        -DCOMBDSL_BUILD_TESTS=OFF \
+        -DCOMBDSL_BUILD_BENCHMARKS=OFF \
+        -DCMAKE_BUILD_TYPE=Release
+    EM_CACHE="$PWD/build-emscripten-cache" \
+        cmake --build build-browser --target combdsl_browser_docs
+
+The combdsl_browser_docs target refreshes the static application in docs,
+including combdsl.js and combdsl.wasm.  Serve docs over HTTP; file URLs cannot
+start the Web Worker and fetch the WebAssembly module.  For example, when
+Python is installed:
+
+    python3 -m http.server 8000 --directory docs
+
+Then open http://localhost:8000/.
+
+Sites publishing
+----------------
+
+Publishing is separate from compiling this repository.  It requires Node.js,
+npm, configured OpenAI Sites tooling and credentials, and a separate Sites
+packaging workspace.  A normal native or Emscripten build does not publish or
+deploy anything.

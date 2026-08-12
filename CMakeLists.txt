@@ -23,6 +23,20 @@ project(
     LANGUAGES C CXX
 )
 
+set(CMAKE_C_STANDARD 11)
+set(CMAKE_C_STANDARD_REQUIRED ON)
+set(CMAKE_C_EXTENSIONS OFF)
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+
+if(NOT "c_std_11" IN_LIST CMAKE_C_COMPILE_FEATURES)
+    message(FATAL_ERROR "A compiler with C11 support is required")
+endif()
+if(NOT "cxx_std_20" IN_LIST CMAKE_CXX_COMPILE_FEATURES)
+    message(FATAL_ERROR "A compiler with C++20 support is required")
+endif()
+
 add_library(combdsl INTERFACE)
 add_library(combdsl::combdsl ALIAS combdsl)
 
@@ -181,7 +195,47 @@ if(COMBDSL_BUILD_EXAMPLES)
     endif()
 
     include(ExternalProject)
-    find_program(COMBDSL_MAKE_EXECUTABLE NAMES make gmake REQUIRED)
+    find_package(Git REQUIRED)
+    find_program(COMBDSL_SED_EXECUTABLE NAMES sed REQUIRED)
+    find_program(COMBDSL_AWK_EXECUTABLE NAMES awk REQUIRED)
+    find_program(COMBDSL_INSTALL_EXECUTABLE NAMES install REQUIRED)
+    find_program(COMBDSL_GMAKE_CANDIDATE NAMES gmake)
+    find_program(COMBDSL_MAKE_CANDIDATE NAMES make)
+    set(COMBDSL_GNU_MAKE_EXECUTABLE "")
+    foreach(
+        COMBDSL_MAKE_CANDIDATE_EXECUTABLE
+        IN ITEMS
+            "${COMBDSL_GMAKE_CANDIDATE}"
+            "${COMBDSL_MAKE_CANDIDATE}"
+    )
+        if(COMBDSL_MAKE_CANDIDATE_EXECUTABLE AND
+                EXISTS "${COMBDSL_MAKE_CANDIDATE_EXECUTABLE}" AND
+                NOT COMBDSL_GNU_MAKE_EXECUTABLE)
+            execute_process(
+                COMMAND "${COMBDSL_MAKE_CANDIDATE_EXECUTABLE}" --version
+                RESULT_VARIABLE COMBDSL_MAKE_RESULT
+                OUTPUT_VARIABLE COMBDSL_MAKE_OUTPUT
+                ERROR_VARIABLE COMBDSL_MAKE_ERROR
+                OUTPUT_STRIP_TRAILING_WHITESPACE
+                ERROR_STRIP_TRAILING_WHITESPACE
+            )
+            if(COMBDSL_MAKE_RESULT EQUAL 0 AND
+                    COMBDSL_MAKE_OUTPUT MATCHES "^GNU Make([ \r\n]|$)")
+                set(
+                    COMBDSL_GNU_MAKE_EXECUTABLE
+                    "${COMBDSL_MAKE_CANDIDATE_EXECUTABLE}"
+                )
+            endif()
+        endif()
+    endforeach()
+    if(NOT COMBDSL_GNU_MAKE_EXECUTABLE)
+        message(
+            FATAL_ERROR
+            "GNU Make is required to build ncurses and readline; "
+            "install make or gmake"
+        )
+    endif()
+    message(STATUS "Found GNU Make: ${COMBDSL_GNU_MAKE_EXECUTABLE}")
     set(
         COMBDSL_NCURSES_INCLUDE_DIRECTORY
         "${CMAKE_CURRENT_SOURCE_DIR}/include/ncurses"
@@ -194,6 +248,8 @@ if(COMBDSL_BUILD_EXAMPLES)
         DOWNLOAD_DIR "${CMAKE_CURRENT_BINARY_DIR}/downloads"
         TLS_VERIFY TRUE
         CONFIGURE_COMMAND
+            "${CMAKE_COMMAND}" -E env
+            "CC=${CMAKE_C_COMPILER}"
             <SOURCE_DIR>/configure
             "--bindir=${CMAKE_CURRENT_SOURCE_DIR}/bin"
             "--libdir=${CMAKE_CURRENT_SOURCE_DIR}/lib"
@@ -202,12 +258,12 @@ if(COMBDSL_BUILD_EXAMPLES)
             --enable-termcap
             --enable-ext-colors
             --enable-rgb-color
-        BUILD_COMMAND "${COMBDSL_MAKE_EXECUTABLE}"
+        BUILD_COMMAND "${COMBDSL_GNU_MAKE_EXECUTABLE}"
         BUILD_IN_SOURCE TRUE
         INSTALL_COMMAND
             "${CMAKE_COMMAND}" -E env
             "PATH=${CMAKE_CURRENT_SOURCE_DIR}/bin:$ENV{PATH}"
-            "${COMBDSL_MAKE_EXECUTABLE}" install
+            "${COMBDSL_GNU_MAKE_EXECUTABLE}" install
         TEST_COMMAND ""
         EXCLUDE_FROM_ALL TRUE
     )
@@ -233,6 +289,7 @@ if(COMBDSL_BUILD_EXAMPLES)
         CONFIGURE_COMMAND
             "${CMAKE_COMMAND}" -E env
             "PATH=${CMAKE_CURRENT_SOURCE_DIR}/bin:$ENV{PATH}"
+            "CC=${CMAKE_C_COMPILER}"
             "CPPFLAGS=${COMBDSL_READLINE_CPPFLAGS}"
             "LDFLAGS=${COMBDSL_READLINE_LDFLAGS}"
             "bash_cv_termcap_lib=libncursesw"
@@ -245,12 +302,12 @@ if(COMBDSL_BUILD_EXAMPLES)
             --disable-install-examples
             --enable-multibyte
             --with-curses
-        BUILD_COMMAND "${COMBDSL_MAKE_EXECUTABLE}"
+        BUILD_COMMAND "${COMBDSL_GNU_MAKE_EXECUTABLE}"
         BUILD_IN_SOURCE TRUE
         INSTALL_COMMAND
             "${CMAKE_COMMAND}" -E env
             "PATH=${CMAKE_CURRENT_SOURCE_DIR}/bin:$ENV{PATH}"
-            "${COMBDSL_MAKE_EXECUTABLE}" install
+            "${COMBDSL_GNU_MAKE_EXECUTABLE}" install
         TEST_COMMAND ""
         DEPENDS combdsl_ncurses
         EXCLUDE_FROM_ALL TRUE
@@ -324,10 +381,17 @@ if(COMBDSL_BUILD_BENCHMARKS)
 endif()
 
 if(COMBDSL_BUILD_BROWSER)
-    if(NOT EMSCRIPTEN)
+    if(NOT EMSCRIPTEN OR
+            NOT EXISTS "${CMAKE_C_COMPILER}" OR
+            NOT EXISTS "${CMAKE_CXX_COMPILER}")
         message(FATAL_ERROR
             "COMBDSL_BUILD_BROWSER requires the Emscripten toolchain")
     endif()
+    message(
+        STATUS
+        "Verified Emscripten toolchain: ${CMAKE_CXX_COMPILER} "
+        "(${CMAKE_CXX_COMPILER_VERSION})"
+    )
 
     set(COMBDSL_BROWSER_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/web")
     file(MAKE_DIRECTORY "${COMBDSL_BROWSER_OUTPUT_DIRECTORY}")
@@ -645,74 +709,106 @@ if(COMBDSL_BUILD_TESTS)
                 "${CMAKE_CURRENT_SOURCE_DIR}/tests/crepl_command_test.cmake"
         )
         if(UNIX)
-            find_package(Python3 QUIET COMPONENTS Interpreter)
-            if(Python3_Interpreter_FOUND)
-                add_test(
-                    NAME crepl_completion
-                    COMMAND
-                        "${Python3_EXECUTABLE}"
-                        "${CMAKE_CURRENT_SOURCE_DIR}/tests/crepl_completion_test.py"
-                        "$<TARGET_FILE:crepl>"
-                )
-                set_tests_properties(
-                    crepl_completion
-                    PROPERTIES TIMEOUT 30
-                )
-                add_test(
-                    NAME crepl_persistence
-                    COMMAND
-                        "${Python3_EXECUTABLE}"
-                        "${CMAKE_CURRENT_SOURCE_DIR}/tests/crepl_persistence_test.py"
-                        "$<TARGET_FILE:crepl>"
-                )
-                set_tests_properties(
-                    crepl_persistence
-                    PROPERTIES TIMEOUT 30
-                )
-                add_test(
-                    NAME crepl_terminal_color
-                    COMMAND
-                        "${Python3_EXECUTABLE}"
-                        "${CMAKE_CURRENT_SOURCE_DIR}/tests/crepl_terminal_color_test.py"
-                        "$<TARGET_FILE:crepl>"
-                )
-                set_tests_properties(
-                    crepl_terminal_color
-                    PROPERTIES TIMEOUT 30
-                )
-            endif()
+            find_package(Python3 3.7 REQUIRED COMPONENTS Interpreter)
+            add_test(
+                NAME crepl_completion
+                COMMAND
+                    "${Python3_EXECUTABLE}"
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/crepl_completion_test.py"
+                    "$<TARGET_FILE:crepl>"
+            )
+            set_tests_properties(
+                crepl_completion
+                PROPERTIES TIMEOUT 30
+            )
+            add_test(
+                NAME crepl_persistence
+                COMMAND
+                    "${Python3_EXECUTABLE}"
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/crepl_persistence_test.py"
+                    "$<TARGET_FILE:crepl>"
+            )
+            set_tests_properties(
+                crepl_persistence
+                PROPERTIES TIMEOUT 30
+            )
+            add_test(
+                NAME crepl_terminal_color
+                COMMAND
+                    "${Python3_EXECUTABLE}"
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/crepl_terminal_color_test.py"
+                    "$<TARGET_FILE:crepl>"
+            )
+            set_tests_properties(
+                crepl_terminal_color
+                PROPERTIES TIMEOUT 30
+            )
         endif()
     endif()
 
-    find_program(COMBDSL_NODE_EXECUTABLE NAMES node nodejs)
-    if(COMBDSL_NODE_EXECUTABLE)
-        add_test(
-            NAME evaluation_watchdog
-            COMMAND
-                "${COMBDSL_NODE_EXECUTABLE}"
-                --test
-                "${CMAKE_CURRENT_SOURCE_DIR}/tests/evaluation_watchdog_test.mjs"
-        )
-        add_test(
-            NAME input_history
-            COMMAND
-                "${COMBDSL_NODE_EXECUTABLE}"
-                --test
-                "${CMAKE_CURRENT_SOURCE_DIR}/tests/input_history_test.mjs"
-        )
-        add_test(
-            NAME studio_cancel_restart
-            COMMAND
-                "${COMBDSL_NODE_EXECUTABLE}"
-                --test
-                "${CMAKE_CURRENT_SOURCE_DIR}/tests/studio_cancel_restart_test.mjs"
-        )
-        add_test(
-            NAME worker_single_step
-            COMMAND
-                "${COMBDSL_NODE_EXECUTABLE}"
-                --test
-                "${CMAKE_CURRENT_SOURCE_DIR}/tests/worker_single_step_test.mjs"
+    find_program(COMBDSL_NODE_EXECUTABLE NAMES node nodejs REQUIRED)
+    execute_process(
+        COMMAND "${COMBDSL_NODE_EXECUTABLE}" --version
+        RESULT_VARIABLE COMBDSL_NODE_RESULT
+        OUTPUT_VARIABLE COMBDSL_NODE_VERSION
+        ERROR_VARIABLE COMBDSL_NODE_ERROR
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        ERROR_STRIP_TRAILING_WHITESPACE
+    )
+    if(NOT COMBDSL_NODE_RESULT EQUAL 0 OR
+            NOT COMBDSL_NODE_VERSION MATCHES "^v?([0-9]+)\\.")
+        message(FATAL_ERROR "Unable to determine the Node.js version")
+    endif()
+    set(COMBDSL_NODE_MAJOR_VERSION "${CMAKE_MATCH_1}")
+    if(COMBDSL_NODE_MAJOR_VERSION LESS 18)
+        message(
+            FATAL_ERROR
+            "Node.js 18 or newer is required; found ${COMBDSL_NODE_VERSION}"
         )
     endif()
+    message(STATUS "Found Node.js: ${COMBDSL_NODE_VERSION}")
+
+    find_program(COMBDSL_NPM_EXECUTABLE NAMES npm npm.cmd REQUIRED)
+    execute_process(
+        COMMAND "${COMBDSL_NPM_EXECUTABLE}" --version
+        RESULT_VARIABLE COMBDSL_NPM_RESULT
+        OUTPUT_VARIABLE COMBDSL_NPM_VERSION
+        ERROR_VARIABLE COMBDSL_NPM_ERROR
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        ERROR_STRIP_TRAILING_WHITESPACE
+    )
+    if(NOT COMBDSL_NPM_RESULT EQUAL 0 OR
+            NOT COMBDSL_NPM_VERSION MATCHES "^[0-9]+(\\.[0-9]+)+")
+        message(FATAL_ERROR "Unable to determine the npm version")
+    endif()
+    message(STATUS "Found npm: ${COMBDSL_NPM_VERSION}")
+
+    add_test(
+        NAME evaluation_watchdog
+        COMMAND
+            "${COMBDSL_NODE_EXECUTABLE}"
+            --test
+            "${CMAKE_CURRENT_SOURCE_DIR}/tests/evaluation_watchdog_test.mjs"
+    )
+    add_test(
+        NAME input_history
+        COMMAND
+            "${COMBDSL_NODE_EXECUTABLE}"
+            --test
+            "${CMAKE_CURRENT_SOURCE_DIR}/tests/input_history_test.mjs"
+    )
+    add_test(
+        NAME studio_cancel_restart
+        COMMAND
+            "${COMBDSL_NODE_EXECUTABLE}"
+            --test
+            "${CMAKE_CURRENT_SOURCE_DIR}/tests/studio_cancel_restart_test.mjs"
+    )
+    add_test(
+        NAME worker_single_step
+        COMMAND
+            "${COMBDSL_NODE_EXECUTABLE}"
+            --test
+            "${CMAKE_CURRENT_SOURCE_DIR}/tests/worker_single_step_test.mjs"
+    )
 endif()
