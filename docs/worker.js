@@ -32,11 +32,19 @@ const assetUrl = file => {
 let modulePromise;
 let busy = false;
 let ordinaryRequestId;
+let ordinaryStepLimit;
+let ordinaryWindowReductions = 0;
+let ordinaryTotalReductions = 0;
+let ordinaryPausedAtLimit = false;
+let ordinaryPausedManually = false;
+let ordinaryContinuationTimer;
 let steppingRequestId;
 let steppingBasisStep = false;
 let steppingColorize = false;
 let steppingAutomatically = false;
+let steppingKeyStep = false;
 let steppingPausedAtLimit = false;
+let steppingPausedManually = false;
 let steppingDeferredOutput = "";
 let steppingDeferredHtml = false;
 let steppingReductions = 0;
@@ -44,9 +52,23 @@ let steppingProgressSequence = 0;
 let steppingLastProgressAt = 0;
 let automaticStepTimer;
 const automaticStepIntervalMs = 16;
+const ordinaryEvaluationSliceReductions = 1000;
 
 const errorMessage = error =>
     error instanceof Error ? error.message : String(error);
+
+const resetOrdinaryEvaluation = () => {
+    if (ordinaryContinuationTimer !== undefined) {
+        clearTimeout(ordinaryContinuationTimer);
+        ordinaryContinuationTimer = undefined;
+    }
+    ordinaryRequestId = undefined;
+    ordinaryStepLimit = undefined;
+    ordinaryWindowReductions = 0;
+    ordinaryTotalReductions = 0;
+    ordinaryPausedAtLimit = false;
+    ordinaryPausedManually = false;
+};
 
 const resetStepping = () => {
     if (automaticStepTimer !== undefined) {
@@ -57,7 +79,9 @@ const resetStepping = () => {
     steppingBasisStep = false;
     steppingColorize = false;
     steppingAutomatically = false;
+    steppingKeyStep = false;
     steppingPausedAtLimit = false;
+    steppingPausedManually = false;
     steppingDeferredOutput = "";
     steppingDeferredHtml = false;
     steppingReductions = 0;
@@ -93,6 +117,82 @@ const evaluationResult = (
     reductions,
     limitReached: Boolean(result.limitReached),
 });
+
+const nextOrdinarySlice = () => {
+    const remaining = ordinaryStepLimit === undefined
+        ? ordinaryEvaluationSliceReductions
+        : ordinaryStepLimit - ordinaryWindowReductions;
+    const limit = Math.min(
+        ordinaryEvaluationSliceReductions, remaining);
+    return {
+        limit,
+        checkAtLimit: ordinaryStepLimit !== undefined &&
+            limit === remaining,
+    };
+};
+
+const postOrdinaryResult = (module, requestId, result) => {
+    const response = {
+        type: "result",
+        id: requestId,
+        html: false,
+        result,
+    };
+    if (result.success && result.definition) {
+        response.setList = module.setList();
+    }
+    self.postMessage(response);
+};
+
+const scheduleOrdinaryContinuation = (module, requestId) => {
+    ordinaryContinuationTimer = setTimeout(() => {
+        ordinaryContinuationTimer = undefined;
+        if (ordinaryRequestId !== requestId ||
+            ordinaryPausedAtLimit || ordinaryPausedManually) {
+            return;
+        }
+
+        busy = true;
+        try {
+            const slice = nextOrdinarySlice();
+            const result = module.resumeLimitedEval(
+                requestId, slice.limit, slice.checkAtLimit);
+            handleOrdinarySliceResult(module, requestId, result);
+        } catch (error) {
+            resetOrdinaryEvaluation();
+            self.postMessage({
+                type: "fatal",
+                id: requestId,
+                error: errorMessage(error),
+            });
+        } finally {
+            busy = false;
+        }
+    }, 0);
+};
+
+const handleOrdinarySliceResult = (module, requestId, result) => {
+    const totalReductions = Number(result.reductions ?? 0);
+    const reductionsThisSlice = Math.max(
+        0, totalReductions - ordinaryTotalReductions);
+    ordinaryTotalReductions = totalReductions;
+    ordinaryWindowReductions += reductionsThisSlice;
+
+    if (!result.success || result.definition || !result.limitReached) {
+        resetOrdinaryEvaluation();
+        postOrdinaryResult(module, requestId, result);
+        return;
+    }
+
+    if (ordinaryStepLimit !== undefined &&
+        ordinaryWindowReductions >= ordinaryStepLimit) {
+        ordinaryPausedAtLimit = true;
+        postOrdinaryResult(module, requestId, result);
+        return;
+    }
+
+    scheduleOrdinaryContinuation(module, requestId);
+};
 
 const scheduleAutomaticStep = (module, requestId) => {
     automaticStepTimer = setTimeout(() => {
@@ -276,7 +376,9 @@ self.addEventListener("message", async event => {
                     steppingRequestId = message.id;
                     steppingBasisStep = Boolean(message.basisStep);
                     steppingColorize = Boolean(message.colorize);
+                    steppingKeyStep = true;
                     steppingPausedAtLimit = false;
+                    steppingPausedManually = false;
                 }
                 const response = {
                     type: result.success && result.complete
@@ -308,7 +410,9 @@ self.addEventListener("message", async event => {
                         steppingColorize =
                             Boolean(message.colorize);
                         steppingAutomatically = true;
+                        steppingKeyStep = false;
                         steppingPausedAtLimit = false;
+                        steppingPausedManually = false;
                         steppingReductions = 0;
                         steppingProgressSequence = 0;
                         steppingLastProgressAt =
@@ -331,34 +435,30 @@ self.addEventListener("message", async event => {
                     return;
                 }
 
-                const stepLimitEnabled =
-                    Boolean(message.stepLimitEnabled);
-                const result = stepLimitEnabled
-                    ? module.beginLimitedEval(
-                          String(message.source),
-                          message.id,
-                          Number(message.stepLimit))
-                    : module.parseEval(
-                          String(message.source),
-                          message.id,
-                          false,
-                          0);
-                ordinaryRequestId = result.success &&
-                    result.limitReached
-                    ? message.id
+                ordinaryRequestId = message.id;
+                ordinaryStepLimit = message.stepLimitEnabled
+                    ? Number(message.stepLimit)
                     : undefined;
-                const response = {
-                    type: "result",
-                    id: message.id,
-                    html: false,
-                    result,
-                };
-                if (result.success && result.definition) {
-                    response.setList = module.setList();
-                }
-                self.postMessage(response);
+                ordinaryWindowReductions = 0;
+                ordinaryTotalReductions = 0;
+                ordinaryPausedAtLimit = false;
+                ordinaryPausedManually = false;
+                const slice = nextOrdinarySlice();
+                const result = module.beginLimitedEval(
+                    String(message.source),
+                    message.id,
+                    slice.limit,
+                    slice.checkAtLimit);
+                handleOrdinarySliceResult(
+                    module, message.id, result);
             }
         } catch (error) {
+            if (ordinaryRequestId === message.id) {
+                resetOrdinaryEvaluation();
+            }
+            if (steppingRequestId === message.id) {
+                resetStepping();
+            }
             self.postMessage({
                 type: "fatal",
                 id: message.id,
@@ -370,42 +470,92 @@ self.addEventListener("message", async event => {
         return;
     }
 
+    if (message.type === "pause") {
+        if (message.id === ordinaryRequestId &&
+            !ordinaryPausedAtLimit &&
+            !ordinaryPausedManually) {
+            if (ordinaryContinuationTimer !== undefined) {
+                clearTimeout(ordinaryContinuationTimer);
+                ordinaryContinuationTimer = undefined;
+            }
+            ordinaryPausedManually = true;
+            self.postMessage({
+                type: "paused",
+                id: message.id,
+                reductions: ordinaryTotalReductions,
+            });
+            return;
+        }
+
+        if (message.id === steppingRequestId &&
+            !steppingPausedAtLimit &&
+            !steppingPausedManually) {
+            if (automaticStepTimer !== undefined) {
+                clearTimeout(automaticStepTimer);
+                automaticStepTimer = undefined;
+            }
+            steppingAutomatically = false;
+            steppingPausedManually = true;
+            self.postMessage({
+                type: "paused",
+                id: message.id,
+                reductions: steppingReductions,
+            });
+        }
+        return;
+    }
+
     if (message.type === "resume") {
         if (message.id === ordinaryRequestId) {
-            busy = true;
-            try {
-                const module = await modulePromise;
+            if (ordinaryPausedManually) {
+                ordinaryPausedManually = false;
                 self.postMessage({
                     type: "eval-started",
                     id: message.id,
                 });
-                const result = module.resumeLimitedEval(
-                    message.id);
-                ordinaryRequestId = result.success &&
-                    result.limitReached
-                    ? message.id
-                    : undefined;
+                const module = await modulePromise;
+                scheduleOrdinaryContinuation(module, message.id);
+                return;
+            }
+            if (ordinaryPausedAtLimit) {
+                ordinaryPausedAtLimit = false;
+                ordinaryWindowReductions = 0;
                 self.postMessage({
-                    type: "result",
+                    type: "eval-started",
                     id: message.id,
-                    html: false,
-                    result,
                 });
-            } catch (error) {
-                ordinaryRequestId = undefined;
+                const module = await modulePromise;
+                scheduleOrdinaryContinuation(module, message.id);
+                return;
+            }
+        }
+
+        if (message.id !== steppingRequestId) {
+            return;
+        }
+
+        if (steppingPausedManually) {
+            const module = await modulePromise;
+            steppingPausedManually = false;
+            if (steppingKeyStep) {
                 self.postMessage({
-                    type: "fatal",
+                    type: "step-ready",
                     id: message.id,
-                    error: errorMessage(error),
+                    result: {success: true},
                 });
-            } finally {
-                busy = false;
+            } else {
+                steppingAutomatically = true;
+                steppingLastProgressAt = performance.now();
+                self.postMessage({
+                    type: "eval-started",
+                    id: message.id,
+                });
+                scheduleAutomaticStep(module, message.id);
             }
             return;
         }
 
-        if (message.id !== steppingRequestId ||
-            !steppingPausedAtLimit) {
+        if (!steppingPausedAtLimit) {
             return;
         }
 
@@ -439,12 +589,16 @@ self.addEventListener("message", async event => {
     }
 
     if (message.type === "step" &&
-        message.id === steppingRequestId) {
+        message.id === steppingRequestId &&
+        !steppingPausedManually) {
         busy = true;
         try {
             const module = await modulePromise;
             const result = module.takeSingleStep(
                 steppingBasisStep, steppingColorize, true);
+            if (result.success && result.reduced) {
+                ++steppingReductions;
+            }
             if (!result.success || !result.reduced ||
                 result.complete) {
                 resetStepping();

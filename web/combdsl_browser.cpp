@@ -35,6 +35,7 @@
 namespace {
 
 constexpr double evaluation_heartbeat_interval_ms = 100.0;
+constexpr double evaluation_slice_budget_ms = 8.0;
 constexpr std::size_t evaluation_progress_interval = 1000;
 
 struct evaluation_result {
@@ -85,15 +86,18 @@ struct limited_evaluation_state {
     limited_evaluation_state(
         combdsl::quoted_expression expression_,
         std::size_t request_id_,
-        std::size_t step_limit_)
+        std::size_t step_limit_,
+        bool check_at_limit_)
         : expression(std::move(expression_)),
           request_id(request_id_),
           step_limit(step_limit_),
+          check_at_limit(check_at_limit_),
           last_heartbeat_at(emscripten_get_now()) {}
 
     combdsl::quoted_expression expression;
     std::size_t request_id;
     std::size_t step_limit;
+    bool check_at_limit;
     std::size_t window_reductions = 0;
     std::size_t total_reductions = 0;
     std::size_t progress_sequence = 0;
@@ -240,10 +244,12 @@ void report_limited_evaluation_progress(
     std::ostringstream output;
     try {
         auto& state = *limited_evaluation;
+        auto const slice_started_at = emscripten_get_now();
         combdsl::detail::reduction_options const options{
             .basis_step = false,
             .reduce_partial_k_argument = false,
         };
+        bool slice_budget_reached = false;
 
         while (state.window_reductions < state.step_limit) {
             auto reduced = combdsl::detail::reduce_next_redex(
@@ -268,17 +274,54 @@ void report_limited_evaluation_progress(
             ++state.window_reductions;
             ++state.total_reductions;
             report_limited_evaluation_progress(state);
+            if (state.window_reductions < state.step_limit &&
+                emscripten_get_now() - slice_started_at >=
+                    evaluation_slice_budget_ms) {
+                slice_budget_reached = true;
+                break;
+            }
+        }
+
+        auto const total_reductions = state.total_reductions;
+        if (slice_budget_reached) {
+            return {
+                true,
+                false,
+                false,
+                {},
+                {},
+                total_reductions,
+                true};
+        }
+
+        if (!state.check_at_limit) {
+            return {
+                true,
+                false,
+                false,
+                {},
+                {},
+                total_reductions,
+                true};
         }
 
         auto const limit_reached =
             combdsl::detail::has_next_redex(
                 state.expression, options);
+        if (limit_reached) {
+            return {
+                true,
+                false,
+                false,
+                {},
+                {},
+                total_reductions,
+                true};
+        }
+
         state.expression.print_to(output);
         output << '\n';
-        auto const total_reductions = state.total_reductions;
-        if (!limit_reached) {
-            reset_limited_evaluation();
-        }
+        reset_limited_evaluation();
         return {
             true,
             false,
@@ -286,7 +329,7 @@ void report_limited_evaluation_progress(
             output.str(),
             {},
             total_reductions,
-            limit_reached};
+            false};
     } catch (std::exception const& error) {
         reset_limited_evaluation();
         return {false, false, true, {}, error.what()};
@@ -304,7 +347,8 @@ void report_limited_evaluation_progress(
 [[nodiscard]] evaluation_result begin_limited_eval_input(
     std::string const& source,
     std::size_t request_id,
-    std::size_t step_limit) {
+    std::size_t step_limit,
+    bool check_at_limit) {
     reset_limited_evaluation();
     if (step_limit == 0) {
         return {
@@ -331,7 +375,8 @@ void report_limited_evaluation_progress(
         }
 
         limited_evaluation.emplace(
-            std::move(parsed.expression), request_id, step_limit);
+            std::move(parsed.expression), request_id, step_limit,
+            check_at_limit);
         return continue_limited_eval_input(request_id);
     } catch (std::exception const& error) {
         reset_limited_evaluation();
@@ -344,7 +389,9 @@ void report_limited_evaluation_progress(
 }
 
 [[nodiscard]] evaluation_result resume_limited_eval_input(
-    std::size_t request_id) {
+    std::size_t request_id,
+    std::size_t step_limit,
+    bool check_at_limit) {
     if (!limited_evaluation ||
         limited_evaluation->request_id != request_id) {
         return {
@@ -354,7 +401,17 @@ void report_limited_evaluation_progress(
             {},
             "no matching evaluation is ready to resume"};
     }
+    if (step_limit == 0) {
+        return {
+            false,
+            false,
+            false,
+            {},
+            "step limit must be greater than zero"};
+    }
 
+    limited_evaluation->step_limit = step_limit;
+    limited_evaluation->check_at_limit = check_at_limit;
     limited_evaluation->window_reductions = 0;
     return continue_limited_eval_input(request_id);
 }
@@ -366,7 +423,7 @@ void report_limited_evaluation_progress(
     std::size_t step_limit) {
     if (step_limit_enabled) {
         return begin_limited_eval_input(
-            source, request_id, step_limit);
+            source, request_id, step_limit, true);
     }
 
     std::istringstream input;

@@ -770,7 +770,7 @@ expression produces no output, while malformed or empty lines throw
 The `crepl` executable applies `input_escape` to each line before passing it to
 `parse_eval`, so ordinary quoted words and backslashes can be entered directly.
 When standard output is a terminal, it first prints
-`Combinator Read-Eval-Print Loop, version 2.6.5`. Long evaluations display
+`Combinator Read-Eval-Print Loop, version 2.6.6`. Long evaluations display
 the accumulated step count every 1,000 reductions by overwriting one status
 line; the line is cleared before evaluation output is printed. Its interactive
 prompt is `>`. Interactive input uses GNU Readline, so previous nonempty
@@ -1078,8 +1078,10 @@ python3 -m http.server 8000 --directory docs
 The web page is static and does not use `emrun`.
 Loading through `file://` is not supported because
 the page starts a Web Worker and fetches `combdsl.wasm`; opening the file
-directly displays the required HTTP-server command. Cancel terminates and
-recreates the worker, so a non-normalizing expression does not freeze the page.
+directly displays the required HTTP-server command. Pause stops an evaluation
+at a safe boundary and opens a dialog where it can be resumed or cancelled.
+Cancelling terminates and recreates the worker, so a non-normalizing expression
+does not freeze the page.
 
 The Combinator Expression box is a scrollable history with the current editable
 input at the bottom. Successful commands and expressions that reach normal form
@@ -1112,8 +1114,8 @@ available, Tab keeps its normal browser focus behavior. Studio accepts the same
 Without `all`, it stops at the first size with
 answers; with `all`, it continues through the full range. Every answer
 is shown as `?=<bird_expression>`, and a no-match message is red. A search
-ignores the stepping and color modes, displays `Searching…`, and can be stopped
-with Cancel; cancelling restarts the worker while preserving user definitions.
+ignores the stepping and color modes and displays `Searching…`. Pause stops a
+search; Resume restarts that search in the same Results entry.
 
 Reference mode is controlled by typing `references captured` or
 `references live` in the Combinator Expression box; Studio deliberately has no
@@ -1142,8 +1144,9 @@ results area with a blank line between them.
 The Key Step button starts a
 manual reduction session: after submitting an expression, each ordinary
 keypress performs exactly one `single_step`. The keypress that performs the
-final reduction also ends the session; Cancel ends it at any time. The Single
-Step and Key Step modes are mutually exclusive.
+final reduction also ends the session. Pause opens a dialog where the session
+can be resumed or cancelled. The Single Step and Key Step modes are mutually
+exclusive.
 
 The independent Basis Step
 button controls whether either stepping mode exposes a saturated named basis
@@ -1160,8 +1163,11 @@ arguments remain uncolored. After the final colorized reduction, the normal
 form is printed without color at the left margin. The browser prints the
 submitted starting expression immediately, then appends the output beneath it.
 
-The Cancel button is active when not stepping or when Single Step is on.
-Clicking on it aborts a long-running or infinite-looping reduction.
+The Pause button is active while Studio is processing an expression or command.
+Clicking it requests a pause and disables the button until the worker confirms
+that it has stopped at a safe boundary. The resulting Paused dialog keeps the
+same evaluation and Results entry: Resume continues from that point, while
+Cancel ends the evaluation and appends `[cancelled]`.
 
 The Save button downloads the replayable `set_list()` journal as
 `set_list.cmb`, with explicit arities and user-facing quoting that can be

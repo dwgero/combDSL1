@@ -362,9 +362,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             color: #c33;
         }
     </style>
-    <script src="./evaluation_watchdog.js?v=2.6.5" defer></script>
-    <script src="./input_history.js?v=2.6.5" defer></script>
-    <script src="./app.js?v=2.6.5" defer></script>
+    <script src="./evaluation_watchdog.js?v=2.6.6" defer></script>
+    <script src="./input_history.js?v=2.6.6" defer></script>
+    <script src="./app.js?v=2.6.6" defer></script>
 </head>
 <body>
     <main aria-labelledby="studio-title">
@@ -395,7 +395,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
                     aria-pressed="false" disabled>Basis Step</button>
                 <button id="colorize" type="button"
                     aria-pressed="false" disabled>Colorize</button>
-                <button id="cancel" type="button" disabled>Cancel</button>
+                <button id="cancel" type="button" aria-haspopup="dialog"
+                    aria-controls="step-limit-dialog" disabled>Pause</button>
                 <a id="save" class="button-link" role="button"
                     aria-label="Save combinator journal"
                     aria-disabled="true"
@@ -444,7 +445,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
         <h2 id="step-limit-title">Step limit reached</h2>
         <p id="step-limit-message" class="dialog-message"></p>
         <form method="dialog" class="dialog-controls">
-            <button type="submit" value="cancel">Cancel</button>
+            <button id="step-limit-cancel" type="submit"
+                value="cancel">Cancel</button>
             <button id="step-limit-resume" type="submit"
                 value="resume">Resume</button>
         </form>
@@ -456,14 +458,15 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             <dt>Single Step</dt>
             <dd>
                 Runs automatically and displays every reduction until normal
-                form is reached or Cancel is selected.
+                form is reached or Pause is selected. A paused evaluation can
+                be resumed or cancelled.
             </dd>
             <dt>Key Step</dt>
             <dd>
                 Pauses after initial expression scanning. Press any ordinary
                 key for exactly one reduction. When that reduction reaches
-                normal form, the session ends immediately. Cancel also ends
-                the reduction.
+                normal form, the session ends immediately. Pause opens a
+                dialog where the reduction can be resumed or cancelled.
             </dd>
             <dt>Basis Step</dt>
             <dd>
@@ -665,9 +668,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             size from one through <code>num</code> is searched and every answer
             is displayed. For example, <code>find 2 ?xy = x(yx)</code> finds
             <code>?=A</code> at size one and stops; adding <code>all</code>
-            also searches size two. A search through four birds may take minutes
-            and can be stopped with Cancel. Y is excluded from the search
-            catalog. Matching uses bounded normalization, so the red
+            also searches size two. A search through four birds may take
+            minutes. Pause stops a search; Resume restarts that search in the
+            same Results entry. Y is excluded from the search catalog.
+            Matching uses bounded normalization, so the red
             <code>No match within search bounds</code> response does not prove
             that no equivalent expression exists.
         </div>
@@ -794,7 +798,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             data-dialog-initial-focus>About</h2>
         <div class="license-text">
             <!-- Keep this version and the app.js cache key in sync. -->
-            <p>Combinator Studio, version 2.6.5<br>
+            <p>Combinator Studio, version 2.6.6<br>
                 Part of the C++ Combinator DSL<br>
                 Copyright (C) 2026  David W. Gero</p>
             <p>This program is free software: you can redistribute it and/or modify

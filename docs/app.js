@@ -136,6 +136,8 @@
         "#replacement-replace");
     const stepLimitDialog = document.querySelector(
         "#step-limit-dialog");
+    const stepLimitDialogTitle = document.querySelector(
+        "#step-limit-title");
     const stepLimitDialogMessage = document.querySelector(
         "#step-limit-message");
     const stepLimitResume = document.querySelector(
@@ -189,7 +191,9 @@
         basisStep.disabled = !ready || busy;
         keyStep.disabled = !ready || busy;
         colorize.disabled = !ready || busy;
-        cancel.disabled = !evaluating;
+        cancel.disabled = !evaluating || workerStarting ||
+            activeRequest.pauseRequested ||
+            activeRequest.awaitingPause;
         const saveDisabled = !ready || busy;
         save.setAttribute("aria-disabled", String(saveDisabled));
         save.tabIndex = saveDisabled ? -1 : 0;
@@ -324,7 +328,7 @@
 
     const armEvaluationWatchdog = (request, waitMs) => {
         clearEvaluationWatchdog(request);
-        if (request.keyStep || request.awaitingStepLimit ||
+        if (request.keyStep || request.awaitingPause ||
             document.hidden) {
             return;
         }
@@ -350,7 +354,7 @@
         if (document.hidden ||
             request?.evaluationWorker !== worker ||
             request.evaluationGeneration !== generation ||
-            request.keyStep || request.awaitingStepLimit) {
+            request.keyStep || request.awaitingPause) {
             return;
         }
         armEvaluationWatchdog(
@@ -537,11 +541,19 @@
         updateControls();
     };
 
-    const completeWorkerStartup = setList => {
+    const completeWorkerStartup = (
+        setList,
+        requestToResume,
+    ) => {
         updateSavedSetList(setList);
         workerStarting = false;
         ready = true;
         status.textContent = "Ready";
+        if (requestToResume !== undefined &&
+            activeRequest === requestToResume) {
+            beginRequestEvaluation(requestToResume);
+            return;
+        }
         if (submitWhenReady) {
             submitWhenReady = false;
             form.requestSubmit();
@@ -553,6 +565,11 @@
 
     const beginRequestEvaluation = request => {
         if (activeRequest !== request) {
+            return;
+        }
+        if (request.pauseRequested) {
+            request.resumeBeforeEvaluation = true;
+            pauseEvaluation(request, "manual");
             return;
         }
         if (request.outputEntry === undefined) {
@@ -570,6 +587,11 @@
         afterNextPaint(() => {
             if (activeRequest !== request ||
                 worker !== evaluationWorker) {
+                return;
+            }
+            if (request.pauseRequested) {
+                request.resumeBeforeEvaluation = true;
+                pauseEvaluation(request, "manual");
                 return;
             }
             if (!request.keyStep && !request.findCommand) {
@@ -630,7 +652,7 @@
 
     const dismissStepLimitDialog = () => {
         if (stepLimitRequest !== undefined) {
-            stepLimitRequest.awaitingStepLimit = false;
+            stepLimitRequest.awaitingPause = false;
         }
         stepLimitRequest = undefined;
         if (stepLimitDialog.open) {
@@ -638,7 +660,7 @@
         }
     };
 
-    const pauseAtStepLimit = request => {
+    const pauseEvaluation = (request, reason) => {
         if (activeRequest !== request) {
             return;
         }
@@ -647,13 +669,23 @@
         request.evaluationStarted = false;
         request.stepReady = false;
         request.stepPending = false;
-        request.awaitingStepLimit = true;
+        request.pauseRequested = false;
+        request.awaitingPause = true;
+        request.pauseReason = reason;
         stepLimitRequest = request;
-        stepLimitDialogMessage.textContent =
-            "Step limit reached after " + request.stepLimit + " " +
-            (request.stepLimit === 1 ? "step." : "steps.");
+        const stepLimitReached = reason === "step-limit";
+        stepLimitDialogTitle.textContent = stepLimitReached
+            ? "Step limit reached"
+            : "Paused";
+        stepLimitDialogMessage.textContent = stepLimitReached
+            ? "Step limit reached after " + request.stepLimit + " " +
+                (request.stepLimit === 1 ? "step." : "steps.")
+            : "";
+        stepLimitDialogMessage.hidden = !stepLimitReached;
         stepLimitDialog.returnValue = "";
-        status.textContent = "Step limit reached";
+        status.textContent = stepLimitReached
+            ? "Step limit reached"
+            : "Paused";
         stepLimitDialog.showModal();
         stepLimitResume.focus({preventScroll: true});
         afterNextPaint(() => {
@@ -662,6 +694,10 @@
             }
         });
         updateControls();
+    };
+
+    const pauseAtStepLimit = request => {
+        pauseEvaluation(request, "step-limit");
     };
 
     const saveSetListWithPicker = async () => {
@@ -709,7 +745,10 @@
         updateControls();
     };
 
-    const startWorker = (setListToRestore = "") => {
+    const startWorker = (
+        setListToRestore = "",
+        requestToResume,
+    ) => {
         clearEvaluationWatchdog(activeRequest);
         dismissReplacementDialog();
         dismissStepLimitDialog();
@@ -719,7 +758,7 @@
         let restoreRequestId;
         workerStarting = true;
         ready = false;
-        activeRequest = undefined;
+        activeRequest = requestToResume;
         loadRequest = undefined;
         status.textContent = "Loading WebAssembly…";
         updateControls();
@@ -744,6 +783,22 @@
             }
 
             const message = event.data;
+            if (message.type === "paused" &&
+                message.id === activeRequest?.id &&
+                activeRequest.pauseRequested) {
+                const request = activeRequest;
+                if (!request.singleStep && !request.keyStep &&
+                    !request.findCommand &&
+                    Number.isFinite(Number(message.reductions))) {
+                    updateEvaluationProgress(
+                        request,
+                        Number(message.reductions),
+                        {exact: true});
+                }
+                pauseEvaluation(request, "manual");
+                return;
+            }
+
             if (message.type === "eval-started" &&
                 message.id === activeRequest?.id &&
                 !activeRequest.keyStep &&
@@ -789,7 +844,8 @@
                     });
                     return;
                 }
-                completeWorkerStartup(message.setList);
+                completeWorkerStartup(
+                    message.setList, requestToResume);
                 return;
             }
 
@@ -803,14 +859,15 @@
                     status.textContent = "Could not restore definitions";
                     appendOutput(
                         "Could not restore saved definitions after " +
-                            `cancellation:\n${message.result.error}`,
+                            `restarting the worker:\n${message.result.error}`,
                         "error",
                     );
                     updateControls();
                     return;
                 }
 
-                completeWorkerStartup(message.setList);
+                completeWorkerStartup(
+                    message.setList, requestToResume);
                 return;
             }
 
@@ -902,9 +959,13 @@
                 activeRequest.keyStep) {
                 const request = activeRequest;
                 if (message.result.success) {
-                    request.stepReady = true;
-                    status.textContent = "Press a key for the next step";
-                    focusSourceAfterNextPaint();
+                    if (!request.pauseRequested &&
+                        !request.awaitingPause) {
+                        request.stepReady = true;
+                        status.textContent =
+                            "Press a key for the next step";
+                        focusSourceAfterNextPaint();
+                    }
                 } else {
                     activeRequest = undefined;
                     status.textContent = "Ready";
@@ -1164,7 +1225,11 @@
             stepPending: false,
             displayedSteps: 0,
             awaitingReplacement: false,
-            awaitingStepLimit: false,
+            pauseRequested: false,
+            awaitingPause: false,
+            pauseReason: undefined,
+            resumeBeforeEvaluation: false,
+            restartOnResume: false,
             operateAndGetNext,
             outputEntry: beginEvaluationOutput(startingExpression),
         };
@@ -1297,10 +1362,24 @@
     });
 
     cancel.addEventListener("click", () => {
-        if (activeRequest === undefined) {
+        if (activeRequest === undefined ||
+            activeRequest.pauseRequested ||
+            activeRequest.awaitingPause) {
             return;
         }
-        cancelAndRestart(activeRequest);
+        activeRequest.pauseRequested = true;
+        activeRequest.stepReady = false;
+        status.textContent = "Pausing…";
+        worker.postMessage({
+            type: "pause",
+            id: activeRequest.id,
+        });
+        if (activeRequest.findCommand) {
+            terminateWorker();
+            activeRequest.restartOnResume = true;
+            pauseEvaluation(activeRequest, "manual");
+        }
+        updateControls();
     });
 
     const configureDialog = (button, dialog) => {
@@ -1395,13 +1474,23 @@
         stepLimitRequest = undefined;
         if (request === undefined ||
             activeRequest !== request ||
-            !request.awaitingStepLimit) {
+            !request.awaitingPause) {
             return;
         }
 
-        request.awaitingStepLimit = false;
+        request.awaitingPause = false;
         if (stepLimitDialog.returnValue === "resume") {
             status.textContent = "Resuming…";
+            if (request.resumeBeforeEvaluation) {
+                request.resumeBeforeEvaluation = false;
+                beginRequestEvaluation(request);
+                return;
+            }
+            if (request.restartOnResume) {
+                request.restartOnResume = false;
+                startWorker(savedSetList, request);
+                return;
+            }
             worker.postMessage({type: "resume", id: request.id});
             updateControls();
             return;

@@ -22,6 +22,8 @@ import test from "node:test";
 import vm from "node:vm";
 
 const sourceUrl = new URL("../web/app.js", import.meta.url);
+const indexUrl = new URL("../web/index.html", import.meta.url);
+const indexSource = readFileSync(indexUrl, "utf8");
 const evaluationWatchdogUrl = new URL(
     "../web/evaluation_watchdog.js", import.meta.url);
 const evaluationWatchdogContext = vm.createContext({});
@@ -252,6 +254,7 @@ const createHarness = ({historyValues = [], watchdog} = {}) => {
         "save",
         "load",
         "replacement-replace",
+        "step-limit-cancel",
         "step-limit-resume",
         "help",
         "combinator-info",
@@ -268,6 +271,7 @@ const createHarness = ({historyValues = [], watchdog} = {}) => {
         "replacement-dialog",
         "replacement-message",
         "step-limit-dialog",
+        "step-limit-title",
         "step-limit-message",
         "help-dialog",
         "combinator-info-dialog",
@@ -281,6 +285,10 @@ const createHarness = ({historyValues = [], watchdog} = {}) => {
     for (const id of buttons) {
         elements.set(id, new FakeButtonElement());
     }
+    elements.get("cancel").textContent = "Pause";
+    elements.get("step-limit-title").textContent = "Step limit reached";
+    elements.get("step-limit-cancel").textContent = "Cancel";
+    elements.get("step-limit-resume").textContent = "Resume";
 
     const document = new FakeEventTarget();
     document.baseURI = "https://example.test/combdsl/index.html";
@@ -361,6 +369,18 @@ const createHarness = ({historyValues = [], watchdog} = {}) => {
         filename: sourceUrl.pathname,
     }).runInContext(context);
 
+    const stepLimitDialog = elements.get("step-limit-dialog");
+    elements.get("step-limit-cancel").addEventListener("click", () => {
+        if (stepLimitDialog.open) {
+            stepLimitDialog.close("cancel");
+        }
+    });
+    elements.get("step-limit-resume").addEventListener("click", () => {
+        if (stepLimitDialog.open) {
+            stepLimitDialog.close("resume");
+        }
+    });
+
     return {
         element: id => elements.get(id),
         flushAnimationFrames() {
@@ -373,6 +393,18 @@ const createHarness = ({historyValues = [], watchdog} = {}) => {
             elements.get("source").dispatch("keydown", {
                 key: "Enter",
                 isComposing: false,
+            });
+        },
+        pressStepKey(key = "x") {
+            document.dispatch("keydown", {
+                altKey: false,
+                ctrlKey: false,
+                isComposing: false,
+                key,
+                metaKey: false,
+                repeat: false,
+                shiftKey: false,
+                target: elements.get("source"),
             });
         },
         selection,
@@ -434,6 +466,271 @@ const beginLimitedEvaluation = (harness, limit, expression) => {
     };
 };
 
+const beginPausableEvaluation = (
+    harness,
+    {expression = "BKM(BKM)", steppingMode} = {},
+) => {
+    const source = harness.element("source");
+    const worker = harness.workers[0];
+    const pause = harness.element("cancel");
+
+    worker.send({type: "ready", setList: ""});
+    harness.flushAnimationFrames();
+    assert.equal(pause.textContent, "Pause");
+    assert.equal(pause.disabled, true);
+    if (steppingMode !== undefined) {
+        harness.element(steppingMode).click();
+    }
+
+    source.value = expression;
+    harness.pressEnter();
+    harness.flushAnimationFrames();
+    const inspection = worker.messages.filter(
+        message => message.type === "inspect-definition").at(-1);
+    worker.send({
+        type: "definition-inspection-result",
+        id: inspection.id,
+        result: {
+            success: true,
+            definition: false,
+            displayOnly: false,
+            showAll: false,
+            find: false,
+            replacement: "",
+        },
+    });
+    harness.flushAnimationFrames();
+    const evaluation = worker.messages.filter(
+        message => message.type === "evaluate").at(-1);
+    assert.equal(evaluation.source, expression);
+    assert.equal(
+        evaluation.singleStep,
+        steppingMode === "single-step",
+    );
+    assert.equal(evaluation.keyStep, steppingMode === "key-step");
+    if (steppingMode === "key-step") {
+        worker.send({
+            type: "step-ready",
+            id: inspection.id,
+            result: {success: true},
+        });
+    } else {
+        worker.send({type: "eval-started", id: inspection.id});
+    }
+    assert.equal(pause.disabled, false);
+
+    return {
+        evaluation,
+        outputEntry: harness.element("output").lastElementChild,
+        requestId: inspection.id,
+        source,
+        worker,
+    };
+};
+
+const beginFindEvaluation = (
+    harness,
+    {
+        expression = "find ?xy = x(yx)",
+        setList = "set userBird = 1 I\n",
+    } = {},
+) => {
+    const source = harness.element("source");
+    const worker = harness.workers[0];
+
+    worker.send({type: "ready", setList});
+    harness.flushAnimationFrames();
+    source.value = expression;
+    harness.pressEnter();
+    harness.flushAnimationFrames();
+    const inspection = worker.messages.filter(
+        message => message.type === "inspect-definition").at(-1);
+    worker.send({
+        type: "definition-inspection-result",
+        id: inspection.id,
+        result: {
+            success: true,
+            definition: false,
+            displayOnly: true,
+            showAll: false,
+            find: true,
+            replacement: "",
+        },
+    });
+    harness.flushAnimationFrames();
+    const evaluation = worker.messages.filter(
+        message => message.type === "evaluate").at(-1);
+    assert.equal(evaluation.source, expression);
+    assert.equal(evaluation.singleStep, false);
+    assert.equal(evaluation.keyStep, false);
+
+    return {
+        expression,
+        outputEntry: harness.element("output").lastElementChild,
+        requestId: inspection.id,
+        setList,
+        worker,
+    };
+};
+
+const requestPause = (harness, worker, requestId) => {
+    const dialog = harness.element("step-limit-dialog");
+    const pause = harness.element("cancel");
+    pause.click();
+    const pauseRequest = worker.messages.at(-1);
+    assert.equal(pauseRequest.type, "pause");
+    assert.equal(pauseRequest.id, requestId);
+    assert.equal(worker.terminated, false);
+    assert.equal(dialog.open, false,
+        "the dialog must wait for the worker's paused acknowledgement");
+    assert.equal(pause.disabled, true,
+        "Pause must be disabled while its acknowledgement is pending");
+
+    worker.send({type: "paused", id: requestId});
+    assert.equal(dialog.open, true);
+    assert.equal(harness.element("step-limit-title").textContent, "Paused");
+    assert.equal(harness.element("step-limit-cancel").textContent, "Cancel");
+    assert.equal(harness.element("step-limit-resume").textContent, "Resume");
+    assert.equal(pause.disabled, true,
+        "Pause must remain disabled while the evaluation is paused");
+    return dialog;
+};
+
+const pauseAndCancel = (harness, worker, requestId) => {
+    requestPause(harness, worker, requestId);
+    harness.element("step-limit-cancel").click();
+};
+
+test("labels the active-evaluation control Pause", () => {
+    assert.match(
+        indexSource,
+        /<button id="cancel"[^>]*>\s*Pause\s*<\/button>/,
+    );
+    assert.match(
+        indexSource,
+        /<button id="step-limit-cancel"[^>]*>\s*Cancel\s*<\/button>/,
+    );
+    assert.match(
+        indexSource,
+        /<button id="step-limit-resume"[^>]*>\s*Resume\s*<\/button>/,
+    );
+});
+
+for (const [description, steppingMode] of [
+    ["ordinary evaluation", undefined],
+    ["automatic Single Step", "single-step"],
+]) {
+    test(`pauses and resumes the same ${description}`, () => {
+        const harness = createHarness();
+        const {outputEntry, requestId, source, worker} =
+            beginPausableEvaluation(harness, {steppingMode});
+
+        requestPause(harness, worker, requestId);
+        assert.strictEqual(
+            harness.element("output").lastElementChild,
+            outputEntry,
+        );
+        harness.element("step-limit-resume").click();
+
+        const resume = worker.messages.at(-1);
+        assert.equal(resume.type, "resume");
+        assert.equal(resume.id, requestId);
+        assert.equal(worker.terminated, false);
+        assert.equal(harness.element("step-limit-dialog").open, false);
+        assert.strictEqual(
+            harness.element("output").lastElementChild,
+            outputEntry,
+        );
+        assert.equal(
+            childElements(outputEntry).some(
+                element => element.dataset.kind === "error"),
+            false,
+            "Resume must not add a cancellation notice",
+        );
+
+        worker.send({type: "eval-started", id: requestId});
+        worker.send({
+            type: "result",
+            id: requestId,
+            result: {
+                success: true,
+                definition: false,
+                recoverWorker: false,
+                output: "normal form\n",
+                error: "",
+                reductions: 42,
+                limitReached: false,
+            },
+        });
+        assert.strictEqual(
+            harness.element("output").lastElementChild,
+            outputEntry,
+            "Resume must finish the preserved Results entry",
+        );
+        assert.equal(outputEntry.textContent, "BKM(BKM)\nnormal form");
+        assert.equal(source.readOnly, false);
+    });
+}
+
+test("Pause dialog Cancel cancels the preserved evaluation", () => {
+    const harness = createHarness();
+    const {outputEntry, requestId, worker} = beginPausableEvaluation(harness);
+
+    pauseAndCancel(harness, worker, requestId);
+
+    assert.equal(worker.terminated, true);
+    assert.equal(harness.workers.length, 2);
+    assert.strictEqual(harness.element("output").lastElementChild, outputEntry);
+    assert.equal(outputEntry.textContent, "BKM(BKM)\n[cancelled]");
+    assert.equal(
+        outputEntry.textContent.split("[cancelled]").length - 1,
+        1,
+        "Cancel must add the cancellation text exactly once",
+    );
+    assertRedNotice(outputEntry, "[cancelled]");
+});
+
+test("pauses and resumes Key Step while it awaits a key", () => {
+    const harness = createHarness();
+    const {outputEntry, requestId, worker} = beginPausableEvaluation(
+        harness,
+        {expression: "IIx", steppingMode: "key-step"},
+    );
+
+    requestPause(harness, worker, requestId);
+    harness.element("step-limit-resume").click();
+    const resume = worker.messages.at(-1);
+    assert.equal(resume.type, "resume");
+    assert.equal(resume.id, requestId);
+    assert.equal(worker.terminated, false);
+
+    worker.send({
+        type: "step-ready",
+        id: requestId,
+        result: {success: true},
+    });
+    harness.pressStepKey();
+    const step = worker.messages.at(-1);
+    assert.equal(step.type, "step");
+    assert.equal(step.id, requestId);
+    worker.send({
+        type: "step-result",
+        id: requestId,
+        result: {
+            success: true,
+            reduced: true,
+            complete: true,
+            definition: false,
+            output: "x\n",
+            error: "",
+            limitReached: false,
+        },
+    });
+
+    assert.strictEqual(harness.element("output").lastElementChild, outputEntry);
+    assert.equal(outputEntry.textContent, "IIx\nx");
+});
+
 test("keeps selected history text while blank clicks focus input", () => {
     const harness = createHarness();
     const source = harness.element("source");
@@ -491,8 +788,9 @@ test("replays a submission after cancellation and definition restore", () => {
             message => message.type === "evaluate").length,
         1,
     );
+    firstWorker.send({type: "eval-started", id: firstInspection.id});
 
-    harness.element("cancel").click();
+    pauseAndCancel(harness, firstWorker, firstInspection.id);
     assert.equal(firstWorker.terminated, true);
     assert.equal(harness.workers.length, 2);
     assertRedNotice(harness.element("output"), "[cancelled]");
@@ -843,7 +1141,8 @@ test("routes typed references commands as silent saved definitions", () => {
             },
         });
         harness.flushAnimationFrames();
-        harness.element("cancel").click();
+        worker.send({type: "eval-started", id: pendingInspection.id});
+        pauseAndCancel(harness, worker, pendingInspection.id);
 
         assert.equal(worker.terminated, true);
         assert.equal(harness.workers.length, 2);
@@ -964,7 +1263,7 @@ test("applies and disables a typed step limit for later evaluations", () => {
 
     harness.flushAnimationFrames();
     assert.equal(stepLimitResume.focusCount, 2);
-    stepLimitDialog.close("resume");
+    stepLimitResume.click();
     assert.equal(worker.messages.at(-1).type, "resume");
     assert.equal(worker.messages.at(-1).id, expressionInspection.id);
     assert.equal(worker.terminated, false);
@@ -1317,7 +1616,7 @@ test("keeps the step limit when cancellation replaces the worker", () => {
         "reaching the step limit must not change Results",
     );
     assert.strictEqual(output.lastElementChild, expressionOutputEntry);
-    stepLimitDialog.close("cancel");
+    harness.element("step-limit-cancel").click();
 
     assert.equal(firstWorker.terminated, true);
     assert.strictEqual(output.lastElementChild, expressionOutputEntry);
@@ -1396,6 +1695,109 @@ test("routes find as an unstepped cancellable search", () => {
     assert.equal(evaluation.basisStep, false);
     assert.equal(evaluation.colorize, false);
     assert.equal(harness.element("cancel").disabled, false);
+});
+
+test("Pause restarts and resumes Find in its original Results entry", () => {
+    const harness = createHarness();
+    const {expression, outputEntry, requestId, setList, worker} =
+        beginFindEvaluation(harness);
+    const outputBeforePause = harness.element("output").textContent;
+
+    harness.element("cancel").click();
+
+    const pause = worker.messages.at(-1);
+    assert.equal(pause.type, "pause");
+    assert.equal(pause.id, requestId);
+    assert.equal(worker.terminated, true,
+        "Find cannot cooperate, so Pause must stop its worker immediately");
+    assert.equal(harness.workers.length, 1,
+        "the replacement worker must wait until Resume");
+    assert.equal(harness.element("step-limit-dialog").open, true);
+    assert.equal(harness.element("step-limit-title").textContent, "Paused");
+    assert.strictEqual(harness.element("output").lastElementChild, outputEntry);
+    assert.equal(harness.element("output").textContent, outputBeforePause);
+    assert.equal(
+        harness.element("output").textContent.includes("[cancelled]"),
+        false,
+    );
+    assert.equal(harness.element("source-history").textContent, "");
+
+    harness.element("step-limit-resume").click();
+
+    assert.equal(harness.workers.length, 2);
+    const replacementWorker = harness.workers[1];
+    assert.equal(replacementWorker.terminated, false);
+    assert.strictEqual(harness.element("output").lastElementChild, outputEntry);
+    assert.equal(harness.element("output").textContent, outputBeforePause);
+    replacementWorker.send({type: "ready", setList: ""});
+    const restore = replacementWorker.messages.find(
+        message => message.type === "load");
+    assert.equal(restore.source, setList);
+    assert.equal(
+        replacementWorker.messages.some(
+            message => message.type === "evaluate"),
+        false,
+        "Find must wait for saved definitions to be restored",
+    );
+
+    replacementWorker.send({
+        type: "load-result",
+        id: restore.id,
+        setList,
+        result: {success: true},
+    });
+    harness.flushAnimationFrames();
+    const replay = replacementWorker.messages.filter(
+        message => message.type === "evaluate").at(-1);
+    assert.equal(replay.id, requestId);
+    assert.equal(replay.source, expression);
+    assert.equal(replay.singleStep, false);
+    assert.equal(replay.keyStep, false);
+    assert.equal(
+        replacementWorker.messages.some(
+            message => message.type === "inspect-definition"),
+        false,
+        "the preserved Find request must resume without a new entry or scan",
+    );
+    assert.strictEqual(harness.element("output").lastElementChild, outputEntry);
+    assert.equal(harness.element("output").textContent, outputBeforePause);
+
+    replacementWorker.send({
+        type: "result",
+        id: requestId,
+        result: {
+            success: true,
+            definition: false,
+            recoverWorker: false,
+            output: "?=A\n",
+            error: "",
+            reductions: 0,
+        },
+    });
+    assert.strictEqual(harness.element("output").lastElementChild, outputEntry);
+    assert.equal(outputEntry.textContent, `${expression}\n?=A`);
+    assert.equal(harness.element("source-history").textContent, expression);
+    assert.equal(outputEntry.textContent.includes("[cancelled]"), false);
+});
+
+test("Pause dialog Cancel cancels a stopped Find", () => {
+    const harness = createHarness();
+    const {expression, outputEntry, worker} = beginFindEvaluation(harness);
+
+    harness.element("cancel").click();
+    assert.equal(worker.terminated, true);
+    assert.equal(harness.element("step-limit-dialog").open, true);
+    harness.element("step-limit-cancel").click();
+
+    assert.equal(harness.workers.length, 2);
+    assert.strictEqual(harness.element("output").lastElementChild, outputEntry);
+    assert.equal(outputEntry.textContent, `${expression}\n[cancelled]`);
+    assert.equal(
+        outputEntry.textContent.split("[cancelled]").length - 1,
+        1,
+    );
+    assertRedNotice(outputEntry, "[cancelled]");
+    assertRedNotice(harness.element("source-history"), "[cancelled]");
 });
 
 test("renders a find no-match response as a red notice", () => {

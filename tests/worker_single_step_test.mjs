@@ -326,25 +326,47 @@ test("colorized Basis Key Step keeps completion look-ahead", async () => {
     assert.equal(result.result.output, markedOutput);
 });
 
-test("passes a disabled step limit to ordinary evaluation", async () => {
+test("runs ordinary evaluation in cooperative slices", async () => {
+    let beginCalls = 0;
+    let resumeCalls = 0;
+    const results = [
+        {
+            success: true,
+            definition: false,
+            recoverWorker: false,
+            output: "Ix\n",
+            error: "",
+            reductions: 1,
+            limitReached: true,
+        },
+        {
+            success: true,
+            definition: false,
+            recoverWorker: false,
+            output: "x\n",
+            error: "",
+            reductions: 2,
+            limitReached: false,
+        },
+    ];
     const module = {
         setList: () => "",
-        parseEval: (
-            source, requestId, stepLimitEnabled, stepLimit,
+        beginLimitedEval: (
+            source, requestId, sliceLimit, checkAtLimit,
         ) => {
+            ++beginCalls;
             assert.equal(source, "Ix");
             assert.equal(requestId, 11);
-            assert.equal(stepLimitEnabled, false);
-            assert.equal(stepLimit, 0);
-            return {
-                success: true,
-                definition: false,
-                recoverWorker: false,
-                output: "x\n",
-                error: "",
-                reductions: 1,
-                limitReached: false,
-            };
+            assert.equal(sliceLimit, 1000);
+            assert.equal(checkAtLimit, false);
+            return results.shift();
+        },
+        resumeLimitedEval: (requestId, sliceLimit, checkAtLimit) => {
+            ++resumeCalls;
+            assert.equal(requestId, 11);
+            assert.equal(sliceLimit, 1000);
+            assert.equal(checkAtLimit, false);
+            return results.shift();
         },
     };
     const harness = await createWorkerHarness(module);
@@ -361,16 +383,108 @@ test("passes a disabled step limit to ordinary evaluation", async () => {
         stepLimit: 0,
     });
 
+    assert.deepEqual(
+        harness.messages.filter(message => message.id === 11)
+            .map(message => message.type),
+        ["eval-started"],
+        "an internal slice yield must not be exposed as a result",
+    );
+    assert.equal(harness.timers.size, 1);
+
+    harness.timers.runNext();
     const result = harness.messages.find(
         message => message.type === "result" && message.id === 11);
     assert.equal(result.result.output, "x\n");
     assert.equal(result.result.limitReached, false);
+    assert.equal(harness.timers.size, 0);
+    assert.equal(beginCalls, 1);
+    assert.equal(resumeCalls, 1);
+    assert.equal(results.length, 0);
 });
 
-test("resumes an ordinary limited evaluation without reparsing", async () => {
+test("checks normal form only at a configured limit boundary", async () => {
+    const sliceCalls = [];
+    const module = {
+        setList: () => "",
+        beginLimitedEval: (
+            source, requestId, sliceLimit, checkAtLimit,
+        ) => {
+            assert.equal(source, "long expression");
+            assert.equal(requestId, 18);
+            sliceCalls.push([sliceLimit, checkAtLimit]);
+            return {
+                success: true,
+                definition: false,
+                recoverWorker: false,
+                output: "",
+                error: "",
+                reductions: 1000,
+                limitReached: true,
+            };
+        },
+        resumeLimitedEval: (
+            requestId, sliceLimit, checkAtLimit,
+        ) => {
+            assert.equal(requestId, 18);
+            sliceCalls.push([sliceLimit, checkAtLimit]);
+            return {
+                success: true,
+                definition: false,
+                recoverWorker: false,
+                output: "",
+                error: "",
+                reductions: 1500,
+                limitReached: true,
+            };
+        },
+    };
+    const harness = await createWorkerHarness(module);
+
+    await harness.send({
+        type: "evaluate",
+        id: 18,
+        source: "long expression",
+        singleStep: false,
+        basisStep: false,
+        keyStep: false,
+        colorize: false,
+        stepLimitEnabled: true,
+        stepLimit: 1500,
+    });
+    assert.deepEqual(sliceCalls, [[1000, false]]);
+    assert.equal(
+        harness.messages.some(message =>
+            message.id === 18 && message.type === "result"),
+        false,
+    );
+
+    harness.timers.runNext();
+    assert.deepEqual(sliceCalls, [
+        [1000, false],
+        [500, true],
+    ]);
+    const result = harness.messages.find(
+        message => message.id === 18 && message.type === "result");
+    assert.equal(result.result.reductions, 1500);
+    assert.equal(result.result.limitReached, true);
+    assert.equal(harness.timers.size, 0);
+});
+
+test("preserves ordinary step-limit windows across internal slices", async () => {
     let beginCalls = 0;
     let resumeCalls = 0;
+    const resumeSliceLimits = [];
+    const resumeLimitChecks = [];
     const results = [
+        {
+            success: true,
+            definition: false,
+            recoverWorker: false,
+            output: "I(I(I(Ix)))\n",
+            error: "",
+            reductions: 1,
+            limitReached: true,
+        },
         {
             success: true,
             definition: false,
@@ -378,6 +492,15 @@ test("resumes an ordinary limited evaluation without reparsing", async () => {
             output: "I(I(Ix))\n",
             error: "",
             reductions: 2,
+            limitReached: true,
+        },
+        {
+            success: true,
+            definition: false,
+            recoverWorker: false,
+            output: "I(Ix)\n",
+            error: "",
+            reductions: 3,
             limitReached: true,
         },
         {
@@ -402,17 +525,22 @@ test("resumes an ordinary limited evaluation without reparsing", async () => {
     const module = {
         setList: () => "",
         beginLimitedEval: (
-            source, requestId, stepLimit,
+            source, requestId, stepLimit, checkAtLimit,
         ) => {
             ++beginCalls;
             assert.equal(source, "I(I(I(I(Ix))))");
             assert.equal(requestId, 12);
             assert.equal(stepLimit, 2);
+            assert.equal(checkAtLimit, true);
             return results.shift();
         },
-        resumeLimitedEval: requestId => {
+        resumeLimitedEval: (
+            requestId, sliceLimit, checkAtLimit,
+        ) => {
             ++resumeCalls;
             assert.equal(requestId, 12);
+            resumeSliceLimits.push(sliceLimit);
+            resumeLimitChecks.push(checkAtLimit);
             return results.shift();
         },
     };
@@ -434,18 +562,35 @@ test("resumes an ordinary limited evaluation without reparsing", async () => {
         message => message.id === 12);
     assert.deepEqual(
         evaluationMessages.map(message => message.type),
+        ["eval-started"],
+        "the first internal slice yield must remain internal",
+    );
+    assert.equal(harness.timers.size, 1);
+
+    harness.timers.runNext();
+    evaluationMessages = harness.messages.filter(
+        message => message.id === 12);
+    assert.deepEqual(
+        evaluationMessages.map(message => message.type),
         ["eval-started", "result"],
     );
     assert.equal(evaluationMessages.at(-1).result.output, "I(I(Ix))\n");
     assert.equal(evaluationMessages.at(-1).result.reductions, 2);
     assert.equal(evaluationMessages.at(-1).result.limitReached, true);
+    assert.equal(harness.timers.size, 0);
 
     const messageCountBeforeStaleResume = harness.messages.length;
     await harness.send({type: "resume", id: 99});
     assert.equal(harness.messages.length, messageCountBeforeStaleResume);
-    assert.equal(resumeCalls, 0);
+    assert.equal(resumeCalls, 1);
 
     await harness.send({type: "resume", id: 12});
+    assert.equal(harness.timers.size, 1);
+    assert.equal(resumeCalls, 1);
+    harness.timers.runNext();
+    assert.equal(harness.timers.size, 1);
+    assert.equal(resumeCalls, 2);
+    harness.timers.runNext();
     evaluationMessages = harness.messages.filter(
         message => message.id === 12);
     assert.deepEqual(
@@ -457,6 +602,8 @@ test("resumes an ordinary limited evaluation without reparsing", async () => {
     assert.equal(evaluationMessages.at(-1).result.limitReached, true);
 
     await harness.send({type: "resume", id: 12});
+    assert.equal(harness.timers.size, 1);
+    harness.timers.runNext();
     evaluationMessages = harness.messages.filter(
         message => message.id === 12);
     assert.deepEqual(
@@ -474,13 +621,137 @@ test("resumes an ordinary limited evaluation without reparsing", async () => {
     assert.equal(evaluationMessages.at(-1).result.reductions, 5);
     assert.equal(evaluationMessages.at(-1).result.limitReached, false);
     assert.equal(beginCalls, 1);
-    assert.equal(resumeCalls, 2);
+    assert.equal(resumeCalls, 4);
+    assert.deepEqual(resumeSliceLimits, [1, 2, 1, 2]);
+    assert.deepEqual(resumeLimitChecks, [true, true, true, true]);
     assert.equal(results.length, 0);
 
     const messageCountAfterCompletion = harness.messages.length;
     await harness.send({type: "resume", id: 12});
     assert.equal(harness.messages.length, messageCountAfterCompletion);
-    assert.equal(resumeCalls, 2);
+    assert.equal(resumeCalls, 4);
+});
+
+test("pauses and resumes ordinary evaluation between slices", async () => {
+    let resumeCalls = 0;
+    const resumeSliceLimits = [];
+    const resumeLimitChecks = [];
+    const results = [
+        {
+            success: true,
+            definition: false,
+            recoverWorker: false,
+            output: "Ix\n",
+            error: "",
+            reductions: 3,
+            limitReached: true,
+        },
+        {
+            success: true,
+            definition: false,
+            recoverWorker: false,
+            output: "x\n",
+            error: "",
+            reductions: 4,
+            limitReached: false,
+        },
+    ];
+    const module = {
+        setList: () => "",
+        beginLimitedEval: (
+            source, requestId, sliceLimit, checkAtLimit,
+        ) => {
+            assert.equal(source, "IIIIx");
+            assert.equal(requestId, 15);
+            assert.equal(sliceLimit, 3);
+            assert.equal(checkAtLimit, true);
+            return {
+                success: true,
+                definition: false,
+                recoverWorker: false,
+                output: "IIIx\n",
+                error: "",
+                reductions: 1,
+                limitReached: true,
+            };
+        },
+        resumeLimitedEval: (
+            requestId, sliceLimit, checkAtLimit,
+        ) => {
+            ++resumeCalls;
+            assert.equal(requestId, 15);
+            resumeSliceLimits.push(sliceLimit);
+            resumeLimitChecks.push(checkAtLimit);
+            return results.shift();
+        },
+    };
+    const harness = await createWorkerHarness(module);
+
+    await harness.send({
+        type: "evaluate",
+        id: 15,
+        source: "IIIIx",
+        singleStep: false,
+        basisStep: false,
+        keyStep: false,
+        colorize: false,
+        stepLimitEnabled: true,
+        stepLimit: 3,
+    });
+    assert.equal(harness.timers.size, 1);
+
+    await harness.send({type: "pause", id: 15});
+    assert.equal(harness.timers.size, 0);
+    assert.equal(resumeCalls, 0);
+    let evaluationMessages = harness.messages.filter(
+        message => message.id === 15);
+    assert.deepEqual(
+        evaluationMessages.map(message => message.type),
+        ["eval-started", "paused"],
+    );
+    assert.equal(evaluationMessages.at(-1).reductions, 1);
+
+    const messageCountBeforeStaleResume = harness.messages.length;
+    await harness.send({type: "resume", id: 99});
+    assert.equal(harness.messages.length, messageCountBeforeStaleResume);
+    assert.equal(harness.timers.size, 0);
+
+    await harness.send({type: "resume", id: 15});
+    assert.equal(harness.timers.size, 1);
+    assert.equal(resumeCalls, 0);
+    evaluationMessages = harness.messages.filter(
+        message => message.id === 15);
+    assert.deepEqual(
+        evaluationMessages.slice(-2).map(message => message.type),
+        ["paused", "eval-started"],
+    );
+
+    harness.timers.runNext();
+    evaluationMessages = harness.messages.filter(
+        message => message.id === 15);
+    assert.equal(evaluationMessages.at(-1).type, "result");
+    assert.equal(evaluationMessages.at(-1).result.output, "Ix\n");
+    assert.equal(evaluationMessages.at(-1).result.reductions, 3);
+    assert.equal(evaluationMessages.at(-1).result.limitReached, true);
+    assert.equal(resumeCalls, 1);
+    assert.equal(harness.timers.size, 0);
+    assert.deepEqual(resumeSliceLimits, [2],
+        "manual Resume must preserve the remaining limit window");
+    assert.deepEqual(resumeLimitChecks, [true]);
+
+    await harness.send({type: "resume", id: 15});
+    assert.equal(harness.timers.size, 1);
+    harness.timers.runNext();
+    evaluationMessages = harness.messages.filter(
+        message => message.id === 15);
+    assert.equal(evaluationMessages.at(-1).type, "result");
+    assert.equal(evaluationMessages.at(-1).result.output, "x\n");
+    assert.equal(evaluationMessages.at(-1).result.reductions, 4);
+    assert.equal(evaluationMessages.at(-1).result.limitReached, false);
+    assert.deepEqual(resumeSliceLimits, [2, 3],
+        "step-limit Resume must start a fresh limit window");
+    assert.deepEqual(resumeLimitChecks, [true, true]);
+    assert.equal(results.length, 0);
 });
 
 test("resumes automatic Single Step after a step-limit pause", async () => {
@@ -604,6 +875,167 @@ test("resumes automatic Single Step after a step-limit pause", async () => {
     assert.equal(evaluationMessages.at(-1).result.limitReached, false);
     assert.equal(beginCalls, 1);
     assert.equal(resumeCalls, 1);
+    assert.equal(steps.length, 0);
+});
+
+test("pauses and resumes automatic Single Step between reductions", async () => {
+    let limitResumeCalls = 0;
+    const steps = [
+        {
+            success: true,
+            reduced: true,
+            complete: false,
+            definition: false,
+            output: "Ix\n",
+            error: "",
+            limitReached: false,
+        },
+        {
+            success: true,
+            reduced: true,
+            complete: true,
+            definition: false,
+            output: "x\n",
+            error: "",
+            limitReached: false,
+        },
+    ];
+    const module = {
+        setList: () => "",
+        beginSingleStep: () => incompleteStepStart,
+        takeSingleStep: (basisStep, colorize, lookAhead) => {
+            assert.equal(basisStep, false);
+            assert.equal(colorize, false);
+            assert.equal(lookAhead, false);
+            return steps.shift();
+        },
+        resumeSingleStep: () => {
+            ++limitResumeCalls;
+            return true;
+        },
+    };
+    const harness = await createWorkerHarness(module);
+
+    await harness.send({
+        type: "evaluate",
+        id: 16,
+        source: "IIx",
+        singleStep: true,
+        basisStep: false,
+        keyStep: false,
+        colorize: false,
+        stepLimitEnabled: false,
+        stepLimit: 0,
+    });
+    harness.timers.runNext();
+    assert.equal(harness.timers.size, 1);
+
+    await harness.send({type: "pause", id: 16});
+    assert.equal(harness.timers.size, 0);
+    let evaluationMessages = harness.messages.filter(
+        message => message.id === 16);
+    assert.deepEqual(
+        evaluationMessages.map(message => message.type),
+        ["eval-started", "single-step-output", "paused"],
+    );
+    assert.equal(evaluationMessages.at(-1).reductions, 1);
+    assert.equal(limitResumeCalls, 0);
+
+    await harness.send({type: "resume", id: 16});
+    assert.equal(harness.timers.size, 1);
+    assert.equal(limitResumeCalls, 0,
+        "manual Resume must not reset the step-limit window");
+    evaluationMessages = harness.messages.filter(
+        message => message.id === 16);
+    assert.equal(evaluationMessages.at(-1).type, "eval-started");
+
+    harness.timers.runNext();
+    evaluationMessages = harness.messages.filter(
+        message => message.id === 16);
+    assert.deepEqual(
+        evaluationMessages.slice(-2).map(message => message.type),
+        ["single-step-output", "result"],
+    );
+    assert.equal(evaluationMessages.at(-1).result.reductions, 2);
+    assert.equal(harness.timers.size, 0);
+    assert.equal(steps.length, 0);
+});
+
+test("pauses Key Step and refuses steps until Resume", async () => {
+    let takeCalls = 0;
+    const steps = [
+        {
+            success: true,
+            reduced: true,
+            complete: false,
+            definition: false,
+            output: "Ix\n",
+            error: "",
+            limitReached: false,
+        },
+        {
+            success: true,
+            reduced: true,
+            complete: true,
+            definition: false,
+            output: "x\n",
+            error: "",
+            limitReached: false,
+        },
+    ];
+    const module = {
+        setList: () => "",
+        beginSingleStep: () => incompleteStepStart,
+        takeSingleStep: (basisStep, colorize, lookAhead) => {
+            ++takeCalls;
+            assert.equal(basisStep, false);
+            assert.equal(colorize, false);
+            assert.equal(lookAhead, true);
+            return steps.shift();
+        },
+    };
+    const harness = await createWorkerHarness(module);
+
+    await harness.send({
+        type: "evaluate",
+        id: 17,
+        source: "IIx",
+        singleStep: false,
+        basisStep: false,
+        keyStep: true,
+        colorize: false,
+        stepLimitEnabled: false,
+        stepLimit: 0,
+    });
+    await harness.send({type: "step", id: 17});
+    assert.equal(takeCalls, 1);
+
+    await harness.send({type: "pause", id: 17});
+    let evaluationMessages = harness.messages.filter(
+        message => message.id === 17);
+    assert.deepEqual(
+        evaluationMessages.map(message => message.type),
+        ["step-ready", "step-result", "paused"],
+    );
+    assert.equal(evaluationMessages.at(-1).reductions, 1);
+
+    const messageCountWhilePaused = harness.messages.length;
+    await harness.send({type: "step", id: 17});
+    assert.equal(takeCalls, 1);
+    assert.equal(harness.messages.length, messageCountWhilePaused);
+
+    await harness.send({type: "resume", id: 17});
+    evaluationMessages = harness.messages.filter(
+        message => message.id === 17);
+    assert.equal(evaluationMessages.at(-1).type, "step-ready");
+    assert.equal(evaluationMessages.at(-1).result.success, true);
+
+    await harness.send({type: "step", id: 17});
+    evaluationMessages = harness.messages.filter(
+        message => message.id === 17);
+    assert.equal(evaluationMessages.at(-1).type, "step-result");
+    assert.equal(evaluationMessages.at(-1).result.output, "x\n");
+    assert.equal(takeCalls, 2);
     assert.equal(steps.length, 0);
 });
 
