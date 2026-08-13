@@ -45,11 +45,14 @@ set [captured | live] <name> = <arity> <combinator_expression>
 In the second form, arity is a number specifying the minimal number of arguments
 required for the expression to reduce.
 
-define [captured | live] <name> <symbol_list> = <combinator_expression>
-The "define" form requires one or more symbols (lower case letters) after the
+define [captured | live] <name> [<symbol_list>] = <combinator_expression>
+The "define" form accepts zero or more symbols (lower case letters) after the
 name, infers the arity from their count, and computes a series of combinators
-that will reproduce the combinator_expression. For a one-character name, the
-space before the symbols may be omitted. For example, to add the Eagle bird:
+that will reproduce the combinator_expression. With no symbols, it stores an
+arity-zero basis directly. An all-lowercase token immediately before '=' is the
+complete basis name, as in "define foo=x". For a one-character name that does
+not begin with a lowercase ASCII letter, the space before symbols may be
+omitted. For example, to add the Eagle bird:
 define Exyzwv = xy(zwv)
 
 The optional "captured" or "live" modifier on set and define overrides the

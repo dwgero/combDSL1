@@ -362,9 +362,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             color: #c33;
         }
     </style>
-    <script src="./evaluation_watchdog.js?v=2.8.0" defer></script>
-    <script src="./input_history.js?v=2.8.0" defer></script>
-    <script src="./app.js?v=2.8.0" defer></script>
+    <script src="./evaluation_watchdog.js?v=2.8.3" defer></script>
+    <script src="./input_history.js?v=2.8.3" defer></script>
+    <script src="./app.js?v=2.8.3" defer></script>
 </head>
 <body>
     <main aria-labelledby="studio-title">
@@ -554,14 +554,17 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             the minimal number of arguments required for the expression
             to reduce.
             <br><br>
-            <code>define [captured | live] name symbol_list =
+            <code>define [captured | live] name [symbol_list] =
                 combinator_expression</code><br>
-            The <code>define</code> form requires one or more <code>symbols</code>
-            (lower case letters) after the name, infers the arity from their count,
-            and computes a series of combinators that will reproduce the
-            <code>combinator_expression</code>.  For a one-character name,
-            the space before the symbols may be omitted. For example, to add
-            the Eagle bird:<br>
+            The <code>define</code> form accepts zero or more <code>symbols</code>
+            (lower case letters) after the name, infers the arity from their
+            count, and computes a series of combinators that will reproduce the
+            <code>combinator_expression</code>. With no symbols, it stores an
+            arity-zero basis directly. An all-lowercase token immediately before
+            <code>=</code> is the complete basis name, as in
+            <code>define foo=x</code>. For a one-character name that does not
+            begin with a lowercase ASCII letter, the space before symbols may
+            be omitted. For example, to add the Eagle bird:<br>
             <code>define Exyzwv = xy(zwv)</code>
             <br><br>
             The optional <code>captured</code> or <code>live</code> modifier
@@ -835,7 +838,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             data-dialog-initial-focus>About</h2>
         <div class="license-text">
             <!-- Keep this version and the app.js cache key in sync. -->
-            <p>Combinator Studio, version 2.8.0<br>
+            <p>Combinator Studio, version 2.8.3<br>
                 Part of the C++ Combinator DSL<br>
                 Copyright (C) 2026  David W. Gero</p>
             <p>This program is free software: you can redistribute it and/or modify

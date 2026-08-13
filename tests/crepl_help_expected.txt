@@ -5,9 +5,9 @@ abstract [steps | ministeps] ?<symbols> = <expression>
 basis step [on | off]                 | names are converted to their stored expressions as a step
 birds                                 | display the pre-defined bird combinators
 colorize [on | off]                   | add colors to arguments while stepping
-define [captured | live] <name> <xyz...> = <expression>
+define [captured | live] <name> [<xyz...>] = <expression>
                                       | compute and store combinators such that
-                                      | <name> <xyz...> reduces to <expression>
+                                      | <name> [<xyz...>] reduces to <expression>
 dependson <name> | depends-on <name> | depends on <name>
                                       | display named bases that directly contain <name>
 exit                                  | end the program
@@ -34,9 +34,9 @@ abstract [steps | ministeps] ?<symbols> = <expression>
 basis step [on | off]                 | names are converted to their stored expressions as a step
 birds                                 | display the pre-defined bird combinators
 colorize [on | off]                   | add colors to arguments while stepping
-define [captured | live] <name> <xyz...> = <expression>
+define [captured | live] <name> [<xyz...>] = <expression>
                                       | compute and store combinators such that
-                                      | <name> <xyz...> reduces to <expression>
+                                      | <name> [<xyz...>] reduces to <expression>
 dependson <name> | depends-on <name> | depends on <name>
                                       | display named bases that directly contain <name>
 exit                                  | end the program

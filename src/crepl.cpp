@@ -60,7 +60,7 @@
 
 namespace {
 
-constexpr std::string_view crepl_version = "2.8.0";
+constexpr std::string_view crepl_version = "2.8.3";
 
 [[nodiscard]] bool stream_is_terminal(std::FILE* stream) noexcept {
 #if defined(_WIN32)
@@ -803,9 +803,9 @@ void print_help_brief(std::ostream& output) {
         "basis step [on | off]                 | names are converted to their stored expressions as a step\n"
         "birds                                 | display the pre-defined bird combinators\n"
         "colorize [on | off]                   | add colors to arguments while stepping\n"
-        "define [captured | live] <name> <xyz...> = <expression>\n"
+        "define [captured | live] <name> [<xyz...>] = <expression>\n"
         "                                      | compute and store combinators such that\n"
-        "                                      | <name> <xyz...> reduces to <expression>\n"
+        "                                      | <name> [<xyz...>] reduces to <expression>\n"
         "dependson <name> | depends-on <name> | depends on <name>\n"
         "                                      | display named bases that directly contain <name>\n"
         "exit                                  | end the program\n"
@@ -903,16 +903,19 @@ void print_help_full(std::ostream& output) {
         "In the second form, arity is a number specifying the minimal "
         "number of arguments required for the expression to reduce.");
     output << '\n'
-           << "define [captured | live] <name> <symbol_list> = "
+           << "define [captured | live] <name> [<symbol_list>] = "
               "<combinator_expression>\n";
     write_wrapped_paragraph(
         output,
-        "The \"define\" form requires one or more symbols (lower case "
+        "The \"define\" form accepts zero or more symbols (lower case "
         "letters) after the name, infers the arity from their count, and "
         "computes a series of combinators that will reproduce the "
-        "combinator_expression. For a one-character name, the space "
-        "before the symbols may be omitted. For example, to add the Eagle "
-        "bird:");
+        "combinator_expression. With no symbols, it stores an arity-zero "
+        "basis directly. An all-lowercase token immediately before '=' is "
+        "the complete basis name, as in \"define foo=x\". For a "
+        "one-character name that does not begin with a lowercase ASCII "
+        "letter, the space before symbols may be omitted. For example, to "
+        "add the Eagle bird:");
     output << "define Exyzwv = xy(zwv)\n\n";
     write_wrapped_paragraph(
         output,

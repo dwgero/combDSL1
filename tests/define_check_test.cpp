@@ -164,7 +164,28 @@ int main() {
         ++failures;
     }
 
-    std::cout << birds.size()
+    auto const zero_symbol_definition = parse("define foo=x");
+    auto const& zero_symbol_basis = as_basis(zero_symbol_definition);
+    if (zero_symbol_basis.name() != "foo" ||
+        zero_symbol_basis.arity() != 0 ||
+        expression_string(zero_symbol_basis.body()) != "x") {
+        std::cerr << "FAILED: define foo=x produced name "
+                  << zero_symbol_basis.name() << ", arity "
+                  << zero_symbol_basis.arity() << ", body "
+                  << expression_string(zero_symbol_basis.body())
+                  << '\n';
+        ++failures;
+    }
+    auto const shown_zero_symbol_definition = parse("show foo");
+    if (expression_string(shown_zero_symbol_definition) !=
+        "arity:0 x") {
+        std::cerr << "FAILED: show foo produced "
+                  << expression_string(shown_zero_symbol_definition)
+                  << '\n';
+        ++failures;
+    }
+
+    std::cout << birds.size() + 2
               << " named basis define check(s) run, "
               << failures << " failed\n";
     return failures == 0 ? 0 : 1;

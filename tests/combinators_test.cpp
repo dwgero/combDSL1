@@ -276,17 +276,17 @@ static_assert(std::is_same_v<
               decltype(combdsl::search_for_subexp(S(B)(T))),
               std::optional<combdsl::subexpression_search_match>>);
 static_assert(
-    combdsl::check_for_pairs_match_candidate_count == 866);
+    combdsl::check_for_pairs_match_candidate_count == 858);
 static_assert(
-    combdsl::check_for_trips_match_candidate_count == 50'164);
+    combdsl::check_for_trips_match_candidate_count == 49'692);
 static_assert(
     combdsl::check_for_trips_match_shape_count == 2);
 static_assert(
     combdsl::check_for_trips_match_column_count == 1'800);
 static_assert(
-    combdsl::check_for_match_left_trip_candidate_count == 25'050);
+    combdsl::check_for_match_left_trip_candidate_count == 24'810);
 static_assert(
-    combdsl::check_for_match_right_trip_candidate_count == 25'114);
+    combdsl::check_for_match_right_trip_candidate_count == 24'882);
 static_assert(
     combdsl::check_for_quads_match_tuple_count == 810'000);
 static_assert(
@@ -294,7 +294,7 @@ static_assert(
 static_assert(
     combdsl::check_for_quads_match_column_count == 135'000);
 static_assert(
-    combdsl::check_for_quads_match_candidate_count == 3'709'632);
+    combdsl::check_for_quads_match_candidate_count == 3'667'992);
 static_assert(
     combdsl::check_for_quads_match_candidate_count ==
     combdsl::check_for_match_combinator_count *
@@ -1879,6 +1879,40 @@ int main() {
         "remove rejects a version suffix",
         "remove Versioned@1", 16,
         "version suffix is not allowed in a removal name");
+    test_parse_failure(
+        "set rejects a name ending in an at sign",
+        "set AtSet@ = I", 4,
+        "combdsl::basis names cannot end with @");
+    test_parse_failure(
+        "a rejected at-sign set does not register its name",
+        "show AtSet", 5,
+        "AtSet is not a defined name");
+    test_parse_failure(
+        "define rejects a name ending in an at sign",
+        "define AtDefine@ x = x", 7,
+        "combdsl::basis names cannot end with @");
+    test_parse_failure(
+        "a rejected at-sign define does not register its name",
+        "show AtDefine", 5,
+        "AtDefine is not a defined name");
+    test("at-sign remove setup remains registered",
+         parse("set AtRemove = 1 I"), "AtRemove");
+    test_parse_failure(
+        "remove rejects a name ending in an at sign",
+        "remove AtRemove@", 7,
+        "combdsl::basis names cannot end with @");
+    test("a rejected at-sign remove leaves its name registered",
+         parse("show AtRemove"), "arity:1 I");
+    test("terminal-at parser failures are absent from the set list",
+         [] {
+             auto const definitions = set_list();
+             std::cout
+                 << (definitions.find("AtSet@") == std::string::npos)
+                 << (definitions.find("AtDefine@") == std::string::npos)
+                 << (definitions.find("remove AtRemove@") ==
+                     std::string::npos);
+         },
+         "111");
     test("the C++ basis API rejects a reserved version suffix",
          [] {
              try {
@@ -1888,6 +1922,15 @@ int main() {
              }
          },
          "combdsl::basis name cannot end in a version suffix: CppVersion@1");
+    test("the C++ basis API rejects a terminal at sign",
+         [] {
+             try {
+                 static_cast<void>(basis("CppTerminal@", 1, I));
+             } catch (std::invalid_argument const& error) {
+                 std::cout << error.what();
+             }
+         },
+         "combdsl::basis names cannot end with @");
 
     test("references history records a replay sequence",
          [] {
@@ -2165,7 +2208,7 @@ int main() {
          parse("abstract steps ?x = C(Tx)"),
          "takeout x from C(Tx): BCT\n"
          "optimize: BC -> C*\n"
-         "optimize: C* T -> V\n"
+         "optimize: C*T -> V\n"
          "?=V");
 
     test("define infers arity from its symbols",
@@ -2323,7 +2366,7 @@ int main() {
     test("define recursively optimizes nested BC",
          parse("define DefKCstar x = BC"), "DefKCstar");
     test("show exposes nested Cardinal star optimization",
-         parse("show DefKCstar"), "arity:1 K C*");
+         parse("show DefKCstar"), "arity:1 KC*");
     test("define optimizes B C* to Cardinal star star",
          parse("define OptCstarstar xyzwv = xyzvw"), "OptCstarstar");
     test("show exposes optimized Cardinal star star",
@@ -2331,7 +2374,7 @@ int main() {
     test("define recursively optimizes nested B C*",
          parse("define DefKCstarstar x = B C*"), "DefKCstarstar");
     test("show exposes nested Cardinal star star optimization",
-         parse("show DefKCstarstar"), "arity:1 K C**");
+         parse("show DefKCstarstar"), "arity:1 KC**");
     test("define optimizes B(QT)R to Finch",
          parse("define OptF xyz = zyx"), "OptF");
     test("show exposes optimized Finch",
@@ -2375,7 +2418,7 @@ int main() {
     test("define recursively optimizes nested BW",
          parse("define DefKWstar x = BW"), "DefKWstar");
     test("show exposes nested Warbler star optimization",
-         parse("show DefKWstar"), "arity:1 K W*");
+         parse("show DefKWstar"), "arity:1 KW*");
     test("define preserves nested QTC",
          parse("define DefKQV x = QTC"), "DefKQV");
     test("show exposes nested unoptimized QTC",
@@ -2476,7 +2519,7 @@ int main() {
     test("define recursively optimizes nested BW*",
          parse("define DefKWss x = B W*"), "DefKWss");
     test("show exposes nested Warbler star star optimization",
-         parse("show DefKWss"), "arity:1 K W**");
+         parse("show DefKWss"), "arity:1 KW**");
     test("define optimizes S(D(BQC))D to Jay",
          parse("define OptJ xyzw = xy(xwz)"), "OptJ");
     test("show exposes the optimized Jay",
@@ -2512,6 +2555,57 @@ int main() {
          parse(" \tdefine\nDws \tx y\nz =\v xyz\f"), "Dws");
     test("whitespace-separated define symbols preserve their order",
          single_step(parse("Dws a b c"), true), "Iabc");
+    test("an adjacent equals makes a lowercase word a zero-arity name",
+         parse("define zerodef=x"), "zerodef");
+    test("show exposes a zero-symbol define by its full name",
+         parse("show zerodef"), "arity:0 x");
+    test("a zero-symbol define expands with trailing arguments",
+         single_step(parse("zerodef y")), "xy");
+    test("a zero-symbol define has a replayable canonical signature",
+         [] {
+             auto const definitions = set_list();
+             auto const line_position = definitions.rfind('\n');
+             std::cout << definitions.substr(
+                 line_position == std::string::npos
+                     ? 0
+                     : line_position + 1);
+         },
+         "define zerodef = x");
+    test("a spaced zero-symbol canonical define can be reparsed",
+         parse("define zerodef = x"), "zerodef");
+    test("zero-symbol define inspection identifies a replacement",
+         [] {
+             auto inspected = combdsl::detail::parse_input(
+                 "define zerodef=K",
+                 combdsl::detail::parser_definition_mode::
+                     inspect_definitions);
+             std::cout << inspected.replaced_definition;
+         },
+         "zerodef=0 x");
+    test("a zero-symbol define can be redefined",
+         parse("define zerodef=K"), "zerodef");
+    test("show exposes a zero-symbol define replacement",
+         parse("show zerodef"), "arity:0 K");
+    test("a replaced zero-symbol define expands with arguments",
+         single_step(parse("zerodef x y")), "Kxy");
+    test("zero-symbol define history keeps canonical revisions",
+         [] {
+             auto const definitions = set_list();
+             std::cout
+                 << (definitions.find("define zerodef = x") !=
+                         std::string::npos)
+                 << (definitions.find("define zerodef = K") !=
+                         std::string::npos);
+         },
+         "11");
+    test("a spaced parameter preserves a lowercase one-letter name",
+         parse("define f x=x"), "f");
+    test("show exposes the lowercase one-letter definition",
+         parse("show f"), "arity:1 I");
+    test("the lowercase one-letter definition keeps its parameter",
+         single_step(parse("f y")), "y");
+    test("the lowercase one-letter test definition is removable",
+         parse("remove f"), "f");
     test("define accepts a symbol adjacent to a one-letter name",
          parse("define Xx = xSTK(KK)(SK)"), "X");
     test("compact one-letter define preserves its behavior",
@@ -2599,7 +2693,7 @@ int main() {
     test("pre-defined Cardinal star star is registered",
          parse("C**"), "C**");
     test("show exposes pre-defined Cardinal star star",
-         parse("show C**"), "arity:5 B C*");
+         parse("show C**"), "arity:5 BC*");
     test("Cardinal star star wins the longest compact match",
          parse("C**x"), "C**x");
     test("pre-defined Cardinal star star reduces compact input",
@@ -2613,7 +2707,7 @@ int main() {
     test("pre-defined Warbler star star is registered",
          parse("W**"), "W**");
     test("show exposes pre-defined Warbler star star",
-         parse("show W**"), "arity:4 B W*");
+         parse("show W**"), "arity:4 BW*");
     test("Warbler star star wins the longest compact match",
          parse("W**x"), "W**x");
     test("pre-defined Warbler star star reduces compact input",
@@ -2934,7 +3028,8 @@ int main() {
          single_step(parse("A\\\\Bx")), "x");
     test("basis ending uppercase prints compactly before a symbol",
          parse("A\\\\Bx"), "A\\\\Bx");
-    static_cast<void>(basis("Tail+", 1, I));
+    const auto tail_plus_basis = basis("Tail+", 1, I);
+    const auto plus_basis = basis("+", 1, I);
     test("basis ending punctuation needs no trailing delimiter",
          single_step(parse("Tail+x")), "x");
     test("basis ending punctuation prints compactly before a symbol",
@@ -3401,12 +3496,27 @@ int main() {
                        "Ptail", 0);
     test_parse_failure(
         "define requires a basis name", "define = x", 7);
-    constexpr std::string_view define_without_symbols =
-        "define NoArgs = x";
+    test("define accepts an empty symbol list before equals",
+         parse("define NoArgs = x"), "NoArgs");
+    test("show exposes the empty-symbol definition",
+         parse("show NoArgs"), "arity:0 x");
+    test("the empty-symbol definition has canonical save syntax",
+         [] {
+             auto const definitions = set_list();
+             auto const line_position = definitions.rfind('\n');
+             std::cout << definitions.substr(
+                 line_position == std::string::npos
+                     ? 0
+                     : line_position + 1);
+         },
+         "define NoArgs = x");
+    constexpr std::string_view zero_symbol_define_without_expression =
+        "define EmptyZero=";
     test_parse_failure(
-        "define requires at least one symbol",
-        define_without_symbols,
-        define_without_symbols.find('='));
+        "zero-symbol define requires an expression",
+        zero_symbol_define_without_expression,
+        zero_symbol_define_without_expression.size(),
+        "expected an expression");
     constexpr std::string_view uppercase_define_symbol =
         "define PUp X = x";
     test_parse_failure(
@@ -4563,7 +4673,17 @@ int main() {
              std::cout << contains_j << contains_y;
          },
          "10");
-    test("fixed match pair exclusions include I anything",
+    std::array const identity_match_pairs{
+        std::pair{quote(B), quote(I)},
+        std::pair{quote(C), quote(T)},
+        std::pair{quote(M), quote(I)},
+        std::pair{quote(N), quote(K)},
+        std::pair{quote(Q), quote(I)},
+        std::pair{quote(W), quote(K)},
+        std::pair{quote(W_star), quote(K)},
+        std::pair{quote(Z), quote(I)},
+    };
+    test("fixed match pair exclusions include identities",
          [] {
              std::size_t excluded_count = 0;
              auto const& combinators =
@@ -4592,9 +4712,142 @@ int main() {
                         quote(U), quote(U))
                  << ' '
                  << combdsl::detail::is_excluded_match_pair(
+                        quote(B), quote(I))
+                 << combdsl::detail::is_excluded_match_pair(
+                        quote(C), quote(T))
+                 << combdsl::detail::is_excluded_match_pair(
+                        quote(M), quote(I))
+                 << combdsl::detail::is_excluded_match_pair(
+                        quote(N), quote(K))
+                 << combdsl::detail::is_excluded_match_pair(
+                        quote(Q), quote(I))
+                 << combdsl::detail::is_excluded_match_pair(
+                        quote(W), quote(K))
+                 << combdsl::detail::is_excluded_match_pair(
+                        quote(W_star), quote(K))
+                 << combdsl::detail::is_excluded_match_pair(
+                        quote(Z), quote(I))
+                 << ' '
+                 << combdsl::detail::is_excluded_match_pair(
                         quote(A), quote(I));
          },
-         "34 111111 0");
+         "42 111111 11111111 0");
+    test("excluded identity pairs still match I extensionally",
+         [&] {
+             std::array const symbols{
+                 quoted_atomic{x},
+                 quoted_atomic{y},
+                 quoted_atomic{z},
+                 quoted_atomic{w},
+             };
+             auto const target = quote(x)(y)(z)(w);
+             for (auto const& [function, argument] :
+                  identity_match_pairs) {
+                 std::cout << combdsl::check_for_match(
+                     function(argument), symbols, target);
+             }
+         },
+         "11111111");
+    test("compact W*K parses as W-star applied to K",
+         [] {
+             auto const compact = parse("W*K");
+             auto const spaced = parse("W* K");
+             std::cout
+                 << combdsl::detail::same_parser_definition_expression(
+                        compact, quote(W_star)(K))
+                 << combdsl::detail::same_parser_definition_expression(
+                        compact, spaced)
+                 << ' '
+                 << combdsl::detail::is_excluded_match_pair(
+                        quote(W_star), quote(K))
+                 << ' ';
+             compact.print_to(std::cout);
+         },
+         "11 1 W*K");
+    test("find omits all eight identity pairs",
+         [] {
+             std::ostringstream output;
+             parse("find all 2 ?xyzw = xyzw").print_to(output);
+             auto const padded = '\n' + output.str() + '\n';
+             auto const contains_line = [&](std::string_view line) {
+                 return padded.find(
+                     '\n' + std::string(line) + '\n') !=
+                     std::string::npos;
+             };
+             std::cout
+                 << contains_line("?=I")
+                 << !contains_line("?=BI")
+                 << !contains_line("?=CT")
+                 << !contains_line("?=MI")
+                 << !contains_line("?=NK")
+                 << !contains_line("?=QI")
+                 << !contains_line("?=WK")
+                 << !contains_line("?=W*K")
+                 << !contains_line("?=ZI");
+         },
+         "111111111");
+    test("identity-pair exclusions apply in every nested shape",
+         [&] {
+             bool left_trip_excluded = true;
+             bool right_trip_excluded = true;
+             bool left_quad_pair_excluded = true;
+             bool split_quad_left_pair_excluded = true;
+             bool middle_quad_pair_left_excluded = true;
+             bool middle_quad_pair_right_excluded = true;
+             bool split_quad_right_pair_excluded = true;
+             bool right_quad_pair_excluded = true;
+             for (auto const& [function, argument] :
+                  identity_match_pairs) {
+                 auto const left_trip_mask =
+                     combdsl::detail::predefined_bird_trip_shape_mask(
+                         function, argument, quote(A));
+                 auto const right_trip_mask =
+                     combdsl::detail::predefined_bird_trip_shape_mask(
+                         quote(A), function, argument);
+                 left_trip_excluded = left_trip_excluded &&
+                     (left_trip_mask & (std::uint8_t{1} << 0)) == 0;
+                 right_trip_excluded = right_trip_excluded &&
+                     (right_trip_mask & (std::uint8_t{1} << 1)) == 0;
+
+                 auto const left_quad_mask =
+                     combdsl::detail::predefined_bird_quad_shape_mask(
+                         function, argument, quote(A), quote(A));
+                 auto const middle_quad_mask =
+                     combdsl::detail::predefined_bird_quad_shape_mask(
+                         quote(A), function, argument, quote(A));
+                 auto const right_quad_mask =
+                     combdsl::detail::predefined_bird_quad_shape_mask(
+                         quote(A), quote(A), function, argument);
+                 left_quad_pair_excluded =
+                     left_quad_pair_excluded &&
+                     (left_quad_mask & (std::uint8_t{1} << 0)) == 0;
+                 split_quad_left_pair_excluded =
+                     split_quad_left_pair_excluded &&
+                     (left_quad_mask & (std::uint8_t{1} << 1)) == 0;
+                 middle_quad_pair_left_excluded =
+                     middle_quad_pair_left_excluded &&
+                     (middle_quad_mask & (std::uint8_t{1} << 2)) == 0;
+                 middle_quad_pair_right_excluded =
+                     middle_quad_pair_right_excluded &&
+                     (middle_quad_mask & (std::uint8_t{1} << 3)) == 0;
+                 split_quad_right_pair_excluded =
+                     split_quad_right_pair_excluded &&
+                     (right_quad_mask & (std::uint8_t{1} << 1)) == 0;
+                 right_quad_pair_excluded =
+                     right_quad_pair_excluded &&
+                     (right_quad_mask & (std::uint8_t{1} << 4)) == 0;
+             }
+             std::cout
+                 << left_trip_excluded
+                 << right_trip_excluded << ' '
+                 << left_quad_pair_excluded
+                 << split_quad_left_pair_excluded
+                 << middle_quad_pair_left_excluded
+                 << middle_quad_pair_right_excluded
+                 << split_quad_right_pair_excluded
+                 << right_quad_pair_excluded;
+         },
+         "11 111111");
     std::vector<combdsl::quoted_expression> first_pairs;
     first_pairs.reserve(2);
     std::size_t generated_pair_count = 0;
@@ -4616,12 +4869,12 @@ int main() {
                  std::cout << first_pairs.size();
              }
          },
-         "866 AA AB");
+         "858 AA AB");
     auto const j_pair_matches =
         combdsl::check_for_pairs_match(
             j_match_symbols,
             j_match_expression);
-    test("pair matching searches 866 ordered pairs without Y",
+    test("pair matching searches 858 ordered pairs without Y",
          [&] {
              std::cout << j_pair_matches.size();
          },
@@ -4677,7 +4930,7 @@ int main() {
                  std::cout << first_trips.size();
              }
          },
-         "50164 01010 AAA A(AA)");
+         "49692 01010 AAA A(AA)");
     constexpr auto trip_candidate_slot_count =
         combdsl::check_for_match_combinator_count *
         combdsl::check_for_match_combinator_count *
@@ -4716,7 +4969,7 @@ int main() {
                        << nonempty_trip_column_count << ' '
                        << duplicate_trip_column_candidate;
          },
-         "50164 1710 0");
+         "49692 1710 0");
 #if !defined(__EMSCRIPTEN__)
     test("native find dispatch uses worker threads",
          [] {
@@ -5155,7 +5408,7 @@ int main() {
                  l_question_k_s_column.back().print_to(std::cout);
              }
          },
-         "29 0 1 1 L(AK)S L(ZK)S");
+         "26 0 1 1 L(AK)S L(ZK)S");
     test("quad exclusions cover every pair and triplet position",
          [&] {
              auto print_presence =
@@ -6523,6 +6776,16 @@ int main() {
              "\n->" +
              red_argument("Cstar") +
              "\n");
+    test("color step keeps punctuation-ending basis markup compact",
+         [&] {
+             static_cast<void>(
+                 color_step_html(quote(I)(W_star)));
+         },
+         std::string{"  I"} +
+             red_argument("W*") +
+             "\n->" +
+             red_argument("W*") +
+             "\n");
     test("color step compares structure rather than output",
          [&] {
              static_cast<void>(
@@ -6681,6 +6944,16 @@ int main() {
              terminal_red_argument(" Cstar") +
              "\n->" +
              terminal_red_argument("Cstar") +
+             "\n");
+    test("terminal color step keeps punctuation-ending basis compact",
+         [&] {
+             static_cast<void>(
+                 color_step_ansi(quote(I)(C_star_star)));
+         },
+         std::string{"  I"} +
+             terminal_red_argument("C**") +
+             "\n->" +
+             terminal_red_argument("C**") +
              "\n");
     test("terminal color step does not HTML-escape expression text",
          [&] {
@@ -6847,6 +7120,83 @@ int main() {
     test("copied basis name", copied_name_basis, "Alias");
     test("deferred basis", deferred_basis, "D");
     test("null-terminated basis", null_terminated_basis, "Trimmed");
+    test("Cardinal star bases need no space on either side",
+         quote(Cstar)(C_star)(Vstar)(C_star_star)(copied_name_basis),
+         "CstarC*VstarC**Alias");
+    test("Warbler star bases need no space on either side",
+         quote(copied_name_basis)(W_star)(Cstar)(W_star_star)(Vstar),
+         "AliasW*CstarW**Vstar");
+    test("a lowercase-ending basis before W-star round trips compactly",
+         [] {
+             auto const spaced = parse("Cstar W*");
+             std::ostringstream rendered;
+             spaced.print_to(rendered);
+             auto const reparsed = parse(rendered.str());
+             std::cout
+                 << combdsl::detail::same_parser_definition_expression(
+                        spaced, reparsed)
+                 << ' ' << rendered.str();
+         },
+         "1 CstarW*");
+    static_cast<void>(basis("CstarW*", 1, I));
+    test("an exact longer punctuation basis wins compact parsing",
+         single_step(parse("CstarW*x")),
+         "x");
+    test("a custom punctuation-ending basis needs no surrounding spaces",
+         quote(Cstar)(tail_plus_basis)(Vstar),
+         "CstarTail+Vstar");
+    test("a parsed punctuation-ending basis needs no surrounding spaces",
+         parse("Cstar Tail+ Vstar"),
+         "CstarTail+Vstar");
+    test("a one-character punctuation basis needs no surrounding spaces",
+         quote(Cstar)(plus_basis)(Vstar),
+         "Cstar+Vstar");
+    test("punctuation-ending bases remain compact around applications",
+         quote(Cstar)
+             (quote(W_star)(Vstar))
+             (C_star_star)
+             (quote(tail_plus_basis)(plus_basis)),
+         "Cstar(W*Vstar)C**(Tail++)");
+    test("a live user punctuation-ending basis round trips compactly",
+         [] {
+             static_cast<void>(parse("references live"));
+             static_cast<void>(parse("set UserTail+ = 1 I"));
+             auto const spaced = parse("Cstar UserTail+ Vstar");
+             std::ostringstream rendered;
+             spaced.print_to(rendered);
+             auto const reparsed = parse(rendered.str());
+             std::cout
+                 << combdsl::detail::same_parser_definition_expression(
+                        spaced, reparsed)
+                 << ' ' << rendered.str();
+             static_cast<void>(parse("references captured"));
+         },
+         "1 CstarUserTail+Vstar");
+    test("a captured punctuation-ending basis round trips on both sides",
+         [] {
+             auto const spaced = parse("Cstar UserTail+ Vstar");
+             std::ostringstream rendered;
+             spaced.print_to(rendered);
+             auto const reparsed = parse(rendered.str());
+             std::cout
+                 << combdsl::detail::same_parser_definition_expression(
+                        spaced, reparsed)
+                 << ' ' << rendered.str();
+         },
+         "1 CstarUserTail+@1Vstar");
+    test("a removed captured punctuation revision round trips compactly",
+         [] {
+             static_cast<void>(parse("remove UserTail+"));
+             auto const spaced = parse("Cstar UserTail+@1 Vstar");
+             std::ostringstream rendered;
+             spaced.print_to(rendered);
+             auto const reparsed = parse(rendered.str());
+             std::cout
+                 << combdsl::detail::same_parser_definition_expression(
+                        spaced, reparsed)
+                 << ' ' << rendered.str();
+         },
+         "1 CstarUserTail+@1Vstar");
     test("multi-character basis after primitive",
          K(copied_name_basis), "K Alias");
     test("multi-character basis after symbol",

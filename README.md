@@ -181,9 +181,12 @@ the stored combinator. An arity of zero is always saturated, so its stored
 combinator is immediately applied to every following argument. With no
 following arguments, printing the basis still prints its name as usual.
 
-Expression printing separates a multi-character basis name from adjacent
-non-parenthesis tokens, except that a name ending outside lowercase ASCII
-`a` through `z` stays attached to a following symbol. Parentheses act as
+Expression printing normally separates a multi-character basis name from
+adjacent non-parenthesis tokens. A name whose final byte is outside ASCII
+`A` through `Z`, `a` through `z`, and `0` through `9` is self-delimiting and
+needs no space on either side; for example, adjacent applications can print
+as `CstarC*Vstar` and `W*K`. A name ending outside lowercase ASCII `a`
+through `z` also stays attached to a following symbol. Parentheses act as
 boundaries and stay attached on either side. Thus `Q1(x)()` prints `Q1x`.
 For `auto Alias = basis("Alias", 1, I);`, `K(Alias)()` prints `K Alias`;
 `x(Cstar(y))()` prints `x(Cstar y)`; `Cstar(y(z))()` prints `Cstar(yz)`;
@@ -195,8 +198,8 @@ character terminates the copied name. Because leading whitespace and
 parentheses belong to the parser grammar, names cannot begin with one of those
 characters or with a double quote. A name also cannot begin with a single
 or doubled backslash, though a doubled backslash may occur later in the name.
-A visible name longer than 15 bytes throws `std::length_error`; an
-invalid name throws `std::invalid_argument`.
+A visible name cannot end in `@`. A visible name longer than 15 bytes throws
+`std::length_error`; an invalid name throws `std::invalid_argument`.
 
 Every successful `basis(...)` call also registers that name with the text
 parser. User-defined names may be redefined.
@@ -421,10 +424,13 @@ malformed declaration does not register its name.
 
 At the start of a line, preceded by optional whitespace,
 `define [captured | live]` followed by whitespace creates a named basis
-by abstracting one or more lowercase symbols from a combinator expression.
-The symbols may be adjacent or separated by whitespace. Their count becomes
-the basis arity, and abstraction proceeds from the last symbol back to the
-first. For a one-character basis name, the separating space may be omitted;
+from a combinator expression with zero or more lowercase symbols. Their count
+becomes the basis arity, and abstraction proceeds from the last symbol back to
+the first. With no symbols, `define` stores an arity-zero basis directly. An
+all-lowercase token immediately before `=` is the complete zero-arity name, so
+`define foo=x` defines `foo`, not `f` with the symbols `oo`. Symbols may be
+adjacent or separated by whitespace. For a one-character basis name that does
+not begin with a lowercase ASCII letter, the separating space may be omitted;
 all following lowercase letters before `=` become symbols. A space before the
 symbols keeps the preceding token as a multicharacter name:
 
@@ -436,6 +442,9 @@ single_step(parse("Flip a b"));          // ba
 parse("define Apply xyz = xz(yz)");      // Apply
 single_step(parse("Apply a b c"), true); // Sabc
 single_step(parse("Apply a b c"));       // ac(bc)
+
+parse("define foo=x");                   // foo, with arity 0
+parse("show foo");                       // arity:0 x
 
 parse("define Gx = xSTK(KK)(SK)");       // G
 parse("define Gxyz = x(yz)");            // G
@@ -537,11 +546,14 @@ auto none = search_for_subexp(parse("C(CB)"));      // std::nullopt
 `symbol_list` to `combs`, normalizes that application and `expression` using
 the ordinary evaluator rules, and compares the resulting quoted expression
 trees. `check_for_singles_match(symbol_list, expression)` checks every bird in
-the matcher catalog. `check_for_pairs_match(symbol_list, expression)` runs that check for all
-866 ordered pairs, with repetition, made from the 30 combinators in Bird Info
-other than `Y`, and returns every matching pair. Every pair headed by
-`I`, along with `MM`, `MU`, `UM`, and `UU`, is excluded.
-`check_for_trips_match(symbol_list, expression)` similarly checks 50,164
+the matcher catalog. `check_for_pairs_match(symbol_list, expression)` runs
+that check for all 858 ordered pairs, with repetition, made from the 30
+combinators in Bird Info other than `Y`, and returns every matching pair.
+Every pair headed by
+`I`, along with the identity-equivalent pairs `BI`, `CT`, `MI`, `NK`, `QI`,
+`WK`, `W*K`, and `ZI`, and the nonterminating pairs `MM`, `MU`, `UM`, and
+`UU`, is excluded.
+`check_for_trips_match(symbol_list, expression)` similarly checks 49,692
 ordered trip applications in both the left-associated and right-associated
 application-tree shapes. It skips `(AB)C` when `AB` is excluded and
 independently skips `A(BC)` when `BC` is excluded. In the left-associated
@@ -549,7 +561,7 @@ independently skips `A(BC)` when `BC` is excluded. In the left-associated
 the partially applied `K(BC)` right-associated shape remains eligible. It also
 skips `SK<anything>` in the `ABC` shape while retaining `S(K<anything>)`, and
 skips right-associated `I(BC)` because `I` is applied to the composite `BC`.
-`check_for_quads_match(symbol_list, expression)` checks 3,709,632 eligible
+`check_for_quads_match(symbol_list, expression)` checks 3,667,992 eligible
 quad applications across the five application trees `ABCD`, `AB(CD)`,
 `A(BC)D`, `A(BCD)`, and `A(B(CD))`. It inherits the pair and trip exclusions
 at every pair or trip subtree. Both pair subtrees in `AB(CD)` must be eligible,
@@ -581,11 +593,12 @@ even if they normalize to the same result. The pair, trip, and quad pools omit
 `Y` to avoid recursive candidates; `J` and every other pre-defined bird are
 included. `check_for_match` itself accepts any combinator.
 The `I`-headed exclusions avoid redundant matches because `Ix` reduces to
-`x`. The fixed `MM`, `MU`, `UM`, and `UU` exclusions avoid pairs that do not
-reach normal form under the matcher's bounded normalization. This trip and
-quad subtree pruning checks every position for all four pairs and is
-deliberately heuristic because surrounding application context can make an
-excluded pair normalize.
+`x`; the eight identity-equivalent pair exclusions avoid the same redundancy
+because each is extensionally equal to `I`. The fixed `MM`, `MU`, `UM`, and
+`UU` exclusions avoid pairs that do not reach normal form under the matcher's
+bounded normalization. This trip and quad subtree pruning checks every
+position for all excluded pairs and is deliberately heuristic because
+surrounding application context can make an excluded pair normalize.
 Each normalization is limited to
 `check_for_match_reduction_limit` reductions, currently 256, and also stops on
 a repeated or excessively large expression. A stopped normalization is treated
@@ -792,7 +805,7 @@ expression produces no output, while malformed or empty lines throw
 The `crepl` executable applies `input_escape` to each line before passing it to
 `parse_eval`, so ordinary quoted words and backslashes can be entered directly.
 When standard output is a terminal, it first prints
-`Combinator Read-Eval-Print Loop, version 2.8.0`. Long evaluations display
+`Combinator Read-Eval-Print Loop, version 2.8.3`. Long evaluations display
 the accumulated step count every 1,000 reductions by overwriting one status
 line; the line is cleared before evaluation output is printed. Its interactive
 prompt is `>`. Interactive input uses GNU Readline, so previous nonempty
@@ -893,7 +906,7 @@ full expression on a new line beginning with `= `. For example,
 `takeout y from y(xy): O[takeout y from xy]`, then `= Ox`,
 `takeout x from Ox: O`, and `?=O`. The command does not evaluate its result
 and ignores the stepping and color modes.
-Enter `define [captured | live] <name> <symbol_list> =
+Enter `define [captured | live] <name> [<symbol_list>] =
 <combinator_expression>` to create a named basis. Enter
 `set [captured | live] <name> = [arity] <combinator_expression>` to store an
 expression directly. Both commands are silent. The optional modifier overrides
@@ -924,11 +937,14 @@ without starting the interactive loop.
 registered by `basis(...)` parses the same way, so `Mx` means `M` applied to
 `x`. A multi-character registered name that does not end in a lowercase ASCII
 letter may also be followed immediately by another operand, so `Q1xyz` means
-`Q1 x y z` and prints in that same compact form. Names ending in `a` through
-`z` still require whitespace,
-parentheses, or an escaped-word opener as a delimiter. Thus `Cstar x` means
-`Cstar` applied to `x`, while `Cstarx` is an unknown operand; it does not fall
-back to `C` followed by five symbols.
+`Q1 x y z` and prints in that same compact form. A basis name whose final byte
+is not an ASCII letter or digit is self-delimiting on both sides, so `CstarW*`
+means `Cstar W*`, and a captured `Tail+@1` retains the compact boundaries of
+`Tail+`. When the entire compact token is itself a registered name, that exact
+name takes precedence. Other names ending in `a` through `z` still require
+whitespace, parentheses, or an escaped-word opener as a delimiter. Thus
+`Cstar x` means `Cstar` applied to `x`, while `Cstarx` is an unknown operand;
+it does not fall back to `C` followed by five symbols.
 
 Whitespace also distinguishes an intended lowercase basis name from compact
 symbols. An unregistered run of two or more lowercase letters is an unknown
@@ -1150,7 +1166,7 @@ the `captured` or `live` definition
 modifier, and the `captured` or `live` references option; when no completion is
 available, Tab keeps its normal browser focus behavior. Studio accepts the
 same `abstract [steps | ministeps] ?...`,
-`define [captured | live] name symbols = ...`,
+`define [captured | live] name [symbols] = ...`,
 `set [captured | live] name = ...`, and
 `find [all] [num] ?...` forms as `crepl`. Find has a default limit of three.
 Without `all`, it stops at the first size with

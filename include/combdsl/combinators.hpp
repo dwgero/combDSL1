@@ -139,7 +139,8 @@ enum class printed_token : long {
     left_parenthesis,
     right_parenthesis,
     multicharacter_basis,
-    compact_multicharacter_basis
+    compact_multicharacter_basis,
+    nonalphanumeric_terminated_basis
 };
 
 [[nodiscard]] constexpr bool is_parenthesis(printed_token token) noexcept {
@@ -150,7 +151,19 @@ enum class printed_token : long {
 [[nodiscard]] constexpr bool is_multicharacter_basis(
     printed_token token) noexcept {
     return token == printed_token::multicharacter_basis ||
-           token == printed_token::compact_multicharacter_basis;
+           token == printed_token::compact_multicharacter_basis ||
+           token == printed_token::nonalphanumeric_terminated_basis;
+}
+
+[[nodiscard]] constexpr bool is_ascii_alphanumeric(char value) noexcept {
+    return (value >= '0' && value <= '9') ||
+           (value >= 'A' && value <= 'Z') ||
+           (value >= 'a' && value <= 'z');
+}
+
+[[nodiscard]] constexpr bool ends_with_non_alphanumeric(
+    std::string_view text) noexcept {
+    return !text.empty() && !is_ascii_alphanumeric(text.back());
 }
 
 [[nodiscard]] constexpr bool ends_with_lowercase_ascii_letter(
@@ -158,6 +171,19 @@ enum class printed_token : long {
     return !text.empty() &&
            text.back() >= 'a' &&
            text.back() <= 'z';
+}
+
+[[nodiscard]] constexpr printed_token basis_printed_token(
+    std::string_view name) noexcept {
+    if (ends_with_non_alphanumeric(name)) {
+        return printed_token::nonalphanumeric_terminated_basis;
+    }
+    if (name.size() <= 1) {
+        return printed_token::other;
+    }
+    return ends_with_lowercase_ascii_letter(name)
+        ? printed_token::multicharacter_basis
+        : printed_token::compact_multicharacter_basis;
 }
 
 [[nodiscard]] inline int printed_token_index() {
@@ -213,10 +239,14 @@ inline void print_token(
     auto const follows_multicharacter_basis =
         is_multicharacter_basis(previous) &&
         !is_parenthesis(token) &&
+        token != printed_token::nonalphanumeric_terminated_basis &&
+        previous != printed_token::nonalphanumeric_terminated_basis &&
         !(previous == printed_token::compact_multicharacter_basis &&
           token == printed_token::symbol);
     auto const is_unseparated_multicharacter_basis =
         is_multicharacter_basis(token) &&
+        token != printed_token::nonalphanumeric_terminated_basis &&
+        previous != printed_token::nonalphanumeric_terminated_basis &&
         previous != printed_token::none &&
         !is_parenthesis(previous);
 
@@ -406,13 +436,7 @@ public:
 
     void print_to(std::ostream& output) const {
         auto const name = view();
-        auto const token =
-            name.size() <= 1
-                ? printed_token::other
-                : ends_with_lowercase_ascii_letter(name)
-                      ? printed_token::multicharacter_basis
-                      : printed_token::compact_multicharacter_basis;
-        print_token(output, name, token);
+        print_token(output, name, basis_printed_token(name));
     }
 
     void print_as_operand_to(std::ostream& output) const {
@@ -450,6 +474,11 @@ private:
                 throw std::length_error(
                     "combdsl::basis names are limited to 15 characters");
             }
+        }
+
+        if (name[length - 1] == '@') {
+            throw std::invalid_argument(
+                "combdsl::basis names cannot end with @");
         }
 
         return name.substr(0, length);
@@ -4563,12 +4592,13 @@ public:
     }
 
     void print_to(std::ostream& output) const override {
-        auto const token = printed_name_.size() <= 1
-            ? printed_token::other
-            : ends_with_lowercase_ascii_letter(printed_name_)
-                ? printed_token::multicharacter_basis
-                : printed_token::compact_multicharacter_basis;
-        print_token(output, printed_name_, token);
+        auto const token = ends_with_non_alphanumeric(definition_name_)
+            ? printed_token::nonalphanumeric_terminated_basis
+            : basis_printed_token(printed_name_);
+        print_token(
+            output,
+            printed_name_,
+            token);
     }
 
     void print_as_operand_to(std::ostream& output) const override {
@@ -6871,16 +6901,27 @@ private:
     parse_define_signature() {
         auto const [token, name_position] =
             parse_definition_basis_name_token();
-        if (auto symbols =
-                parse_adjacent_definition_symbols(token)) {
-            auto const name_size = token.size() - symbols->size();
-            auto name = validated_definition_basis_name(
-                token.substr(0, name_size), name_position);
-            return {std::move(name), std::move(*symbols)};
+        if (!is_lowercase_name(token)) {
+            if (auto symbols =
+                    parse_adjacent_definition_symbols(token)) {
+                auto const name_size = token.size() - symbols->size();
+                auto name = validated_definition_basis_name(
+                    token.substr(0, name_size), name_position);
+                return {std::move(name), std::move(*symbols)};
+            }
         }
 
         auto name = validated_definition_basis_name(
             token, name_position);
+        skip_whitespace();
+        if (at_end()) {
+            fail("expected '='");
+        }
+        if (current() == '=') {
+            ++position_;
+            return {std::move(name), {}};
+        }
+
         auto symbols = parse_definition_symbols();
         return {std::move(name), std::move(symbols)};
     }
@@ -7392,8 +7433,10 @@ private:
                 : "live ";
         }
         result += name;
-        result.push_back(' ');
-        result += symbols;
+        if (!symbols.empty()) {
+            result.push_back(' ');
+            result += symbols;
+        }
         result += " =";
         return append_canonical_body(std::move(result), body);
     }
@@ -7774,7 +7817,9 @@ private:
             if (prefix_size > 15) {
                 continue;
             }
-            if (ends_with_lowercase_ascii_letter(prefix)) {
+            if (ends_with_lowercase_ascii_letter(prefix) &&
+                !begins_with_nonalphanumeric_terminated_basis(
+                    token.substr(prefix_size))) {
                 continue;
             }
 
@@ -7791,6 +7836,59 @@ private:
         }
 
         return std::nullopt;
+    }
+
+    [[nodiscard]] bool
+    begins_with_nonalphanumeric_terminated_basis(
+        std::string_view token) const noexcept {
+        for (auto const& [name, basis] : registered_bases_) {
+            static_cast<void>(basis);
+            if (ends_with_non_alphanumeric(name) &&
+                token.starts_with(name)) {
+                return true;
+            }
+        }
+
+        if (recursive_function_) {
+            auto const name =
+                quoted_access::root(*recursive_function_)->atomic_name();
+            if (ends_with_non_alphanumeric(name) &&
+                token.starts_with(name)) {
+                return true;
+            }
+        }
+
+        for (auto const& [name, versions] : registered_versions_) {
+            if (!ends_with_non_alphanumeric(name) ||
+                !token.starts_with(name) ||
+                token.size() <= name.size() + 1 ||
+                token[name.size()] != '@') {
+                continue;
+            }
+
+            std::size_t version = 0;
+            auto position = name.size() + 1;
+            for (; position < token.size(); ++position) {
+                auto const character = token[position];
+                if (character < '0' || character > '9') {
+                    break;
+                }
+                auto const digit = static_cast<std::size_t>(
+                    character - '0');
+                if (version >
+                    (std::numeric_limits<std::size_t>::max() - digit) /
+                        10) {
+                    version = 0;
+                    break;
+                }
+                version = version * 10 + digit;
+            }
+            if (position > name.size() + 1 &&
+                version != 0 && version <= versions.size()) {
+                return true;
+            }
+        }
+        return false;
     }
 
     [[nodiscard]] bool begins_with_unseparated_recursive_function(
@@ -8717,7 +8815,7 @@ inline constexpr std::size_t search_for_subexp_candidate_count =
     search_for_xyz_subexp_candidate_count;
 inline constexpr std::size_t check_for_match_reduction_limit = 256;
 inline constexpr std::size_t check_for_match_combinator_count = 30;
-inline constexpr std::size_t check_for_match_excluded_pair_count = 34;
+inline constexpr std::size_t check_for_match_excluded_pair_count = 42;
 inline constexpr std::size_t check_for_pairs_match_candidate_count =
     check_for_match_combinator_count *
         check_for_match_combinator_count -
@@ -9233,22 +9331,45 @@ predefined_bird_combinators() {
 [[nodiscard]] inline bool is_excluded_match_pair(
     quoted_expression const& function,
     quoted_expression const& argument) noexcept {
-    if (is_identity_combinator(function)) {
+    auto combinator_name =
+        [](quoted_expression const& expression) noexcept
+            -> std::string_view {
+            auto const& root = quoted_access::root(expression);
+            switch (root->kind()) {
+            case quoted_node_kind::identity:
+                return "I";
+            case quoted_node_kind::constant:
+                return "K";
+            case quoted_node_kind::basis:
+                return static_cast<quoted_basis_node_base const&>(*root)
+                    .definition_name();
+            default:
+                return {};
+            }
+        };
+    auto const function_name = combinator_name(function);
+    auto const argument_name = combinator_name(argument);
+    if (function_name == "I") {
         return true;
     }
-    auto is_mockingbird_or_turing =
-        [](quoted_expression const& expression) noexcept {
-            auto const& root = quoted_access::root(expression);
-            if (root->kind() != quoted_node_kind::basis) {
-                return false;
-            }
-            auto const name =
-                static_cast<quoted_basis_node_base const&>(*root)
-                    .name();
-            return name == "M" || name == "U";
-        };
-    return is_mockingbird_or_turing(function) &&
-           is_mockingbird_or_turing(argument);
+    if ((function_name == "M" || function_name == "U") &&
+        (argument_name == "M" || argument_name == "U")) {
+        return true;
+    }
+    static constexpr std::array identity_pairs{
+        std::pair<std::string_view, std::string_view>{"B", "I"},
+        std::pair<std::string_view, std::string_view>{"C", "T"},
+        std::pair<std::string_view, std::string_view>{"M", "I"},
+        std::pair<std::string_view, std::string_view>{"N", "K"},
+        std::pair<std::string_view, std::string_view>{"Q", "I"},
+        std::pair<std::string_view, std::string_view>{"W", "K"},
+        std::pair<std::string_view, std::string_view>{"W*", "K"},
+        std::pair<std::string_view, std::string_view>{"Z", "I"},
+    };
+    return std::ranges::find(
+               identity_pairs,
+               std::pair{function_name, argument_name}) !=
+           identity_pairs.end();
 }
 
 [[nodiscard]] inline bool
