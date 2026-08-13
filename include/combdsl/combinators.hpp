@@ -2728,6 +2728,17 @@ takeout_with_pending_atoms(
     quoted_expression qe,
     std::span<quoted_atomic const> pending_atoms);
 
+struct takeout_ministep_result {
+    quoted_expression result;
+    std::vector<quoted_expression> stages;
+};
+
+[[nodiscard]] inline takeout_ministep_result
+takeout_with_pending_atoms_ministeps(
+    quoted_atomic const& qa,
+    quoted_expression qe,
+    std::span<quoted_atomic const> pending_atoms);
+
 struct reduction_options {
     bool basis_step = false;
     bool reduce_recursive_y = true;
@@ -6459,18 +6470,34 @@ private:
         position_ += keyword_size;
         skip_whitespace();
 
-        bool show_steps = false;
+        enum class trace_mode {
+            none,
+            steps,
+            ministeps,
+        };
+
+        auto mode = trace_mode::none;
         auto const remaining = source_.substr(position_);
         if (remaining.starts_with("steps") &&
             (remaining.size() == 5 ||
              is_whitespace(remaining[5]))) {
-            show_steps = true;
+            mode = trace_mode::steps;
             position_ += 5;
             if (!at_end() && !is_whitespace(current())) {
                 fail("expected whitespace after 'steps'");
             }
             skip_whitespace();
+        } else if (remaining.starts_with("ministeps") &&
+                   (remaining.size() == 9 ||
+                    is_whitespace(remaining[9]))) {
+            mode = trace_mode::ministeps;
+            position_ += 9;
+            if (!at_end() && !is_whitespace(current())) {
+                fail("expected whitespace after 'ministeps'");
+            }
+            skip_whitespace();
         }
+        auto const show_steps = mode != trace_mode::none;
 
         if (at_end() || current() != '?') {
             fail("expected '?'");
@@ -6540,11 +6567,9 @@ private:
              ++symbol_position) {
             pending_atoms.pop_back();
             auto const before_takeout = body;
-            body = takeout_with_pending_atoms(
-                quoted_atomic{symbol(*symbol_position)},
-                std::move(body),
-                pending_atoms);
-            if (show_steps) {
+            auto const takeout_symbol =
+                quoted_atomic{symbol(*symbol_position)};
+            if (mode == trace_mode::ministeps) {
                 if (!first_trace_line) {
                     trace << '\n';
                 }
@@ -6552,8 +6577,35 @@ private:
                       << " from ";
                 before_takeout.print_to(trace);
                 trace << ": ";
-                body.print_to(trace);
+                auto ministeps = takeout_with_pending_atoms_ministeps(
+                    takeout_symbol,
+                    std::move(body),
+                    pending_atoms);
+                ministeps.stages.front().print_to(trace);
+                for (std::size_t stage = 1;
+                     stage < ministeps.stages.size();
+                     ++stage) {
+                    trace << "\n= ";
+                    ministeps.stages[stage].print_to(trace);
+                }
+                body = std::move(ministeps.result);
                 first_trace_line = false;
+            } else {
+                body = takeout_with_pending_atoms(
+                    takeout_symbol,
+                    std::move(body),
+                    pending_atoms);
+                if (show_steps) {
+                    if (!first_trace_line) {
+                        trace << '\n';
+                    }
+                    trace << "takeout " << *symbol_position
+                          << " from ";
+                    before_takeout.print_to(trace);
+                    trace << ": ";
+                    body.print_to(trace);
+                    first_trace_line = false;
+                }
             }
         }
 
@@ -7370,6 +7422,7 @@ private:
             name == "limit" ||
             name == "step" ||
             name == "steps" ||
+            name == "ministeps" ||
             name == "references" ||
             name == "revisions" ||
             name == "snapshot" ||
@@ -8398,6 +8451,237 @@ takeout_impl(
                     qa, qfun, pending_atoms))(
                 takeout_impl(
                     qa, qarg, pending_atoms));
+        }
+    }
+
+    throw std::logic_error(
+        "combdsl::takeout has no matching case");
+}
+
+[[nodiscard]] inline takeout_ministep_result
+make_completed_takeout_ministep(quoted_expression result) {
+    std::vector<quoted_expression> stages;
+    stages.push_back(result);
+    return {std::move(result), std::move(stages)};
+}
+
+class quoted_takeout_ministep_node final : public quoted_node {
+public:
+    explicit quoted_takeout_ministep_node(std::string text)
+        : text_(std::move(text)) {}
+
+    [[nodiscard]] quoted_node_kind kind() const noexcept override {
+        return quoted_node_kind::opaque;
+    }
+
+    void print_to(std::ostream& output) const override {
+        print_layout(output, text_);
+    }
+
+private:
+    std::string text_;
+};
+
+[[nodiscard]] inline quoted_expression
+make_takeout_ministep_placeholder(
+    quoted_atomic const& qa,
+    quoted_expression const& expression) {
+    std::ostringstream output;
+    output << "[takeout ";
+    qa.expression().print_to(output);
+    output << " from ";
+    expression.print_to(output);
+    output << ']';
+    return quoted_access::make(
+        std::make_shared<quoted_takeout_ministep_node>(
+            std::move(output).str()));
+}
+
+template <class Wrap>
+[[nodiscard]] inline takeout_ministep_result
+wrap_takeout_ministeps(
+    quoted_atomic const& qa,
+    quoted_expression const& child_source,
+    takeout_ministep_result child,
+    Wrap&& wrap) {
+    std::vector<quoted_expression> stages;
+    stages.reserve(child.stages.size() + 1);
+    stages.push_back(std::invoke(
+        wrap,
+        make_takeout_ministep_placeholder(qa, child_source)));
+    for (auto const& child_stage : child.stages) {
+        stages.push_back(std::invoke(wrap, child_stage));
+    }
+    auto result = stages.back();
+    return {std::move(result), std::move(stages)};
+}
+
+template <class Wrap>
+[[nodiscard]] inline takeout_ministep_result
+wrap_two_takeout_ministeps(
+    quoted_atomic const& qa,
+    quoted_expression const& function_source,
+    takeout_ministep_result function,
+    quoted_expression const& argument_source,
+    takeout_ministep_result argument,
+    Wrap&& wrap) {
+    auto const function_placeholder =
+        make_takeout_ministep_placeholder(qa, function_source);
+    auto const argument_placeholder =
+        make_takeout_ministep_placeholder(qa, argument_source);
+
+    std::vector<quoted_expression> stages;
+    stages.reserve(
+        function.stages.size() + argument.stages.size() + 1);
+    stages.push_back(std::invoke(
+        wrap, function_placeholder, argument_placeholder));
+    for (auto const& function_stage : function.stages) {
+        stages.push_back(std::invoke(
+            wrap, function_stage, argument_placeholder));
+    }
+    for (auto const& argument_stage : argument.stages) {
+        stages.push_back(std::invoke(
+            wrap, function.result, argument_stage));
+    }
+    auto result = stages.back();
+    return {std::move(result), std::move(stages)};
+}
+
+[[nodiscard]] inline takeout_ministep_result
+takeout_with_pending_atoms_ministeps(
+    quoted_atomic const& qa,
+    quoted_expression qe,
+    std::span<quoted_atomic const> pending_atoms) {
+    if (detail::same_quoted_atom(qa.expression(), qe)) {
+        return make_completed_takeout_ministep(
+            detail::make_quoted_primitive(
+                detail::quoted_node_kind::identity));
+    }
+
+    if (!detail::contains_quoted_atom(qa.expression(), qe)) {
+        return make_completed_takeout_ministep(
+            detail::make_quoted_application(
+                detail::make_quoted_primitive(
+                    detail::quoted_node_kind::constant),
+                std::move(qe)));
+    }
+
+    auto const& root = detail::quoted_access::root(qe);
+    if (root->kind() == detail::quoted_node_kind::application) {
+        auto const& application =
+            static_cast<detail::quoted_application_node const&>(*root);
+        auto const& qfun = application.function();
+        auto const& qarg = application.argument();
+        auto const qfun_is_qa =
+            detail::same_quoted_atom(qa.expression(), qfun);
+        auto const qarg_is_qa =
+            detail::same_quoted_atom(qa.expression(), qarg);
+        auto const qarg_contains_qa =
+            detail::contains_quoted_atom(qa.expression(), qarg);
+        auto const qfun_contains_qa =
+            detail::contains_quoted_atom(qa.expression(), qfun);
+        if (qfun_is_qa && qarg_is_qa) {
+            return make_completed_takeout_ministep(quote(M));
+        }
+        if (qfun_is_qa && !qarg_contains_qa) {
+            return make_completed_takeout_ministep(quote(T)(qarg));
+        }
+        if (qarg_is_qa && !qfun_contains_qa) {
+            return make_completed_takeout_ministep(qfun);
+        }
+        if (qfun_is_qa && qarg_contains_qa) {
+            return wrap_takeout_ministeps(
+                qa,
+                qarg,
+                takeout_with_pending_atoms_ministeps(
+                    qa, qarg, pending_atoms),
+                [](quoted_expression child) {
+                    return quote(O)(std::move(child));
+                });
+        }
+        if (qarg_is_qa && qfun_contains_qa) {
+            return wrap_takeout_ministeps(
+                qa,
+                qfun,
+                takeout_with_pending_atoms_ministeps(
+                    qa, qfun, pending_atoms),
+                [](quoted_expression child) {
+                    return quote(W)(std::move(child));
+                });
+        }
+        if (qfun_contains_qa && !qarg_contains_qa) {
+            auto t = takeout_with_pending_atoms_ministeps(
+                qa, qfun, pending_atoms);
+            auto const qarg_contains_next =
+                contains_next_pending_atom(
+                    pending_atoms, qarg);
+            auto const t_contains_next =
+                contains_next_pending_atom(
+                    pending_atoms, t.result);
+            auto const use_cardinal =
+                qarg_contains_next != t_contains_next
+                    ? qarg_contains_next
+                    : count_contained_quoted_atoms(
+                          pending_atoms, qarg) >=
+                          count_contained_quoted_atoms(
+                              pending_atoms, t.result);
+            return wrap_takeout_ministeps(
+                qa,
+                qfun,
+                std::move(t),
+                [&](quoted_expression child) {
+                    if (use_cardinal) {
+                        return quote(C)(
+                            std::move(child))(qarg);
+                    }
+                    return quote(R)(
+                        qarg)(std::move(child));
+                });
+        }
+        if (qarg_contains_qa && !qfun_contains_qa) {
+            auto t = takeout_with_pending_atoms_ministeps(
+                qa, qarg, pending_atoms);
+            auto const qfun_contains_next =
+                contains_next_pending_atom(
+                    pending_atoms, qfun);
+            auto const t_contains_next =
+                contains_next_pending_atom(
+                    pending_atoms, t.result);
+            auto const use_queer =
+                qfun_contains_next != t_contains_next
+                    ? qfun_contains_next
+                    : count_contained_quoted_atoms(
+                          pending_atoms, qfun) >
+                          count_contained_quoted_atoms(
+                              pending_atoms, t.result);
+            return wrap_takeout_ministeps(
+                qa,
+                qarg,
+                std::move(t),
+                [&](quoted_expression child) {
+                    if (use_queer) {
+                        return quote(Q)(
+                            std::move(child))(qfun);
+                    }
+                    return quote(B)(
+                        qfun)(std::move(child));
+                });
+        }
+        if (qfun_contains_qa && qarg_contains_qa) {
+            return wrap_two_takeout_ministeps(
+                qa,
+                qfun,
+                takeout_with_pending_atoms_ministeps(
+                    qa, qfun, pending_atoms),
+                qarg,
+                takeout_with_pending_atoms_ministeps(
+                    qa, qarg, pending_atoms),
+                [](quoted_expression function,
+                   quoted_expression argument) {
+                    return quote(S)(
+                        std::move(function))(
+                        std::move(argument));
+                });
         }
     }
 

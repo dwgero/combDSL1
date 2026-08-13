@@ -9,3 +9,7 @@ takeout x from xx: M
 takeout y from y: I
 takeout x from I: KI
 ?=KI
+takeout y from y(xy): O[takeout y from xy]
+= Ox
+takeout x from Ox: O
+?=O

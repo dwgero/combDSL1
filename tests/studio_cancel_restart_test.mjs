@@ -678,6 +678,31 @@ test("completes revisions as a typed Studio command", () => {
     );
 });
 
+test("completes abstract ministeps as a typed Studio command", () => {
+    const harness = createHarness({
+        inputHistoryTools: createPopulatedHistoryTools([]),
+    });
+    const source = harness.element("source");
+    source.value = "abstract m";
+    source.setSelectionRange(10, 10);
+
+    const event = source.dispatch("keydown", {
+        key: "Tab",
+        isComposing: false,
+        shiftKey: false,
+        ctrlKey: false,
+        metaKey: false,
+        altKey: false,
+    });
+
+    assert.equal(event.defaultPrevented, true);
+    assert.equal(source.value, "abstract ministeps ?");
+    assert.deepEqual(
+        [source.selectionStart, source.selectionEnd],
+        [20, 20],
+    );
+});
+
 for (const [description, steppingMode] of [
     ["ordinary evaluation", undefined],
     ["automatic Single Step", "single-step"],
@@ -1203,46 +1228,49 @@ test("marks detailed timeout notices red in results and history", () => {
     );
 });
 
-test("routes abstract steps as display-only with modes enabled", () => {
-    for (const steppingMode of ["single-step", "key-step"]) {
-        const harness = createHarness();
-        const source = harness.element("source");
-        const worker = harness.workers[0];
+test("routes abstract trace modes as display-only with modes enabled", () => {
+    for (const command of [
+        "abstract steps ?xy = x(yx)",
+        "abstract ministeps ?xy = y(xy)",
+    ]) {
+        for (const steppingMode of ["single-step", "key-step"]) {
+            const harness = createHarness();
+            const source = harness.element("source");
+            const worker = harness.workers[0];
 
-        worker.send({type: "ready", setList: ""});
-        harness.flushAnimationFrames();
-        harness.element(steppingMode).click();
-        harness.element("basis-step").click();
-        harness.element("colorize").click();
+            worker.send({type: "ready", setList: ""});
+            harness.flushAnimationFrames();
+            harness.element(steppingMode).click();
+            harness.element("basis-step").click();
+            harness.element("colorize").click();
 
-        source.value = "abstract steps ?xy = x(yx)";
-        harness.pressEnter();
-        harness.flushAnimationFrames();
-        const inspection = worker.messages.find(
-            message => message.type === "inspect-definition");
-        worker.send({
-            type: "definition-inspection-result",
-            id: inspection.id,
-            result: {
-                success: true,
-                definition: false,
-                displayOnly: true,
-                showAll: false,
-                find: false,
-                replacement: "",
-            },
-        });
-        harness.flushAnimationFrames();
+            source.value = command;
+            harness.pressEnter();
+            harness.flushAnimationFrames();
+            const inspection = worker.messages.find(
+                message => message.type === "inspect-definition");
+            worker.send({
+                type: "definition-inspection-result",
+                id: inspection.id,
+                result: {
+                    success: true,
+                    definition: false,
+                    displayOnly: true,
+                    showAll: false,
+                    find: false,
+                    replacement: "",
+                },
+            });
+            harness.flushAnimationFrames();
 
-        const evaluation = worker.messages.find(
-            message => message.type === "evaluate");
-        assert.equal(
-            evaluation.source,
-            "abstract steps ?xy = x(yx)");
-        assert.equal(evaluation.singleStep, false);
-        assert.equal(evaluation.keyStep, false);
-        assert.equal(evaluation.basisStep, false);
-        assert.equal(evaluation.colorize, false);
+            const evaluation = worker.messages.find(
+                message => message.type === "evaluate");
+            assert.equal(evaluation.source, command);
+            assert.equal(evaluation.singleStep, false);
+            assert.equal(evaluation.keyStep, false);
+            assert.equal(evaluation.basisStep, false);
+            assert.equal(evaluation.colorize, false);
+        }
     }
 });
 

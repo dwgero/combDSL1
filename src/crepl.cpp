@@ -60,7 +60,7 @@
 
 namespace {
 
-constexpr std::string_view crepl_version = "2.7.7";
+constexpr std::string_view crepl_version = "2.7.8";
 
 [[nodiscard]] bool stream_is_terminal(std::FILE* stream) noexcept {
 #if defined(_WIN32)
@@ -203,8 +203,8 @@ constexpr std::array<std::string_view, 2> help_completion_candidates = {
     "brief", "full"};
 constexpr std::array<std::string_view, 1>
     abstract_question_completion_candidates = {"?"};
-constexpr std::array<std::string_view, 1>
-    abstract_steps_completion_candidates = {"steps"};
+constexpr std::array<std::string_view, 2>
+    abstract_trace_completion_candidates = {"steps", "ministeps"};
 constexpr std::array<std::string_view, 2>
     definition_reference_completion_candidates = {
         "captured", "live"};
@@ -428,7 +428,7 @@ template<std::size_t Size>
                 ? make_completion_candidates(
                     abstract_question_completion_candidates)
                 : make_completion_candidates(
-                    abstract_steps_completion_candidates);
+                    abstract_trace_completion_candidates);
         }
         if (words[0] == "define" || words[0] == "set") {
             return make_completion_candidates(
@@ -478,7 +478,7 @@ template<std::size_t Size>
             find_after_all_completion_candidates);
     }
     if (word_count == 2 && words[0] == "abstract" &&
-        words[1] == "steps") {
+        (words[1] == "steps" || words[1] == "ministeps")) {
         return make_completion_candidates(
             abstract_question_completion_candidates);
     }
@@ -798,7 +798,8 @@ void print_help_brief(std::ostream& output) {
     output <<
         "Commands:\n"
         "about                                 | display copyright and redistribution information\n"
-        "abstract [steps] ?<symbols> = <expression> | display combinator abstraction\n"
+        "abstract [steps | ministeps] ?<symbols> = <expression>\n"
+        "                                      | display combinator abstraction\n"
         "basis step [on | off]                 | names are converted to their stored expressions as a step\n"
         "birds                                 | display the pre-defined bird combinators\n"
         "colorize [on | off]                   | add colors to arguments while stepping\n"
@@ -1013,7 +1014,8 @@ void print_help_full(std::ostream& output) {
         "bases, but exclude the fundamental names S, K, I, and Y.");
 
     output << "\nAbstracting Expressions\n\n"
-           << "abstract [steps] ?<symbol_list> = <combinator_expression>\n";
+           << "abstract [steps | ministeps] ?<symbol_list> = "
+              "<combinator_expression>\n";
     write_wrapped_paragraph(
         output,
         "Abstracts the listed lowercase symbols from the expression, from "
@@ -1024,7 +1026,14 @@ void print_help_full(std::ostream& output) {
         "from <before>: <after>\", and each optimizer substitution, ending "
         "with the same \"?=\" result line. For example, \"abstract steps "
         "?xy = y\" displays \"takeout y from y: I\", then \"takeout x from "
-        "I: KI\". Abstract ignores the stepping and colorize modes.");
+        "I: KI\". The \"ministeps\" form additionally displays every "
+        "recursive takeout call in its position in the full expression as "
+        "\"[takeout <symbol> from <sub-expression>]\", followed by the "
+        "resolved full expression on a new line beginning \"= \". For "
+        "example, \"abstract ministeps ?xy = y(xy)\" starts with \"takeout "
+        "y from y(xy): O[takeout y from xy]\", then \"= Ox\", \"takeout x "
+        "from Ox: O\", and \"?=O\". Abstract ignores the stepping and "
+        "colorize modes.");
 
     output << "\nFinding Combinators\n\n"
            << "find [all] [num] ?<symbol_list> = <combinator_expression>\n";

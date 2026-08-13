@@ -366,6 +366,21 @@ def main():
             raise AssertionError(
                 f"expected abstract steps trace; received {output!r}")
 
+        write_all(master, b"abstract   m\t  \txy = y(xy)\n")
+        output = reader.read_until(b">")
+        require_completed_line(
+            output, b"abstract   ministeps   ?xy = y(xy)\n")
+        normalized_output = normalized(output)
+        expected_ministeps = (
+            b"takeout y from y(xy): O[takeout y from xy]\n"
+            b"= Ox\n"
+            b"takeout x from Ox: O\n"
+            b"?=O\n"
+        )
+        if expected_ministeps not in normalized_output:
+            raise AssertionError(
+                f"expected abstract ministeps trace; received {output!r}")
+
         write_all(master, b"define   c\tTraceComplete x = x\n")
         output = reader.read_until(b">")
         require_completed_line(

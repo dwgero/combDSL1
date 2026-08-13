@@ -255,6 +255,7 @@ test("keeps revisions as a typed command without a UI button", () => {
 test("completes unambiguous abstract command forms", () => {
     const completers = [
         "abstract ?",
+        "abstract ministeps ?",
         "abstract steps ?",
     ].map(phrase => createCommandCompleter([phrase]));
     const complete = source => {
@@ -271,8 +272,14 @@ test("completes unambiguous abstract command forms", () => {
     assert.equal(complete("abstract   "), "abstract   ?");
     assert.equal(complete("abstract s"), "abstract steps ?");
     assert.equal(
+        complete("abstract m"),
+        "abstract ministeps ?");
+    assert.equal(
         complete("  abstract\tsteps  "),
         "  abstract\tsteps  ?");
+    assert.equal(
+        complete("  abstract\tministeps  "),
+        "  abstract\tministeps  ?");
     assert.equal(complete("abstract x"), undefined);
     assert.equal(complete("abstract ?x"), undefined);
 });

@@ -5,4 +5,5 @@ colorize on
 abstract steps ?xy = x(yx)
 abstract steps ?x = Mx
 abstract steps ?xy = y
+abstract ministeps ?xy = y(xy)
 exit

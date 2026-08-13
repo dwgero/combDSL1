@@ -2112,6 +2112,18 @@ int main() {
                        << parsed.is_find;
          },
          "x(yx) 100");
+    test("abstract ministeps inspection stops before abstraction",
+         [] {
+             auto const parsed = combdsl::detail::parse_input(
+                 "abstract ministeps ?xy = x(yx)",
+                 combdsl::detail::parser_definition_mode::
+                     inspect_definitions);
+             parsed.expression.print_to(std::cout);
+             std::cout << ' ' << parsed.is_display_only
+                       << parsed.is_definition
+                       << parsed.is_find;
+         },
+         "x(yx) 100");
     test("abstract steps traces reverse takeout and optimization",
          parse("abstract steps ?xy = x(yx)"),
          "takeout y from x(yx): Bx(Tx)\n"
@@ -2123,6 +2135,25 @@ int main() {
          "takeout y from y: I\n"
          "takeout x from I: KI\n"
          "?=KI");
+    test("abstract ministeps traces recursive takeout in place",
+         parse("abstract ministeps ?xy = y(xy)"),
+         "takeout y from y(xy): O[takeout y from xy]\n"
+         "= Ox\n"
+         "takeout x from Ox: O\n"
+         "?=O");
+    test("abstract ministeps traces nested recursive takeout in place",
+         parse("abstract ministeps ?x = a(b(xc))"),
+         "takeout x from a(b(xc)): Ba[takeout x from b(xc)]\n"
+         "= Ba(Bb[takeout x from xc])\n"
+         "= Ba(Bb(Tc))\n"
+         "?=Ba(Bb(Tc))");
+    test("abstract ministeps traces both recursive branches in place",
+         parse("abstract ministeps ?x = (xa)(xb)"),
+         "takeout x from xa(xb): "
+         "S[takeout x from xa][takeout x from xb]\n"
+         "= S(Ta)[takeout x from xb]\n"
+         "= S(Ta)(Tb)\n"
+         "?=S(Ta)(Tb)");
     test("abstract steps traces changed preprocessing",
          parse("abstract steps ?xyz = C(CB)xyz"),
          "preprocess: C(CB)xyz -> x(yz)\n"
@@ -3104,6 +3135,15 @@ int main() {
         "abstract steps requires a question-mark marker",
         "abstract steps", 14, "expected '?'");
     test_parse_failure(
+        "abstract ministeps requires a question-mark marker",
+        "abstract ministeps", 18, "expected '?'");
+    test_parse_failure(
+        "abstract steps rejects a second trace option",
+        "abstract steps ministeps ?x = x", 15, "expected '?'");
+    test_parse_failure(
+        "abstract ministeps rejects a second trace option",
+        "abstract ministeps steps ?x = x", 19, "expected '?'");
+    test_parse_failure(
         "abstract requires symbols after its marker", "abstract ?", 10,
         "expected at least one symbol");
     test_parse_failure(
@@ -3268,7 +3308,7 @@ int main() {
          "11:step limit is too large");
     constexpr std::string_view reserved_definition_names[] = {
         "abstract", "all", "captured", "live", "limit", "step",
-        "steps", "set",
+        "steps", "ministeps", "set",
         "define", "show", "single", "key", "basis", "colorize",
         "about", "birds", "find", "help", "load", "remove", "save",
         "revisions",
@@ -3495,6 +3535,18 @@ int main() {
          "takeout x from Bx(Tx): SBT\n"
          "optimize: SBT -> A\n"
          "?=A\n");
+    test("parse and step displays an abstract ministeps trace once",
+         [] {
+             std::istringstream input;
+             std::ostringstream output;
+             parse_and_step(
+                 "abstract ministeps ?xy = y(xy)", output, input);
+             std::cout << output.str();
+         },
+         "takeout y from y(xy): O[takeout y from xy]\n"
+         "= Ox\n"
+         "takeout x from Ox: O\n"
+         "?=O\n");
     test("parse and key step displays an abstract result without pausing",
          [] {
              std::istringstream input;
@@ -4099,6 +4151,67 @@ int main() {
              quote(y)(x)(quote(z)(x))(
                  quote(w)(x)(quote(v)(x)))),
          "S(Syz)(Swv)");
+    struct ministep_takeout_equivalence_case {
+        std::string_view branch;
+        combdsl::quoted_expression source;
+        std::vector<quoted_atomic> pending_atoms;
+    };
+    const std::vector<ministep_takeout_equivalence_case>
+        ministep_takeout_equivalence_cases{
+            {"equal atom base case", quote(x), {}},
+            {"absent atom base case", quote(y), {}},
+            {"Mockingbird direct case", quote(x)(x), {}},
+            {"Thrush direct case", quote(x)(y), {}},
+            {"matching argument direct case", quote(y)(x), {}},
+            {"Owl recursive case", quote(x)(quote(x)(y)), {}},
+            {"Warbler recursive case", quote(y)(x)(x), {}},
+            {"Cardinal default chooser", quote(y)(x)(z), {}},
+            {"Robin next-pending chooser", quote(z)(x)(y),
+             {quoted_atomic{z}}},
+            {"Cardinal next-pending chooser", quote(y)(x)(z),
+             {quoted_atomic{z}}},
+            {"Cardinal pending-count chooser",
+             quote(z)(x)(quote(w)(z)),
+             {quoted_atomic{w}, quoted_atomic{z}}},
+            {"Robin pending-count chooser", quote(w)(z)(x)(z),
+             {quoted_atomic{w}, quoted_atomic{z}}},
+            {"Bluebird default chooser", quote(y)(quote(z)(x)), {}},
+            {"Queer next-pending chooser", quote(y)(quote(z)(x)),
+             {quoted_atomic{y}}},
+            {"Bluebird next-pending chooser", quote(y)(quote(z)(x)),
+             {quoted_atomic{y}, quoted_atomic{z}}},
+            {"Queer pending-count chooser", quote(w)(quote(z)(x)),
+             {quoted_atomic{w}, quoted_atomic{y}}},
+            {"Bluebird pending-count chooser", quote(z)(quote(w)(x)),
+             {quoted_atomic{w}, quoted_atomic{y}}},
+            {"Starling two-branch recursion",
+             quote(x)(y)(quote(x)(z)), {}},
+        };
+    for (auto const& equivalence_case :
+         ministep_takeout_equivalence_cases) {
+        auto title = std::string("ministeps result matches takeout for ");
+        title += equivalence_case.branch;
+        test(
+            title,
+            [&] {
+                auto const expected =
+                    combdsl::detail::takeout_with_pending_atoms(
+                        quoted_atomic{x},
+                        equivalence_case.source,
+                        equivalence_case.pending_atoms);
+                auto const actual =
+                    combdsl::detail::
+                        takeout_with_pending_atoms_ministeps(
+                            quoted_atomic{x},
+                            equivalence_case.source,
+                            equivalence_case.pending_atoms)
+                        .result;
+                std::cout <<
+                    combdsl::detail::same_parser_definition_expression(
+                        expected, actual);
+            },
+            "1");
+    }
     test("xy subexpression search enumerates 129,958 candidates",
          [] {
              std::size_t count = 0;

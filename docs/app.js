@@ -74,6 +74,7 @@
     const abstractCommandCompleters = [
         "abstract ?",
         "abstract steps ?",
+        "abstract ministeps ?",
     ].map(phrase =>
         inputHistoryTools.createCommandCompleter([phrase]));
     const completeAbstractCommand = source => {

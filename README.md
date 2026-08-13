@@ -466,25 +466,32 @@ expression is `B`. If this preprocessing repeats an expression or exceeds its
 reduction limit, `define` safely abstracts the original body instead.
 
 At the start of a line, preceded by optional whitespace,
-`abstract [steps] ?symbol_list = combinator_expression` performs the same
-nonrecursive preprocessing, right-to-left contextual `takeout` passes, and
-final optimization used by `define`, but does not create or store a name. The
-required `?` marks the unknown abstraction result. The ordinary form displays
-only `?=` followed by the final combinator expression and does not evaluate it.
+`abstract [steps | ministeps] ?symbol_list = combinator_expression` performs
+the same nonrecursive preprocessing, right-to-left contextual `takeout`
+passes, and final optimization used by `define`, but does not create or store
+a name. The required `?` marks the unknown abstraction result. The ordinary
+form displays only `?=` followed by the final combinator expression and does
+not evaluate it.
 With `steps`, the output also shows preprocessing when it changes the input,
 every `takeout` pass as
 `takeout <symbol> from <before>: <after>`, and each
 optimizer substitution before the final `?=<expression>` line. For example,
 `abstract steps ?xy = y` includes `takeout y from y: I`, followed by
-`takeout x from I: KI`. Unchanged preprocessing and optimization passes are
-omitted.
+`takeout x from I: KI`. With `ministeps`, recursive `takeout` calls appear in
+their positions in the full expression as
+`[takeout <symbol> from <sub-expression>]`; each resolved full expression is
+then printed on a new line beginning with `= `. Thus,
+`abstract ministeps ?xy = y(xy)` starts with
+`takeout y from y(xy): O[takeout y from xy]`, then prints `= Ox`,
+`takeout x from Ox: O`, and `?=O`. Unchanged preprocessing and optimization
+passes are omitted.
 
-The names `abstract`, `all`, `captured`, `live`, `step`, `steps`, `limit`,
-`set`, `define`, `show`, `remove`, `revisions`, `references`, `snapshot`,
-`dependson`, `depends-on`, `depends`, `on`, `usedby`, `used-by`, `used`, `by`,
-`single`, `key`, `basis`, `colorize`, `about`, `birds`, `find`, `help`, `load`,
-`save`, `quit`, and `exit` are reserved words and cannot be used as names by
-either `set` or `define`.
+The names `abstract`, `all`, `captured`, `live`, `step`, `steps`, `ministeps`,
+`limit`, `set`, `define`, `show`, `remove`, `revisions`, `references`,
+`snapshot`, `dependson`, `depends-on`, `depends`, `on`, `usedby`, `used-by`,
+`used`, `by`, `single`, `key`, `basis`, `colorize`, `about`, `birds`, `find`,
+`help`, `load`, `save`, `quit`, and `exit` are reserved words and cannot be
+used as names by either `set` or `define`.
 
 Occurrences of the defined name in the combinator expression are recursive
 references. If any remain after the argument symbols are abstracted, `define`
@@ -785,7 +792,7 @@ expression produces no output, while malformed or empty lines throw
 The `crepl` executable applies `input_escape` to each line before passing it to
 `parse_eval`, so ordinary quoted words and backslashes can be entered directly.
 When standard output is a terminal, it first prints
-`Combinator Read-Eval-Print Loop, version 2.7.7`. Long evaluations display
+`Combinator Read-Eval-Print Loop, version 2.7.8`. Long evaluations display
 the accumulated step count every 1,000 reductions by overwriting one status
 line; the line is cleared before evaluation output is printed. Its interactive
 prompt is `>`. Interactive input uses GNU Readline, so previous nonempty
@@ -869,16 +876,23 @@ the named bases whose definitions directly contain that name. Enter
 bases directly contained in that name's definition. Both queries include
 pre-defined and user-defined bases, exclude `S`, `K`, `I`, and `Y`, and ignore
 the stepping and color modes.
-Enter `abstract [steps] ?<symbol_list> = <combinator_expression>` to perform
-`define`'s abstraction without creating a name. The required `?` marks the
-unknown result. The ordinary form prints only `?=<final_expression>`. With
-`steps`, CREPL also prints changed preprocessing, every right-to-left
+Enter `abstract [steps | ministeps] ?<symbol_list> =
+<combinator_expression>` to perform `define`'s abstraction without creating a
+name. The required `?` marks the unknown result. The ordinary form prints only
+`?=<final_expression>`. With `steps`, CREPL also prints changed preprocessing,
+every right-to-left
 `takeout` pass as
 `takeout <symbol> from <before>: <after>`, and every
 optimizer substitution before that same final line. For example,
 `abstract steps ?xy = y` prints `takeout y from y: I` and then
-`takeout x from I: KI`. The command does not evaluate its result and ignores
-the stepping and color modes.
+`takeout x from I: KI`. With `ministeps`, recursive `takeout` calls appear in
+their positions in the full expression as
+`[takeout <symbol> from <sub-expression>]`; resolving one prints the resulting
+full expression on a new line beginning with `= `. For example,
+`abstract ministeps ?xy = y(xy)` starts with
+`takeout y from y(xy): O[takeout y from xy]`, then `= Ox`,
+`takeout x from Ox: O`, and `?=O`. The command does not evaluate its result
+and ignores the stepping and color modes.
 Enter `define [captured | live] <name> <symbol_list> =
 <combinator_expression>` to create a named basis. Enter
 `set [captured | live] <name> = [arity] <combinator_expression>` to store an
@@ -1134,8 +1148,9 @@ Press Tab to complete a unique prefix for the `abstract`, `set`, `define`,
 `revisions`, `show`, `step limit`, `usedby`, `used-by`, or `used by` command,
 the `captured` or `live` definition
 modifier, and the `captured` or `live` references option; when no completion is
-available, Tab keeps its normal browser focus behavior. Studio accepts the same
-`abstract [steps] ?...`, `define [captured | live] name symbols = ...`,
+available, Tab keeps its normal browser focus behavior. Studio accepts the
+same `abstract [steps | ministeps] ?...`,
+`define [captured | live] name symbols = ...`,
 `set [captured | live] name = ...`, and
 `find [all] [num] ?...` forms as `crepl`. Find has a default limit of three.
 Without `all`, it stops at the first size with

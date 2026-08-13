@@ -1,6 +1,7 @@
 Commands:
 about                                 | display copyright and redistribution information
-abstract [steps] ?<symbols> = <expression> | display combinator abstraction
+abstract [steps | ministeps] ?<symbols> = <expression>
+                                      | display combinator abstraction
 basis step [on | off]                 | names are converted to their stored expressions as a step
 birds                                 | display the pre-defined bird combinators
 colorize [on | off]                   | add colors to arguments while stepping
@@ -28,7 +29,8 @@ usedby <name> | used-by <name> | used by <name>
                                       | display named bases directly contained in <name>
 Commands:
 about                                 | display copyright and redistribution information
-abstract [steps] ?<symbols> = <expression> | display combinator abstraction
+abstract [steps | ministeps] ?<symbols> = <expression>
+                                      | display combinator abstraction
 basis step [on | off]                 | names are converted to their stored expressions as a step
 birds                                 | display the pre-defined bird combinators
 colorize [on | off]                   | add colors to arguments while stepping

@@ -124,15 +124,19 @@ exclude the fundamental names S, K, I, and Y.
 
 Abstracting Expressions
 
-abstract [steps] ?<symbol_list> = <combinator_expression>
+abstract [steps | ministeps] ?<symbol_list> = <combinator_expression>
 Abstracts the listed lowercase symbols from the expression, from right to left,
 without evaluating it. A question mark must immediately precede the symbols. The
 plain form displays only the result as "?=<expression>". The optional "steps"
 word also displays changed preprocessing, each takeout as "takeout <symbol> from
 <before>: <after>", and each optimizer substitution, ending with the same "?="
 result line. For example, "abstract steps ?xy = y" displays "takeout y from y:
-I", then "takeout x from I: KI". Abstract ignores the stepping and colorize
-modes.
+I", then "takeout x from I: KI". The "ministeps" form additionally displays
+every recursive takeout call in its position in the full expression as "[takeout
+<symbol> from <sub-expression>]", followed by the resolved full expression on a
+new line beginning "= ". For example, "abstract ministeps ?xy = y(xy)" starts
+with "takeout y from y(xy): O[takeout y from xy]", then "= Ox", "takeout x from
+Ox: O", and "?=O". Abstract ignores the stepping and colorize modes.
 
 Finding Combinators
 
