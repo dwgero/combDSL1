@@ -491,6 +491,40 @@ test("recalls raw sources and restores the editable draft", () => {
     assert.equal(history.next(), "new draft");
 });
 
+test("reports whether a recalled history entry is current", () => {
+    const history = createHistory();
+    history.record("A");
+    history.record("B");
+    history.record("C");
+
+    assert.equal(history.hasCurrent(), false);
+    assert.equal(history.previous("draft"), "C");
+    assert.equal(history.hasCurrent(), true);
+    assert.equal(history.next(), "draft");
+    assert.equal(history.hasCurrent(), false);
+
+    assert.equal(history.previous("draft"), "C");
+    assert.equal(history.previous("ignored"), "B");
+    assert.equal(history.hasCurrent(), true);
+    const removedB = history.removeCurrent();
+    assert.equal(removedB.index, 1);
+    assert.equal(removedB.nextSource, "C");
+    assert.equal(history.hasCurrent(), true,
+        "the replacement entry remains current");
+    const removedC = history.removeCurrent();
+    assert.equal(removedC.index, 1);
+    assert.equal(removedC.nextSource, "draft");
+    assert.equal(history.hasCurrent(), false,
+        "removing the newest entry returns to the live draft");
+
+    assert.equal(history.previous("new draft"), "A");
+    assert.equal(history.hasCurrent(), true);
+    const removedA = history.removeCurrent();
+    assert.equal(removedA.index, 0);
+    assert.equal(removedA.nextSource, "new draft");
+    assert.equal(history.hasCurrent(), false);
+});
+
 test("removes the current recalled entry and persists the deletion", () => {
     let stored = null;
     const storage = {

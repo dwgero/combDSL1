@@ -361,7 +361,7 @@ def main():
             raise AssertionError(
                 f"expected completed abstract steps command; received {output!r}")
         normalized_output = normalized(output)
-        if (b"takeout x: I\n" not in normalized_output or
+        if (b"takeout x from x: I\n" not in normalized_output or
                 b"?=I\n" not in normalized_output):
             raise AssertionError(
                 f"expected abstract steps trace; received {output!r}")

@@ -4,4 +4,5 @@ basis step on
 colorize on
 abstract steps ?xy = x(yx)
 abstract steps ?x = Mx
+abstract steps ?xy = y
 exit

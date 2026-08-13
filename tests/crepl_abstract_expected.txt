@@ -1,8 +1,11 @@
 ?=A
-takeout y: Bx(Tx)
-takeout x: SBT
+takeout y from x(yx): Bx(Tx)
+takeout x from Bx(Tx): SBT
 optimize: SBT -> A
 ?=A
 preprocess: Mx -> xx
-takeout x: M
+takeout x from xx: M
 ?=M
+takeout y from y: I
+takeout x from I: KI
+?=KI

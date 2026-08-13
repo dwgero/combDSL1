@@ -340,6 +340,7 @@ const createHarness = ({
         resetNavigation: () => {},
         previous: () => undefined,
         next: () => undefined,
+        hasCurrent: () => false,
         removeCurrent: () => undefined,
         prepareOperateAndGetNext: () => undefined,
         resumeOperateAndGetNext: () => undefined,
@@ -815,66 +816,194 @@ test("keeps selected history text while blank clicks focus input", () => {
     );
 });
 
+test("Ctrl-D removes an untouched recalled history item", () => {
+    const harness = createHarness({
+        inputHistoryTools: createPopulatedHistoryTools([
+            ["A"],
+            ["B", "cancelled"],
+            ["C"],
+        ]),
+    });
+    const source = harness.element("source");
+    const displayedHistory = harness.element("source-history");
+    const originalRows = [...displayedHistory.childNodes];
+    source.value = "draft";
+
+    source.dispatch("keydown", {
+        key: "ArrowUp",
+        ctrlKey: false,
+        isComposing: false,
+        shiftKey: false,
+        metaKey: false,
+        altKey: false,
+    });
+    source.dispatch("keydown", {
+        key: "ArrowUp",
+        ctrlKey: false,
+        isComposing: false,
+        shiftKey: false,
+        metaKey: false,
+        altKey: false,
+    });
+    assert.equal(source.value, "B");
+    source.dispatch("selectionchange");
+
+    const removal = source.dispatch("keydown", {
+        key: "d",
+        ctrlKey: true,
+        isComposing: false,
+        shiftKey: false,
+        metaKey: false,
+        altKey: false,
+    });
+
+    assert.equal(removal.defaultPrevented, true);
+    assert.equal(source.value, "C");
+    assert.deepEqual(
+        [source.selectionStart, source.selectionEnd],
+        [1, 1],
+    );
+    assert.deepEqual(
+        displayedHistory.childNodes.map(row => row.textContent),
+        ["A", "C"],
+    );
+    assert.strictEqual(displayedHistory.childNodes[0], originalRows[0]);
+    assert.strictEqual(displayedHistory.childNodes[1], originalRows[2]);
+    assert.equal(originalRows[1].parentNode, null);
+
+    const secondRemoval = source.dispatch("keydown", {
+        key: "d",
+        ctrlKey: true,
+        isComposing: false,
+        shiftKey: false,
+        metaKey: false,
+        altKey: false,
+    });
+    assert.equal(secondRemoval.defaultPrevented, true,
+        "the untouched replacement entry must remain removable");
+    assert.equal(source.value, "draft");
+    assert.deepEqual(
+        displayedHistory.childNodes.map(row => row.textContent),
+        ["A"],
+    );
+    assert.strictEqual(displayedHistory.childNodes[0], originalRows[0]);
+});
+
 for (const [description, key, ctrlKey] of [
     ["Backspace", "Backspace", false],
     ["Ctrl-H", "h", true],
-    ["Ctrl-D", "d", true],
 ]) {
-    test(`${description} removes the recalled history item`, () => {
-        const harness = createHarness({
-            inputHistoryTools: createPopulatedHistoryTools([
-                ["A"],
-                ["B", "cancelled"],
-                ["C"],
-            ]),
-        });
-        const source = harness.element("source");
-        const displayedHistory = harness.element("source-history");
-        const originalRows = [...displayedHistory.childNodes];
-        source.value = "draft";
+    test(`${description} edits rather than removes a recalled history item`,
+        () => {
+            const harness = createHarness({
+                inputHistoryTools: createPopulatedHistoryTools([
+                    ["ABC"],
+                ]),
+            });
+            const source = harness.element("source");
+            const displayedHistory = harness.element("source-history");
+            const originalRow = displayedHistory.childNodes[0];
+            source.value = "draft";
 
-        source.dispatch("keydown", {
-            key: "ArrowUp",
-            ctrlKey: false,
-            isComposing: false,
-            shiftKey: false,
-            metaKey: false,
-            altKey: false,
-        });
-        source.dispatch("keydown", {
-            key: "ArrowUp",
-            ctrlKey: false,
-            isComposing: false,
-            shiftKey: false,
-            metaKey: false,
-            altKey: false,
-        });
-        assert.equal(source.value, "B");
+            source.dispatch("keydown", {
+                key: "ArrowUp",
+                ctrlKey: false,
+                isComposing: false,
+                shiftKey: false,
+                metaKey: false,
+                altKey: false,
+            });
+            assert.equal(source.value, "ABC");
 
-        const removal = source.dispatch("keydown", {
-            key,
-            ctrlKey,
-            isComposing: false,
-            shiftKey: false,
-            metaKey: false,
-            altKey: false,
-        });
+            const editing = source.dispatch("keydown", {
+                key,
+                ctrlKey,
+                isComposing: false,
+                shiftKey: false,
+                metaKey: false,
+                altKey: false,
+            });
 
-        assert.equal(removal.defaultPrevented, true);
-        assert.equal(source.value, "C");
-        assert.deepEqual(
-            [source.selectionStart, source.selectionEnd],
-            [1, 1],
-        );
-        assert.deepEqual(
-            displayedHistory.childNodes.map(row => row.textContent),
-            ["A", "C"],
-        );
-        assert.strictEqual(displayedHistory.childNodes[0], originalRows[0]);
-        assert.strictEqual(displayedHistory.childNodes[1], originalRows[2]);
-        assert.equal(originalRows[1].parentNode, null);
-    });
+            assert.equal(editing.defaultPrevented, false,
+                `${description} must retain its native editing behavior`);
+            assert.deepEqual(
+                displayedHistory.childNodes.map(row => row.textContent),
+                ["ABC"],
+            );
+            assert.strictEqual(displayedHistory.childNodes[0], originalRow);
+        });
 }
+
+test("Ctrl-D stays in editing mode after the caret moves away and back", () => {
+    const harness = createHarness({
+        inputHistoryTools: createPopulatedHistoryTools([
+            ["A"],
+            ["ABC"],
+        ]),
+    });
+    const source = harness.element("source");
+    const displayedHistory = harness.element("source-history");
+    const originalRow = displayedHistory.childNodes[1];
+    source.value = "draft";
+
+    source.dispatch("keydown", {
+        key: "ArrowUp",
+        ctrlKey: false,
+        isComposing: false,
+        shiftKey: false,
+        metaKey: false,
+        altKey: false,
+    });
+    assert.equal(source.value, "ABC");
+
+    source.setSelectionRange(2, 2);
+    source.dispatch("selectionchange");
+    source.setSelectionRange(3, 3);
+    source.dispatch("selectionchange");
+
+    const editing = source.dispatch("keydown", {
+        key: "d",
+        ctrlKey: true,
+        isComposing: false,
+        shiftKey: false,
+        metaKey: false,
+        altKey: false,
+    });
+
+    assert.equal(editing.defaultPrevented, false,
+        "Ctrl-D must retain forward-delete behavior after cursor movement");
+    assert.deepEqual(
+        displayedHistory.childNodes.map(row => row.textContent),
+        ["A", "ABC"],
+    );
+    assert.strictEqual(displayedHistory.childNodes[1], originalRow);
+
+    source.dispatch("keydown", {
+        key: "ArrowUp",
+        ctrlKey: false,
+        isComposing: false,
+        shiftKey: false,
+        metaKey: false,
+        altKey: false,
+    });
+    assert.equal(source.value, "A");
+
+    const removal = source.dispatch("keydown", {
+        key: "d",
+        ctrlKey: true,
+        isComposing: false,
+        shiftKey: false,
+        metaKey: false,
+        altKey: false,
+    });
+    assert.equal(removal.defaultPrevented, true,
+        "recalling another item must re-arm Ctrl-D history removal");
+    assert.deepEqual(
+        displayedHistory.childNodes.map(row => row.textContent),
+        ["ABC"],
+    );
+    assert.strictEqual(displayedHistory.childNodes[0], originalRow);
+});
 
 test("history-removal keys retain their normal behavior on the live draft", () => {
     const harness = createHarness({

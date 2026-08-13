@@ -6539,15 +6539,21 @@ private:
              symbol_position != symbols.rend();
              ++symbol_position) {
             pending_atoms.pop_back();
+            auto const before_takeout = body;
             body = takeout_with_pending_atoms(
                 quoted_atomic{symbol(*symbol_position)},
                 std::move(body),
                 pending_atoms);
             if (show_steps) {
-                std::string label = "takeout ";
-                label.push_back(*symbol_position);
-                label += ": ";
-                append_expression(label, body);
+                if (!first_trace_line) {
+                    trace << '\n';
+                }
+                trace << "takeout " << *symbol_position
+                      << " from ";
+                before_takeout.print_to(trace);
+                trace << ": ";
+                body.print_to(trace);
+                first_trace_line = false;
             }
         }
 

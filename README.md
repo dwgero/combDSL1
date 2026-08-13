@@ -472,8 +472,11 @@ final optimization used by `define`, but does not create or store a name. The
 required `?` marks the unknown abstraction result. The ordinary form displays
 only `?=` followed by the final combinator expression and does not evaluate it.
 With `steps`, the output also shows preprocessing when it changes the input,
-every `takeout` pass, and each optimizer substitution before the final
-`?=<expression>` line. Unchanged preprocessing and optimization passes are
+every `takeout` pass as
+`takeout <symbol> from <before>: <after>`, and each
+optimizer substitution before the final `?=<expression>` line. For example,
+`abstract steps ?xy = y` includes `takeout y from y: I`, followed by
+`takeout x from I: KI`. Unchanged preprocessing and optimization passes are
 omitted.
 
 The names `abstract`, `all`, `captured`, `live`, `step`, `steps`, `limit`,
@@ -782,7 +785,7 @@ expression produces no output, while malformed or empty lines throw
 The `crepl` executable applies `input_escape` to each line before passing it to
 `parse_eval`, so ordinary quoted words and backslashes can be entered directly.
 When standard output is a terminal, it first prints
-`Combinator Read-Eval-Print Loop, version 2.7.3`. Long evaluations display
+`Combinator Read-Eval-Print Loop, version 2.7.7`. Long evaluations display
 the accumulated step count every 1,000 reductions by overwriting one status
 line; the line is cleared before evaluation output is printed. Its interactive
 prompt is `>`. Interactive input uses GNU Readline, so previous nonempty
@@ -870,9 +873,12 @@ Enter `abstract [steps] ?<symbol_list> = <combinator_expression>` to perform
 `define`'s abstraction without creating a name. The required `?` marks the
 unknown result. The ordinary form prints only `?=<final_expression>`. With
 `steps`, CREPL also prints changed preprocessing, every right-to-left
-`takeout` pass, and every optimizer substitution before that same final line.
-The command does not evaluate its result and ignores the stepping and color
-modes.
+`takeout` pass as
+`takeout <symbol> from <before>: <after>`, and every
+optimizer substitution before that same final line. For example,
+`abstract steps ?xy = y` prints `takeout y from y: I` and then
+`takeout x from I: KI`. The command does not evaluate its result and ignores
+the stepping and color modes.
 Enter `define [captured | live] <name> <symbol_list> =
 <combinator_expression>` to create a named basis. Enter
 `set [captured | live] <name> = [arity] <combinator_expression>` to store an
@@ -1108,8 +1114,10 @@ added to the history. Press Up Arrow or Ctrl-P
 to recall older entries, and Down Arrow or Ctrl-N to move toward newer entries
 and eventually restore the draft that was being edited. Ctrl-O submits the
 current input and, after successful completion, recalls the next history entry
-for editing. While an entry is recalled, Ctrl-D, Backspace, or Ctrl-H removes
-it from the displayed and persistent history. Consecutive submissions of the
+for editing. Ctrl-D removes a freshly recalled entry from the displayed and
+persistent history. After the cursor or selection has moved, Ctrl-D resumes
+its normal forward-delete behavior. Backspace and Ctrl-H always retain their
+normal editing behavior. Consecutive submissions of the
 same exact input create only one history entry. Parse errors,
 `Nothing to show`, cancellation, and timeout messages
 are displayed in red and do not themselves add a blank line after them. A

@@ -60,7 +60,7 @@
 
 namespace {
 
-constexpr std::string_view crepl_version = "2.7.3";
+constexpr std::string_view crepl_version = "2.7.7";
 
 [[nodiscard]] bool stream_is_terminal(std::FILE* stream) noexcept {
 #if defined(_WIN32)
@@ -1020,9 +1020,11 @@ void print_help_full(std::ostream& output) {
         "right to left, without evaluating it. A question mark must "
         "immediately precede the symbols. The plain form displays only the "
         "result as \"?=<expression>\". The optional \"steps\" word also "
-        "displays changed preprocessing, each takeout, and each optimizer "
-        "substitution, ending with the same \"?=\" result line. Abstract "
-        "ignores the stepping and colorize modes.");
+        "displays changed preprocessing, each takeout as \"takeout <symbol> "
+        "from <before>: <after>\", and each optimizer substitution, ending "
+        "with the same \"?=\" result line. For example, \"abstract steps "
+        "?xy = y\" displays \"takeout y from y: I\", then \"takeout x from "
+        "I: KI\". Abstract ignores the stepping and colorize modes.");
 
     output << "\nFinding Combinators\n\n"
            << "find [all] [num] ?<symbol_list> = <combinator_expression>\n";

@@ -362,9 +362,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             color: #c33;
         }
     </style>
-    <script src="./evaluation_watchdog.js?v=2.7.3" defer></script>
-    <script src="./input_history.js?v=2.7.3" defer></script>
-    <script src="./app.js?v=2.7.3" defer></script>
+    <script src="./evaluation_watchdog.js?v=2.7.7" defer></script>
+    <script src="./input_history.js?v=2.7.7" defer></script>
+    <script src="./app.js?v=2.7.7" defer></script>
 </head>
 <body>
     <main aria-labelledby="studio-title">
@@ -525,12 +525,15 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             press <kbd>Down Arrow</kbd> or <kbd>Ctrl-N</kbd> to move toward
             newer entries and restore the current draft. <kbd>Ctrl-O</kbd>
             submits the current input and, after successful completion,
-            recalls the next history entry for editing. While an entry is
-            recalled, <kbd>Ctrl-D</kbd>, <kbd>Backspace</kbd>, or
-            <kbd>Ctrl-H</kbd> removes it from the displayed and persistent
-            history. Consecutive submissions of the same exact input create
-            only one history entry. Cancelled and timed-out entries are recalled
-            without their displayed status labels. Parse errors are not saved.
+            recalls the next history entry for editing. <kbd>Ctrl-D</kbd>
+            removes a freshly recalled entry from the displayed and persistent
+            history. After the cursor or selection has moved,
+            <kbd>Ctrl-D</kbd> resumes its normal forward-delete behavior.
+            <kbd>Backspace</kbd> and <kbd>Ctrl-H</kbd> always retain their
+            normal editing behavior. Consecutive submissions of the same exact
+            input create only one history entry. Cancelled and timed-out entries
+            are recalled without their displayed status labels. Parse errors
+            are not saved.
         </div>
         <h2 class="help-subheading">Adding Combinators</h2>
         <div class="help-section">
@@ -667,9 +670,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             expression as <code>?=combinator_expression</code> without
             evaluating it. With the optional
             <code>steps</code>, it also displays preprocessing when that changes
-            the input, every right-to-left <code>takeout</code> pass, and each
-            optimizer substitution before displaying the final
+            the input, every right-to-left <code>takeout</code> pass as
+            <code>takeout &lt;symbol&gt; from &lt;before&gt;:
+                &lt;after&gt;</code>, and each optimizer substitution before
+            displaying the final
             <code>?=combinator_expression</code> line.
+            For example, <code>abstract steps ?xy = y</code> displays
+            <code>takeout y from y: I</code>, followed by
+            <code>takeout x from I: KI</code>.
             Unchanged preprocessing and optimization passes are omitted.
         </div>
         <h2 class="help-subheading">Finding Combinators</h2>
@@ -817,7 +825,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             data-dialog-initial-focus>About</h2>
         <div class="license-text">
             <!-- Keep this version and the app.js cache key in sync. -->
-            <p>Combinator Studio, version 2.7.3<br>
+            <p>Combinator Studio, version 2.7.7<br>
                 Part of the C++ Combinator DSL<br>
                 Copyright (C) 2026  David W. Gero</p>
             <p>This program is free software: you can redistribute it and/or modify

@@ -219,8 +219,10 @@ globalThis.combdslInputHistory = (() => {
                 : entries[position].source;
         };
 
+        const hasCurrent = () => position < entries.length;
+
         const removeCurrent = () => {
-            if (position === entries.length) {
+            if (!hasCurrent()) {
                 return undefined;
             }
 
@@ -257,6 +259,7 @@ globalThis.combdslInputHistory = (() => {
         };
 
         return Object.freeze({
+            hasCurrent,
             next,
             prepareOperateAndGetNext,
             previous,

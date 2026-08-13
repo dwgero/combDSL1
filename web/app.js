@@ -170,6 +170,10 @@
     let savedSetList = "";
     let saveDownloadUrl;
     let pendingOperateAndGetNext;
+    let untouchedHistoryRecall = false;
+    let historyRecallSelectionStart = 0;
+    let historyRecallSelectionEnd = 0;
+    let historyRecallSelectionDirection = "none";
     let singleStepEnabled = false;
     let basisStepEnabled = false;
     let keyStepEnabled = false;
@@ -261,6 +265,28 @@
         source.value = text;
         source.setSelectionRange(text.length, text.length);
         resizeSourceEditor();
+    };
+
+    const clearUntouchedHistoryRecall = () => {
+        untouchedHistoryRecall = false;
+    };
+
+    const rememberUntouchedHistoryRecall = () => {
+        untouchedHistoryRecall = inputHistory.hasCurrent();
+        historyRecallSelectionStart = source.selectionStart;
+        historyRecallSelectionEnd = source.selectionEnd;
+        historyRecallSelectionDirection =
+            source.selectionDirection ?? "none";
+    };
+
+    const historyRecallSelectionChanged = () => {
+        if (untouchedHistoryRecall &&
+            (source.selectionStart !== historyRecallSelectionStart ||
+                source.selectionEnd !== historyRecallSelectionEnd ||
+                (source.selectionDirection ?? "none") !==
+                    historyRecallSelectionDirection)) {
+            clearUntouchedHistoryRecall();
+        }
     };
 
     const redNoticePattern =
@@ -522,6 +548,7 @@
                 ? ""
                 : inputHistory.resumeOperateAndGetNext(
                     request.operateAndGetNext) ?? "";
+            clearUntouchedHistoryRecall();
             setSourceText(nextSource);
         }
     };
@@ -1216,6 +1243,7 @@
 
         const startingExpression = source.value;
         inputHistory.resetNavigation();
+        clearUntouchedHistoryRecall();
         activeRequest = {
             id: ++nextRequestId,
             source: startingExpression,
@@ -1539,22 +1567,25 @@
                 : inputHistory.next();
             if (recalled !== undefined) {
                 setSourceText(recalled);
+                rememberUntouchedHistoryRecall();
             }
             return;
         }
 
-        const removeHistory =
-            (!event.ctrlKey && event.key === "Backspace") ||
-            (event.ctrlKey &&
-                ["d", "h"].includes(event.key.toLowerCase()));
+        historyRecallSelectionChanged();
+        const removeHistory = event.ctrlKey &&
+            event.key.toLowerCase() === "d" &&
+            untouchedHistoryRecall;
         if (!event.isComposing && !event.shiftKey &&
             !event.metaKey && !event.altKey && !source.readOnly &&
             removeHistory) {
             const removed = inputHistory.removeCurrent();
+            clearUntouchedHistoryRecall();
             if (removed !== undefined) {
                 event.preventDefault();
                 sourceHistory.childNodes[removed.index]?.remove();
                 setSourceText(removed.nextSource);
+                rememberUntouchedHistoryRecall();
             }
             return;
         }
@@ -1568,6 +1599,7 @@
             if (completed !== undefined) {
                 event.preventDefault();
                 inputHistory.resetNavigation();
+                clearUntouchedHistoryRecall();
                 setSourceText(completed);
             }
             return;
@@ -1587,8 +1619,13 @@
 
     source.addEventListener("input", () => {
         inputHistory.resetNavigation();
+        clearUntouchedHistoryRecall();
         resizeSourceEditor();
     });
+    source.addEventListener(
+        "selectionchange", historyRecallSelectionChanged);
+    source.addEventListener("keyup", historyRecallSelectionChanged);
+    source.addEventListener("pointerup", historyRecallSelectionChanged);
     sourceBox.addEventListener("click", event => {
         const selection = window.getSelection?.();
         if (event.target !== source &&

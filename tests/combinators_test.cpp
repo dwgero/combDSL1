@@ -2114,20 +2114,25 @@ int main() {
          "x(yx) 100");
     test("abstract steps traces reverse takeout and optimization",
          parse("abstract steps ?xy = x(yx)"),
-         "takeout y: Bx(Tx)\n"
-         "takeout x: SBT\n"
+         "takeout y from x(yx): Bx(Tx)\n"
+         "takeout x from Bx(Tx): SBT\n"
          "optimize: SBT -> A\n"
          "?=A");
+    test("abstract steps shows the expression before every takeout",
+         parse("abstract steps ?xy = y"),
+         "takeout y from y: I\n"
+         "takeout x from I: KI\n"
+         "?=KI");
     test("abstract steps traces changed preprocessing",
          parse("abstract steps ?xyz = C(CB)xyz"),
          "preprocess: C(CB)xyz -> x(yz)\n"
-         "takeout z: Bxy\n"
-         "takeout y: Bx\n"
-         "takeout x: B\n"
+         "takeout z from x(yz): Bxy\n"
+         "takeout y from Bxy: Bx\n"
+         "takeout x from Bx: B\n"
          "?=B");
     test("abstract steps traces each chained optimizer substitution",
          parse("abstract steps ?x = C(Tx)"),
-         "takeout x: BCT\n"
+         "takeout x from C(Tx): BCT\n"
          "optimize: BC -> C*\n"
          "optimize: C* T -> V\n"
          "?=V");
@@ -3486,8 +3491,8 @@ int main() {
                  "abstract steps ?xy = x(yx)", output, input);
              std::cout << output.str();
          },
-         "takeout y: Bx(Tx)\n"
-         "takeout x: SBT\n"
+         "takeout y from x(yx): Bx(Tx)\n"
+         "takeout x from Bx(Tx): SBT\n"
          "optimize: SBT -> A\n"
          "?=A\n");
     test("parse and key step displays an abstract result without pausing",
