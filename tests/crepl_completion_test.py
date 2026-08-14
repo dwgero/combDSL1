@@ -245,7 +245,7 @@ def main():
             b"  S [fundamental]\n"
             b"  K [fundamental]\n"
             b"  I [fundamental]\n"
-            b"next redex: S(Kx)(Iy)z [S at root]\n")
+            b"next reduction: S(Kx)(Iy)z [S at root]\n")
         if expected_inspection not in normalized_output:
             raise AssertionError(
                 f"expected inspect report; received {output!r}")

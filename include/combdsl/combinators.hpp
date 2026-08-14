@@ -6577,7 +6577,7 @@ private:
         }
 
         auto selected = locate_next_parsed_redex(expression);
-        output << "\nnext redex: ";
+        output << "\nnext reduction: ";
         if (!selected) {
             output << "none [normal form]";
         } else {

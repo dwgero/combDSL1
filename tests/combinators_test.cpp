@@ -2428,7 +2428,7 @@ int main() {
          "  S [fundamental]\n"
          "  K [fundamental]\n"
          "  I [fundamental]\n"
-         "next redex: S(Kx)(Iy)z [S at root]");
+         "next reduction: S(Kx)(Iy)z [S at root]");
     test("inspect canonicalizes numbers and digit-ended basis spacing",
          parse("inspect ((Q1 x) (00042)) Q3"),
          "canonical: Q1x 42 Q3\n"
@@ -2436,19 +2436,19 @@ int main() {
          "references:\n"
          "  Q1 [pre-defined]\n"
          "  Q3 [pre-defined]\n"
-         "next redex: Q1x 42 Q3 [Q1 at root]");
+         "next reduction: Q1x 42 Q3 [Q1 at root]");
     test("inspect sorts and deduplicates free symbols",
          parse("inspect zyxzx"),
          "canonical: zyxzx\n"
          "free symbols: x y z\n"
          "references: none\n"
-         "next redex: none [normal form]");
+         "next reduction: none [normal form]");
     test("inspect reports no free symbols or references",
          parse("inspect 42"),
          "canonical: 42\n"
          "free symbols: none\n"
          "references: none\n"
-         "next redex: none [normal form]");
+         "next reduction: none [normal form]");
     test("inspect deduplicates direct references in first-use order",
          parse("inspect x(M)(S)(M)(I)(K)"),
          "canonical: xMSMIK\n"
@@ -2458,7 +2458,7 @@ int main() {
          "  S [fundamental]\n"
          "  I [fundamental]\n"
          "  K [fundamental]\n"
-         "next redex: none [normal form]");
+         "next reduction: none [normal form]");
 
     test("inspect setup registers captured user references",
          [] {
@@ -2479,21 +2479,21 @@ int main() {
          "free symbols: none\n"
          "references:\n"
          "  InspectCaptured@1 [captured]\n"
-         "next redex: none [normal form]");
+         "next reduction: none [normal form]");
     test("inspect identifies an explicit removed revision as captured",
          parse("inspect InspectRemoved@1"),
          "canonical: InspectRemoved@1\n"
          "free symbols: none\n"
          "references:\n"
          "  InspectRemoved@1 [captured]\n"
-         "next redex: none [normal form]");
+         "next reduction: none [normal form]");
     test("inspect identifies an explicit predefined revision",
          parse("inspect M@1"),
          "canonical: M@1\n"
          "free symbols: none\n"
          "references:\n"
          "  M@1 [pre-defined]\n"
-         "next redex: none [normal form]");
+         "next reduction: none [normal form]");
     test("inspect identifies a live current-name reference",
          [] {
              static_cast<void>(parse("references live"));
@@ -2504,21 +2504,21 @@ int main() {
          "free symbols: none\n"
          "references:\n"
          "  InspectLive [live]\n"
-         "next redex: none [normal form]");
-    test("inspect selects a nested ordinary next redex",
+         "next reduction: none [normal form]");
+    test("inspect selects a nested ordinary next reduction",
          parse("inspect x(Iy)"),
          "canonical: x(Iy)\n"
          "free symbols: x y\n"
          "references:\n"
          "  I [fundamental]\n"
-         "next redex: Iy [I at argument]");
+         "next reduction: Iy [I at argument]");
     test("inspect reports a stable deeper application path",
          parse("inspect (x(Iy))z"),
          "canonical: x(Iy)z\n"
          "free symbols: x y z\n"
          "references:\n"
          "  I [fundamental]\n"
-         "next redex: Iy [I at function.argument]");
+         "next reduction: Iy [I at function.argument]");
     test("ordinary single step chooses inspect's nested redex",
          single_step(parse("x(Iy)")), "xy");
     test("inspect parser metadata is display only",
@@ -2537,7 +2537,7 @@ int main() {
          "free symbols: x\n"
          "references:\n"
          "  I [fundamental]\n"
-         "next redex: Ix [I at root]\n");
+         "next reduction: Ix [I at root]\n");
     test_parse_failure(
         "inspect requires an expression", "inspect", 7,
         "expected an expression");

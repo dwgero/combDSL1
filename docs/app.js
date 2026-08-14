@@ -1513,6 +1513,9 @@
     });
 
     const configureDialog = (button, dialog) => {
+        const closeButton = dialog.querySelector(
+            ".dialog-controls button[type=\"submit\"]");
+
         button.addEventListener("click", () => {
             if (replacementRequest !== undefined ||
                 replacementDialog.open ||
@@ -1541,10 +1544,14 @@
         });
 
         dialog.addEventListener("keydown", event => {
-            if (event.key === "Escape") {
-                event.preventDefault();
-                dialog.close();
+            const dismissKey = event.key === "Escape" ||
+                (event.key === "Enter" && !event.isComposing);
+            if (!dismissKey || !dialog.contains(document.activeElement)) {
+                return;
             }
+
+            event.preventDefault();
+            closeButton?.click();
         });
 
         dialog.addEventListener("close", () => {

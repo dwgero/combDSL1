@@ -60,7 +60,7 @@
 
 namespace {
 
-constexpr std::string_view crepl_version = "2.9.5";
+constexpr std::string_view crepl_version = "2.9.7";
 
 [[nodiscard]] bool stream_is_terminal(std::FILE* stream) noexcept {
 #if defined(_WIN32)
@@ -1077,7 +1077,8 @@ void print_help_full(std::ostream& output) {
         "labeled; captured references include their immutable name@N revision. "
         "The final line identifies the next reducible subexpression, its head, "
         "and its function/argument location, or reports normal form when no "
-        "redex exists. The report contains no tree-size or depth statistics.");
+        "reduction is available. The report contains no tree-size or depth "
+        "statistics.");
 
     output << "\nInspecting Dependencies\n\n"
            << "dependson [all] <name>\n"

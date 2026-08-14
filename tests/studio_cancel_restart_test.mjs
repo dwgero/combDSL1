@@ -196,6 +196,7 @@ class FakeElement extends FakeEventTarget {
         this.scrollTop = 0;
         this.tabIndex = 0;
         this.parentNode = null;
+        this.ownerDocument = null;
         this._textContent = "";
         this.focusCount = 0;
     }
@@ -273,6 +274,20 @@ class FakeElement extends FakeEventTarget {
 
     focus() {
         ++this.focusCount;
+        if (this.ownerDocument !== null) {
+            this.ownerDocument.activeElement = this;
+        }
+    }
+
+    contains(node) {
+        for (let current = node ?? null;
+            current !== null;
+            current = current.parentNode) {
+            if (current === this) {
+                return true;
+            }
+        }
+        return false;
     }
 
     click() {
@@ -412,13 +427,65 @@ const createHarness = ({
     elements.get("step-limit-cancel").textContent = "Cancel";
     elements.get("step-limit-resume").textContent = "Resume";
 
+    const informationalDialogParts = new Map();
+    for (const [dialogId, titleId] of [
+        ["help-dialog", "help-title"],
+        ["combinator-info-dialog", "combinator-info-title"],
+        ["about-dialog", "about-title"],
+    ]) {
+        const dialog = elements.get(dialogId);
+        const scroll = new FakeElement("div");
+        const title = new FakeElement("h2");
+        const content = new FakeElement("a");
+        const controls = new FakeFormElement();
+        const close = new FakeButtonElement();
+        elements.set(titleId, title);
+        scroll.append(title, content);
+        controls.append(close);
+        dialog.append(scroll, controls);
+        dialog.querySelector = selector => {
+            if (selector === "[data-dialog-initial-focus]") {
+                return title;
+            }
+            if (selector === ".dialog-controls button[type=\"submit\"]") {
+                return close;
+            }
+            return null;
+        };
+        close.addEventListener("click", () => {
+            const event = controls.dispatch("submit", {submitter: close});
+            if (!event.defaultPrevented && dialog.open) {
+                dialog.close();
+            }
+        });
+        informationalDialogParts.set(dialogId, {
+            close,
+            content,
+            controls,
+            scroll,
+            title,
+        });
+    }
+
     const document = new FakeEventTarget();
     document.baseURI = "https://example.test/combdsl/index.html";
     document.hidden = false;
+    document.activeElement = null;
     document.querySelector = selector => elements.get(selector.slice(1));
     document.getElementById = id => elements.get(id);
     document.createElement = tagName => new FakeElement(tagName);
     document.createTextNode = text => new FakeTextNode(text);
+    const attachToDocument = element => {
+        element.ownerDocument = document;
+        for (const child of element.childNodes) {
+            if (child instanceof FakeElement) {
+                attachToDocument(child);
+            }
+        }
+    };
+    for (const element of elements.values()) {
+        attachToDocument(element);
+    }
 
     const window = new FakeEventTarget();
     window.localStorage = storage;
@@ -512,6 +579,8 @@ const createHarness = ({
     });
 
     return {
+        dialogParts: id => informationalDialogParts.get(id),
+        document,
         element: id => elements.get(id),
         flushAnimationFrames() {
             while (animationFrames.length !== 0) {
@@ -890,29 +959,159 @@ test("keeps informational dialog Close buttons below the sole scroller", () => {
     );
 });
 
-test("focuses the Help heading for keyboard scrolling", () => {
-    const markup = dialogMarkup("help-dialog");
-    const heading = markup.match(
-        /<h2\b[^>]*\bid="help-title"[^>]*>/,
-    )?.[0];
-    assert.ok(heading, "Help must retain its labelled heading");
-    assert.match(heading, /\btabindex="-1"/);
-    assert.match(heading, /\bdata-dialog-initial-focus(?:\s|>)/);
+test("focuses every informational dialog heading for keyboard scrolling", () => {
+    for (const [dialogId, titleId, description] of [
+        ["help-dialog", "help-title", "Help"],
+        ["combinator-info-dialog", "combinator-info-title", "Bird Info"],
+        ["about-dialog", "about-title", "About"],
+    ]) {
+        const markup = dialogMarkup(dialogId);
+        const heading = markup.match(
+            new RegExp(`<h2\\b[^>]*\\bid="${titleId}"[^>]*>`),
+        )?.[0];
+        assert.ok(heading, `${description} must retain its labelled heading`);
+        assert.match(heading, /\btabindex="-1"/);
+        assert.match(heading, /\bdata-dialog-initial-focus(?:\s|>)/);
 
-    const scrollStart = markup.search(
-        /<[^>]+class="[^"]*\bdialog-scroll\b[^"]*"[^>]*>/,
-    );
-    const headingStart = markup.indexOf(heading);
-    const controlsStart = markup.search(
-        /<form\b[^>]*class="[^"]*\bdialog-controls\b[^"]*"[^>]*>/,
-    );
-    assert.ok(scrollStart < headingStart && headingStart < controlsStart,
-        "Help's focused heading must be inside the scrolling row");
-    const close = markup.slice(controlsStart).match(
-        /<button\b[^>]*>\s*Close\s*<\/button>/,
-    )?.[0];
-    assert.ok(close, "Help must retain its Close button");
-    assert.doesNotMatch(close, /\bautofocus\b/);
+        const scrollStart = markup.search(
+            /<[^>]+class="[^"]*\bdialog-scroll\b[^"]*"[^>]*>/,
+        );
+        const headingStart = markup.indexOf(heading);
+        const controlsStart = markup.search(
+            /<form\b[^>]*class="[^"]*\bdialog-controls\b[^"]*"[^>]*>/,
+        );
+        assert.ok(scrollStart < headingStart && headingStart < controlsStart,
+            `${description}'s focused heading must be inside the scrolling row`);
+        const close = markup.slice(controlsStart).match(
+            /<button\b[^>]*>\s*Close\s*<\/button>/,
+        )?.[0];
+        assert.ok(close, `${description} must retain its Close button`);
+        assert.doesNotMatch(close, /\bautofocus\b/);
+    }
+});
+
+test("focuses each informational heading when its dialog opens", () => {
+    const harness = createHarness();
+    for (const [buttonId, dialogId] of [
+        ["help", "help-dialog"],
+        ["combinator-info", "combinator-info-dialog"],
+        ["about", "about-dialog"],
+    ]) {
+        const dialog = harness.element(dialogId);
+        const title = harness.dialogParts(dialogId).title;
+
+        harness.element(buttonId).click();
+
+        assert.equal(dialog.open, true);
+        assert.equal(title.focusCount, 1);
+        dialog.close();
+    }
+});
+
+test("Enter and Escape close informational dialogs from every dialog area", () => {
+    const harness = createHarness();
+    for (const [buttonId, dialogId] of [
+        ["help", "help-dialog"],
+        ["combinator-info", "combinator-info-dialog"],
+        ["about", "about-dialog"],
+    ]) {
+        const button = harness.element(buttonId);
+        const dialog = harness.element(dialogId);
+        const parts = harness.dialogParts(dialogId);
+        let closeCount = 0;
+        let submitCount = 0;
+        dialog.addEventListener("close", () => {
+            ++closeCount;
+        });
+        parts.controls.addEventListener("submit", () => {
+            ++submitCount;
+        });
+
+        for (const key of ["Enter", "Escape"]) {
+            for (const [area, target] of [
+                ["heading", parts.title],
+                ["scrolling content", parts.content],
+                ["scrolling row", parts.scroll],
+                ["Close controls", parts.controls],
+                ["Close button", parts.close],
+            ]) {
+                button.click();
+                assert.equal(dialog.open, true);
+                const closesBefore = closeCount;
+                const submitsBefore = submitCount;
+                target.focus();
+
+                const event = dialog.dispatch("keydown", {
+                    altKey: false,
+                    ctrlKey: false,
+                    isComposing: false,
+                    key,
+                    metaKey: false,
+                    repeat: false,
+                    shiftKey: false,
+                    target,
+                });
+                if (!event.defaultPrevented && target === parts.close) {
+                    parts.close.click();
+                }
+
+                assert.equal(event.defaultPrevented, true,
+                    `${key} in ${dialogId}'s ${area} must suppress its default`);
+                assert.equal(dialog.open, false,
+                    `${key} in ${dialogId}'s ${area} must close the dialog`);
+                assert.equal(closeCount, closesBefore + 1,
+                    `${key} in ${dialogId}'s ${area} must close exactly once`);
+                assert.equal(submitCount, submitsBefore + 1,
+                    `${key} in ${dialogId}'s ${area} must submit Close exactly once`);
+            }
+        }
+    }
+});
+
+test("other keys and focus outside do not close informational dialogs", () => {
+    const harness = createHarness();
+    for (const [buttonId, dialogId] of [
+        ["help", "help-dialog"],
+        ["combinator-info", "combinator-info-dialog"],
+        ["about", "about-dialog"],
+    ]) {
+        const button = harness.element(buttonId);
+        const dialog = harness.element(dialogId);
+        const parts = harness.dialogParts(dialogId);
+        button.click();
+        parts.content.focus();
+
+        for (const key of ["ArrowDown", "PageDown", "Tab", " "]) {
+            const event = dialog.dispatch("keydown", {
+                key,
+                target: parts.content,
+            });
+            assert.equal(event.defaultPrevented, false,
+                `${key} must keep its ordinary dialog behavior`);
+            assert.equal(dialog.open, true,
+                `${key} must not close ${dialogId}`);
+        }
+
+        for (const key of ["Enter", "Escape"]) {
+            harness.element("source").focus();
+            const event = harness.document.dispatch("keydown", {
+                altKey: false,
+                ctrlKey: false,
+                isComposing: false,
+                key,
+                metaKey: false,
+                repeat: false,
+                shiftKey: false,
+                target: harness.element("source"),
+            });
+            assert.equal(event.defaultPrevented, false,
+                `${key} outside ${dialogId} must remain untouched`);
+            assert.equal(dialog.open, true,
+                `${key} outside ${dialogId} must not close it`);
+        }
+
+        dialog.close();
+    }
 });
 
 test("completes revisions as a typed Studio command", () => {
@@ -1993,7 +2192,7 @@ test("routes inspect as compact display-only output", () => {
         "  S [fundamental]\n" +
         "  K [fundamental]\n" +
         "  I [fundamental]\n" +
-        "next redex: S(Kx)(Iy)z [S at root]\n";
+        "next reduction: S(Kx)(Iy)z [S at root]\n";
 
     worker.send({type: "ready", setList: ""});
     harness.flushAnimationFrames();

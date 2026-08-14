@@ -125,7 +125,8 @@ and its direct named references in first-use order. Fundamental, pre-defined,
 captured, and live references are labeled; captured references include their
 immutable name@N revision. The final line identifies the next reducible
 subexpression, its head, and its function/argument location, or reports normal
-form when no redex exists. The report contains no tree-size or depth statistics.
+form when no reduction is available. The report contains no tree-size or depth
+statistics.
 
 Inspecting Dependencies
 
