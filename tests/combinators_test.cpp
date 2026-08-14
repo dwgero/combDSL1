@@ -1097,26 +1097,32 @@ int main() {
     test("parse right nested operand", parse("x(yz)"), "x(yz)");
     test("parse grouped operand", parse("S ( K I ) x"), "S(KI)x");
     test("parse redundant groups", parse("((SK)I)x"), "SKIx");
-    test("parse positive integer value", parse("42"), "42");
-    test("parse explicitly positive integer value", parse("+4"), "4");
-    test("parse negative integer value", parse("-17"), "-17");
-    test("parse maximum signed integer value",
+    test("parse nonnegative integer value", parse("42"), "42");
+    test("parse zero integer value", parse("0"), "0");
+    test("integer output removes leading zeroes", parse("00042"), "42");
+    test("parse maximum nonnegative integer value",
          parse("9223372036854775807"), "9223372036854775807");
-    test("parse minimum signed integer value",
-         parse("-9223372036854775808"), "-9223372036854775808");
-    test("parse fractional value", parse("1.5"), "1.5");
-    test("parse fractional value without leading digits",
-         parse(".5"), "0.5");
-    test("parse fractional value without trailing digits",
-         parse("1."), "1.0");
-    test("parse floating value with an exponent",
-         parse("1e3"), "1000.0");
-    test("parse floating value with an uppercase exponent",
-         parse("2E2"), "200.0");
-    test("parse signed floating value with a signed exponent",
-         parse("-2.5e-2"), "-0.025");
-    test("floating output retains enough precision to round trip",
-         parse("1.2345678901234567"), "1.2345678901234567");
+    test_parse_failure("parse rejects an explicit plus sign", "+4", 0);
+    test_parse_failure("parse rejects a lone plus sign", "+", 0);
+    test_parse_failure(
+        "parse rejects a plus-signed integer after a symbol", "x+1", 1);
+    test_parse_failure("parse rejects a negative integer", "-17", 0);
+    test_parse_failure(
+        "parse rejects the minimum signed integer spelling",
+        "-9223372036854775808", 0);
+    test_parse_failure("parse rejects a decimal fraction", "1.5", 0);
+    test_parse_failure(
+        "parse rejects a fraction without leading digits", ".5", 0);
+    test_parse_failure(
+        "parse rejects a decimal point without trailing digits", "1.", 0);
+    test_parse_failure("parse rejects a lowercase exponent", "1e3", 0);
+    test_parse_failure("parse rejects an uppercase exponent", "2E2", 0);
+    test_parse_failure("parse rejects a signed exponent", "1e+3", 0);
+    test_parse_failure(
+        "parse rejects a signed floating value", "-2.5e-2", 0);
+    test_parse_failure(
+        "parse rejects a high-precision decimal",
+        "1.2345678901234567", 0);
     test("numeric value may immediately follow a symbol",
          parse("x2"), "x 2");
     test("symbol may immediately follow a numeric value",
@@ -1125,8 +1131,6 @@ int main() {
          parse("K2"), "K 2");
     test("primitive is separated after a numeric value",
          parse("2K"), "2 K");
-    test("exponent value may immediately precede a symbol",
-         parse("1e2x"), "100.0 x");
     test("a bare lowercase exponent marker remains a symbol",
          parse("1e"), "1 e");
     test("a bare uppercase exponent marker remains a basis",
@@ -1135,10 +1139,10 @@ int main() {
          parse("0x10"), "0 x 10");
     test("adjacent numeric values print with a separator",
          parse("1")(parse("2")), "1 2");
-    test("numeric values round trip with their exact types and values",
+    test("integer values round trip with their exact values",
          [] {
              auto const expression = parse(
-                 "42 1. 1e3 1.2345678901234567 -2.5e-2");
+                 "42 0 0007 9223372036854775807");
              std::ostringstream rendered;
              expression.print_to(rendered);
              auto const reparsed = parse(rendered.str());
@@ -1147,7 +1151,7 @@ int main() {
                         expression, reparsed)
                  << ' ' << rendered.str();
          },
-         "1 42 1.0 1000.0 1.2345678901234567 -0.025");
+         "1 42 0 7 9223372036854775807");
     test("numeric output cannot fuse with exponent-marker operands",
          [] {
              for (auto const source : {"1 e 2", "1 E 2"}) {
@@ -1164,16 +1168,14 @@ int main() {
              }
          },
          "roundtrip roundtrip ");
-    test("parentheses group a numeric value",
-         parse("x(-2.5)"), "x -2.5");
+    test("parentheses group an integer value",
+         parse("x(25)"), "x 25");
     test("a parenthesized operand stays compact after a numeric value",
          parse("2(xy)"), "2(xy)");
     test("numeric values stay separated inside a parenthesized operand",
          parse("x(2 3)"), "x(2 3)");
     test("identity evaluates to its integer value",
          single_step(parse("I 42")), "42");
-    test("constant evaluates to its floating value",
-         single_step(parse("K 1.5 x")), "1.5");
     test("ordinary C++ integer values retain opaque notation",
          quote(42), "<42>");
     test("ordinary nonnumeric C++ values retain opaque notation",
@@ -2640,24 +2642,32 @@ int main() {
          parse("define NumericDefine = 42"), "NumericDefine");
     test("show preserves the integer value in a define body",
          parse("show NumericDefine"), "arity:0 42");
-    test("define accepts a floating value body",
-         parse("define NumericFunction x = -2.5e-2"),
-         "NumericFunction");
-    test("defined floating constant evaluates to its numeric value",
-         single_step(parse("NumericFunction y")), "-0.025");
-    test("define preserves an integral floating type when shown",
-         parse("define NumIntFloat = 1e3"),
-         "NumIntFloat");
-    test("show marks an integral floating define body with a decimal point",
-         parse("show NumIntFloat"), "arity:0 1000.0");
-    test("equivalent floating spellings leave a define unchanged",
-         [] {
-             auto const before = set_list();
-             static_cast<void>(
-                 parse("define NumericFunction x = -2.50e-2"));
-             std::cout << (set_list() == before
-                 ? "unchanged"
-                 : "changed");
+    auto const definitions_before_rejected_numeric_defines = set_list();
+    constexpr std::string_view negative_numeric_define =
+        "define NegativeNumeric x = -25";
+    test_parse_failure(
+        "define rejects a negative numeric body",
+        negative_numeric_define,
+        negative_numeric_define.find('-'));
+    constexpr std::string_view floating_numeric_define =
+        "define FloatingNumeric x = 2.5";
+    test_parse_failure(
+        "define rejects a floating numeric body",
+        floating_numeric_define,
+        floating_numeric_define.find('2'));
+    constexpr std::string_view exponent_numeric_define =
+        "define ExponentNumeric = 1e3";
+    test_parse_failure(
+        "define rejects an exponent numeric body",
+        exponent_numeric_define,
+        exponent_numeric_define.find('1'));
+    test("rejected numeric defines leave definitions unchanged",
+         [&] {
+             std::cout <<
+                 (set_list() ==
+                          definitions_before_rejected_numeric_defines
+                      ? "unchanged"
+                      : "changed");
          },
          "unchanged");
     test("an adjacent equals makes a lowercase word a zero-arity name",
@@ -2943,35 +2953,21 @@ int main() {
          parse("set NumericSet = 0 42"), "NumericSet");
     test("show preserves an explicit-arity numeric set body",
          parse("show NumericSet"), "arity:0 42");
-    test("set accepts a parenthesized numeric body without an arity",
-         parse("set NumericParenSet = (1.5)"), "NumericParenSet");
-    test("show preserves a parenthesized numeric set body",
-         parse("show NumericParenSet"), "arity:0 1.5");
-    test("set accepts an integral floating value body",
-         parse("set NumIntFloatSet = 1."),
-         "NumIntFloatSet");
-    test("show marks an integral floating set body with a decimal point",
-         parse("show NumIntFloatSet"), "arity:0 1.0");
+    test("set accepts a parenthesized integer body without an arity",
+         parse("set NumericParenSet = (15)"), "NumericParenSet");
+    test("show preserves a parenthesized integer set body",
+         parse("show NumericParenSet"), "arity:0 15");
     test("equivalent integer spellings leave a set unchanged",
          [] {
              auto const before = set_list();
-             static_cast<void>(parse("set NumericSet = 0 +42"));
+             static_cast<void>(parse("set NumericSet = 0 00042"));
              std::cout << (set_list() == before
                  ? "unchanged"
                  : "changed");
          },
          "unchanged");
-    test("set accepts an integer for numeric type comparison",
+    test("set accepts a lone integer body",
          parse("set NumericTyped = 1"), "NumericTyped");
-    test("an equal floating value is a distinct typed definition",
-         [] {
-             auto const before = set_list();
-             static_cast<void>(parse("set NumericTyped = 1.0"));
-             std::cout << (set_list() == before
-                 ? "unchanged"
-                 : "changed");
-         },
-         "changed");
     test("set accepts a unary arity",
          parse("set SetI1 = 1 I"), "SetI1");
     test("unary set basis remains named while undersaturated",
@@ -3168,6 +3164,10 @@ int main() {
          parse("A\\\\Bx"), "A\\\\Bx");
     const auto tail_plus_basis = basis("Tail+", 1, I);
     const auto plus_basis = basis("+", 1, I);
+    test("registered plus basis takes precedence over numeric syntax",
+         parse("+4"), "+ 4");
+    test("registered plus basis applies to an integer",
+         single_step(parse("+4")), "4");
     test("basis ending punctuation needs no trailing delimiter",
          single_step(parse("Tail+x")), "x");
     test("basis ending punctuation prints compactly before a symbol",
@@ -3332,20 +3332,26 @@ int main() {
     test_parse_failure("parse extra nested close", "x(y))", 4);
     test_parse_failure("parse uppercase symbol", "P", 0);
     test_parse_failure(
-        "parse integer above signed range",
+        "parse integer above supported range",
         "9223372036854775808", 0);
     test_parse_failure(
-        "parse integer below signed range",
+        "parse rejects an out-of-range negative spelling",
         "-9223372036854775809", 0);
     test_parse_failure(
-        "parse positive floating value above range", "1e309", 0);
+        "parse rejects an exponent even above floating range", "1e309", 0);
     test_parse_failure(
-        "parse negative floating value above range", "-1e309", 0);
+        "parse rejects a negative exponent spelling", "-1e309", 0);
     test_parse_failure("parse lone minus sign", "-", 0);
     test_parse_failure("parse lone decimal point", ".", 0);
     test_parse_failure("parse repeated sign", "--1", 0);
     test_parse_failure("parse exponent without digits", "1e+", 0);
     test_parse_failure("parse negative exponent without digits", "1e-", 0);
+    test_parse_failure(
+        "parse does not split an exponent before a symbol", "1e2x", 0);
+    test_parse_failure(
+        "parse rejects a negative integer after a symbol", "x-1", 1);
+    test_parse_failure(
+        "parse rejects a decimal after a symbol", "x1.5", 1);
     test_parse_failure("parse repeated decimal point", "1..2", 0);
     test_parse_failure("parse multiple decimal points", "1.2.3", 0);
     test_parse_failure(
@@ -3605,14 +3611,27 @@ int main() {
          parse("set Glued = 2I"), "Glued");
     test("show preserves a glued numeric application body",
          parse("show Glued"), "arity:0 2 I");
-    test("a negative integer after set equals begins a numeric body",
-         parse("set NegAr = -1 I"), "NegAr");
-    test("show preserves a negative numeric application body",
-         parse("show NegAr"), "arity:0 -1 I");
-    test("a fractional value after set equals begins a numeric body",
-         parse("set FracAr = 1.5 I"), "FracAr");
-    test("show preserves a fractional numeric application body",
-         parse("show FracAr"), "arity:0 1.5 I");
+    auto const definitions_before_rejected_numeric_sets = set_list();
+    constexpr std::string_view negative_set_body =
+        "set NegAr = -1 I";
+    test_parse_failure(
+        "set rejects a negative value where an arity or body begins",
+        negative_set_body,
+        negative_set_body.find('-'));
+    constexpr std::string_view floating_set_body =
+        "set FracAr = 1.5 I";
+    test_parse_failure(
+        "set rejects a floating value where an arity or body begins",
+        floating_set_body,
+        floating_set_body.find('1'));
+    test("rejected numeric sets leave definitions unchanged",
+         [&] {
+             std::cout <<
+                 (set_list() == definitions_before_rejected_numeric_sets
+                      ? "unchanged"
+                      : "changed");
+         },
+         "unchanged");
     constexpr std::string_view bracketed_arity = "set Brack = [2] K";
     test_parse_failure(
         "set rejects a bracketed arity",
@@ -3751,8 +3770,6 @@ int main() {
     test("parse eval", [&] { parse_eval("K(Ix)y"); }, "x\n");
     test("parse eval displays an evaluated integer without brackets",
          [&] { parse_eval("I 42"); }, "42\n");
-    test("parse eval displays an evaluated floating value without brackets",
-         [&] { parse_eval("K 1.5 x"); }, "1.5\n");
     test("parse eval reports completed reductions",
          [] {
              std::vector<std::size_t> reports;

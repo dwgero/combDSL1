@@ -129,24 +129,19 @@ Likewise, `K(x(y))()` prints `K(xy)`, and `S(K(x(y)))(z)()` prints
 `S(K(xy))z`. Deferred operands remain unforced while the symbolic tree is built
 or printed.
 
-The text parser accepts signed decimal numeric values. A value without a
-decimal point or exponent is stored as a signed 64-bit integer; a value with a
-decimal point or an `e`/`E` exponent is stored as a `double`. For example,
-`42`, `+4`, `-17`, `.5`, `1.`, `1.5`, `1e3`, and `-2.5e-2` are numeric
-values. They print without opaque-value angle brackets, such as `42`, `0.5`,
-and `-0.025`, and combinator reduction carries the typed value:
-`parse_eval("I 42")` prints `42`. Canonical output separates a numeric value
-from an adjacent non-parenthesized operand, so parsed `2x` prints `2 x` and
-parsed `1e2x` prints `100.0 x`; parentheses remain compact. A bare `e` or `E`
-after a number remains an operand when it does not form a complete exponent.
-Other opaque C++ values retain the `<...>` notation. Exact registered basis
-names and valid registered-name prefixes take precedence over numeric syntax.
+The text parser accepts nonnegative decimal integers such as `0` and `42`.
+They print without opaque-value angle brackets, and combinator reduction
+carries the integer value: `parse_eval("I 42")` prints `42`. Canonical output
+separates an integer from an adjacent non-parenthesized operand, so parsed
+`2x` prints `2 x`; parentheses remain compact. Other opaque C++ values retain
+the `<...>` notation. Exact registered basis names and valid registered-name
+prefixes take precedence over numeric syntax.
 
-Numeric literals are decimal only. Hexadecimal notation, type suffixes,
-`NaN`, and infinity are not numeric-literal forms. An incomplete signed
-exponent, a repeated decimal point, or a value outside the selected integer or
-floating-point type's range is a parse error. Numeric values are data; the
-parser does not provide arithmetic operations for them.
+A leading `+` or `-` sign and floating-point forms containing a decimal point
+or an `e`/`E` exponent are parse errors. Hexadecimal notation, type suffixes,
+`NaN`, and infinity are not integer-literal forms, and a value outside the
+supported integer range is a parse error. Integer values are data; the parser
+does not provide arithmetic operations for them.
 
 ### Named bases
 
@@ -439,7 +434,7 @@ parse("set live Dynamic = 1 Alias");  // Dynamic follows later Alias changes
 
 Whitespace before `set` and around `=` is optional, while at least one
 whitespace character must separate `set` from the name and an explicit arity
-from its expression. An unsigned decimal integer immediately after `=` is an
+from its expression. A nonnegative decimal integer immediately after `=` is an
 arity only when whitespace and a following expression are present. Therefore
 `set Num = 2 I` stores `I` with arity 2, while `set Num = 2` stores the integer
 value 2 with arity 0 and `set Num = 2I` stores the application of value 2 to
@@ -835,7 +830,7 @@ expression produces no output, while malformed or empty lines throw
 The `crepl` executable applies `input_escape` to each line before passing it to
 `parse_eval`, so ordinary quoted words and backslashes can be entered directly.
 When standard output is a terminal, it first prints
-`Combinator Read-Eval-Print Loop, version 2.8.7`. Long evaluations display
+`Combinator Read-Eval-Print Loop, version 2.8.8`. Long evaluations display
 the accumulated step count every 1,000 reductions by overwriting one status
 line; the line is cleared before evaluation output is printed. Its interactive
 prompt is `>`. Interactive input uses GNU Readline, so previous nonempty

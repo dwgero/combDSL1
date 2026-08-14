@@ -226,23 +226,22 @@ int main() {
 
     auto const numeric_values = load_set_list(
         "set FileInteger = 42\n"
-        "define FileFloating x = -2.5e-2\n");
-    check("a file can load integer and floating numeric values",
+        "define FileNumber x = 7\n");
+    check("a file can load nonnegative integer values",
           numeric_values.success &&
           numeric_values.loaded == 2 &&
           numeric_values.diagnostics.empty());
-    check("loaded numeric values retain their numeric bodies",
+    check("loaded integer values retain their numeric bodies",
           shown_definition("FileInteger") == "arity:0 42" &&
-          shown_definition("FileFloating") ==
-              "arity:1 K -0.025");
-    check("a loaded numeric function evaluates to its value",
-          stepped_expression("FileFloating y") == "-0.025");
+          shown_definition("FileNumber") == "arity:1 K 7");
+    check("a loaded integer function evaluates to its value",
+          stepped_expression("FileNumber y") == "7");
     auto const saved_numeric_values = combdsl::set_list();
-    check("saved numeric definitions contain parser-readable numbers",
+    check("saved integer definitions contain parser-readable numbers",
           saved_numeric_values.find(
               "set FileInteger = 0 42") != std::string::npos &&
           saved_numeric_values.find(
-              "define FileFloating x = -2.5e-2") !=
+              "define FileNumber x = 7") !=
               std::string::npos &&
           saved_numeric_values.find('<') == std::string::npos);
     auto const reloaded_numeric_values = load_set_list(
@@ -250,10 +249,26 @@ int main() {
     check("a saved file containing numeric values reloads",
           reloaded_numeric_values.success &&
           reloaded_numeric_values.diagnostics.empty());
-    check("reloaded numeric values still display without angle brackets",
+    check("reloaded integer values still display without angle brackets",
           shown_definition("FileInteger") == "arity:0 42" &&
-          shown_definition("FileFloating") ==
-              "arity:1 K -0.025");
+          shown_definition("FileNumber") == "arity:1 K 7");
+
+    auto const prohibited_numeric_values = load_set_list(
+        "set FileNegative = -1\n"
+        "set FileFloating = 1.5\n"
+        "set FileExponent = 1e3\n");
+    check("a file rejects negative and floating numeric values",
+          !prohibited_numeric_values.success &&
+          !prohibited_numeric_values.aborted &&
+          prohibited_numeric_values.loaded == 0 &&
+          prohibited_numeric_values.diagnostics.size() == 3);
+    check("a failed numeric file load registers none of its names",
+          !defined_name("FileNegative") &&
+          !defined_name("FileFloating") &&
+          !defined_name("FileExponent"));
+    check("a failed numeric file load restores prior definitions",
+          shown_definition("FileInteger") == "arity:0 42" &&
+          shown_definition("FileNumber") == "arity:1 K 7");
 
     auto const legacy_live_update = load_set_list(
         "set FileGood = 0 K\n");

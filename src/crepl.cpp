@@ -60,7 +60,7 @@
 
 namespace {
 
-constexpr std::string_view crepl_version = "2.8.7";
+constexpr std::string_view crepl_version = "2.8.8";
 
 [[nodiscard]] bool stream_is_terminal(std::FILE* stream) noexcept {
 #if defined(_WIN32)
@@ -905,15 +905,16 @@ void print_help_full(std::ostream& output) {
     output.put('\n');
     write_wrapped_paragraph(
         output,
-        "The parser accepts signed decimal integers and floating-point "
-        "values, including decimal points and e/E exponents. They are "
-        "stored and displayed as numeric values, such as 42 and -0.025. "
-        "Canonical output separates them from adjacent non-parenthesized "
-        "operands. In a set command, an unsigned integer after '=' "
-        "is the arity only when whitespace and a following expression are "
-        "present: 'set Num = 2 I' has arity 2, while 'set Num = 2' and 'set "
-        "Num = 2I' begin numeric bodies. Use '(2) I' to force a leading "
-        "numeric body before whitespace.");
+        "The parser accepts nonnegative decimal integers, such as 0 and 42. "
+        "They are stored and displayed as integer values. A leading '+' or "
+        "'-' sign and floating-point forms containing a decimal point or an "
+        "e/E exponent are parse errors. Canonical output separates integers "
+        "from adjacent non-parenthesized operands. In a set command, a "
+        "nonnegative decimal integer after '=' is the arity only when "
+        "whitespace and a following expression are present: 'set Num = 2 "
+        "I' has arity 2, while 'set Num = 2' and 'set Num = 2I' begin "
+        "integer bodies. Use '(2) I' to force a leading integer body before "
+        "whitespace.");
     output << '\n'
            << "define [captured | live] <name> [<symbol_list>] = "
               "<combinator_expression>\n";

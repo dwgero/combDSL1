@@ -7851,31 +7851,17 @@ private:
 
         auto literal = source_.substr(
             literal_position, end - literal_position);
-        if (!literal.empty() && literal.front() == '+') {
-            literal.remove_prefix(1);
+        if (floating ||
+            (!literal.empty() &&
+             (literal.front() == '+' || literal.front() == '-'))) {
+            fail("invalid numeric literal");
         }
 
-        if (!floating) {
-            std::int64_t value = 0;
-            auto const [parsed_end, error] = std::from_chars(
-                literal.data(), literal.data() + literal.size(), value);
-            if (error == std::errc::result_out_of_range) {
-                fail("integer literal is out of range");
-            }
-            if (error != std::errc{} ||
-                parsed_end != literal.data() + literal.size()) {
-                fail("invalid numeric literal");
-            }
-            position_ = end;
-            return quote(value);
-        }
-
-        double value = 0;
+        std::int64_t value = 0;
         auto const [parsed_end, error] = std::from_chars(
-            literal.data(), literal.data() + literal.size(), value,
-            std::chars_format::general);
+            literal.data(), literal.data() + literal.size(), value);
         if (error == std::errc::result_out_of_range) {
-            fail("floating-point literal is out of range");
+            fail("integer literal is out of range");
         }
         if (error != std::errc{} ||
             parsed_end != literal.data() + literal.size()) {

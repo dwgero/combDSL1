@@ -362,9 +362,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             color: #c33;
         }
     </style>
-    <script src="./evaluation_watchdog.js?v=2.8.7" defer></script>
-    <script src="./input_history.js?v=2.8.7" defer></script>
-    <script src="./app.js?v=2.8.7" defer></script>
+    <script src="./evaluation_watchdog.js?v=2.8.8" defer></script>
+    <script src="./input_history.js?v=2.8.8" defer></script>
+    <script src="./app.js?v=2.8.8" defer></script>
 </head>
 <body>
     <main aria-labelledby="studio-title">
@@ -554,18 +554,19 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             the minimal number of arguments required for the expression
             to reduce.
             <br><br>
-            The parser accepts signed decimal integers and floating-point
-            values, including decimal points and <code>e</code>/<code>E</code>
-            exponents. They are stored and displayed as numeric values, such
-            as <code>42</code> and <code>-0.025</code>. Canonical output
-            separates them from adjacent non-parenthesized operands. In a
-            <code>set</code> command, an
-            unsigned integer after <code>=</code> is the arity only when
-            whitespace and a following expression are present:
+            The parser accepts nonnegative decimal integers, such as
+            <code>0</code> and <code>42</code>. They are stored and displayed
+            as integer values. A leading <code>+</code> or <code>-</code> sign
+            and floating-point forms containing a decimal point or an
+            <code>e</code>/<code>E</code> exponent are parse errors. Canonical
+            output separates integers
+            from adjacent non-parenthesized operands. In a <code>set</code>
+            command, a nonnegative decimal integer after <code>=</code> is the
+            arity only when whitespace and a following expression are present:
             <code>set Num = 2 I</code> has arity 2, while
             <code>set Num = 2</code> and <code>set Num = 2I</code> begin
-            numeric bodies. Use <code>set Num = (2) I</code> to force a
-            leading numeric body before whitespace.
+            integer bodies. Use <code>set Num = (2) I</code> to force a
+            leading integer body before whitespace.
             <br><br>
             <code>define [captured | live] name [symbol_list] =
                 combinator_expression</code><br>
@@ -851,7 +852,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             data-dialog-initial-focus>About</h2>
         <div class="license-text">
             <!-- Keep this version and the app.js cache key in sync. -->
-            <p>Combinator Studio, version 2.8.7<br>
+            <p>Combinator Studio, version 2.8.8<br>
                 Part of the C++ Combinator DSL<br>
                 Copyright (C) 2026  David W. Gero</p>
             <p>This program is free software: you can redistribute it and/or modify
