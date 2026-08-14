@@ -523,11 +523,11 @@ passes are omitted.
 The names `abstract`, `all`, `captured`, `live`, `step`, `steps`, `ministeps`,
 `limit`, `set`, `define`, `show`, `remove`, `revisions`, `references`,
 `snapshot`, `dependson`, `depends-on`, `depends`, `on`, `usedby`, `used-by`,
-`used`, `by`, `single`, `key`, `basis`, `colorize`, `about`, `birds`, `find`,
-`help`, `load`, `save`, `quit`, and `exit` are reserved words and cannot be
-used as names by either `set` or `define`. The reserved word `all` serves as
-the modifier for the dependency queries described below, as well as for
-`show all` and `find all`.
+`used`, `by`, `path`, `between`, `and`, `single`, `key`, `basis`, `colorize`,
+`about`, `birds`, `find`, `help`, `load`, `save`, `quit`, and `exit` are
+reserved words and cannot be used as names by either `set` or `define`. The
+reserved word `all` serves as the modifier for the dependency queries described
+below, as well as for `show all` and `find all`.
 
 Occurrences of the defined name in the combinator expression are recursive
 references. If any remain after the argument symbols are abstracted, `define`
@@ -778,7 +778,25 @@ parse_eval("depends on all Base");
 parse_eval("usedby all Outer");
 // Outer directly uses: Middle
 // Outer indirectly uses: Base
+parse_eval("usedby path between Base and Outer");
+// Outer uses Base via: Outer -> Middle -> Base
 ```
+
+The related display-only forms
+`usedby path [between] name1 [and] name2`,
+`used-by path [between] name1 [and] name2`, and
+`used by path [between] name1 [and] name2` find a dependency path between two
+different current, non-fundamental names. The words `between` and `and` are
+independently optional, and either endpoint order gives the same result. The
+search follows the directed, actual stored-reference graph in both possible
+endpoint directions. Captured and version-qualified edges retain their exact
+revisions, including removed captured intermediates, while live edges follow
+their current target or retained last target. The path with the fewest edges
+wins; ties use the lexicographically smallest stored basis-name sequence,
+which is the displayed order for ordinary names. A match is printed as
+`A uses B via: A -> C -> B`. If there is no path, the result is
+`A and B have no dependency path`, with the two displayed endpoint names in
+lexicographic order.
 
 At the start of a line, optionally preceded by whitespace, `remove` followed
 by whitespace and a name removes a user-defined basis from future parsing.
@@ -850,7 +868,7 @@ expression produces no output, while malformed or empty lines throw
 The `crepl` executable applies `input_escape` to each line before passing it to
 `parse_eval`, so ordinary quoted words and backslashes can be entered directly.
 When standard output is a terminal, it first prints
-`Combinator Read-Eval-Print Loop, version 2.9.2`. Long evaluations display
+`Combinator Read-Eval-Print Loop, version 2.9.3`. Long evaluations display
 the accumulated step count every 1,000 reductions by overwriting one status
 line; the line is cleared before evaluation output is printed. Its interactive
 prompt is `>`. Interactive input uses GNU Readline, so previous nonempty
@@ -938,6 +956,11 @@ their exact revisions during that traversal, while live references follow the
 current target or their retained last target while the name is removed. Both
 queries include pre-defined and user-defined bases, exclude `S`, `K`, `I`, and
 `Y`, and ignore the stepping and color modes.
+Enter `usedby path [between] <name1> [and] <name2>`, or either of its
+`used-by` and `used by` aliases, to display the shortest dependency path
+between two different current names. The optional words `between` and `and`
+may be used independently, and the endpoint order does not matter. The exact
+path and no-path formats are described above.
 Enter `abstract [steps | ministeps] ?<symbol_list> =
 <combinator_expression>` to perform `define`'s abstraction without creating a
 name. The required `?` marks the unknown result. The ordinary form prints only
@@ -1220,10 +1243,10 @@ when the Results area already contains output.
 Press Tab to complete a unique prefix for the `abstract`, `set`, `define`,
 `dependson`, `depends-on`, `depends on`, `find`, `references`, `remove`,
 `revisions`, `show`, `step limit`, `usedby`, `used-by`, or `used by` command,
-the dependency-query `all` modifier, the `captured` or `live` definition
-modifier, and the `captured` or `live` references option; when no completion is
-available, Tab keeps its normal browser focus behavior. Studio accepts the
-same `abstract [steps | ministeps] ?...`,
+the dependency-query `all`, `path`, `between`, and `and` words, the `captured`
+or `live` definition modifier, and the `captured` or `live` references option;
+when no completion is available, Tab keeps its normal browser focus behavior.
+Studio accepts the same `abstract [steps | ministeps] ?...`,
 `define [captured | live] name [symbols] = ...`,
 `set [captured | live] name = ...`, and
 `find [all] [num] ?...` forms as `crepl`. Find has a default limit of three.

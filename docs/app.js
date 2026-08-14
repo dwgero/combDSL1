@@ -64,6 +64,67 @@
                 "usedby all",
             ],
             {appendSpaceToExact: true});
+    const completeDependencyPath =
+        inputHistoryTools.createCommandCompleter(
+            [
+                "used by path",
+                "used-by path",
+                "usedby path",
+            ],
+            {appendSpaceToExact: true});
+    const completeDependencyPathBetween =
+        inputHistoryTools.createCommandCompleter(
+            [
+                "used by path between",
+                "used-by path between",
+                "usedby path between",
+            ],
+            {appendSpaceToExact: true});
+    const completeDependencyPathAnd = source => {
+        const original = String(source);
+        const tokenPattern = /[^ \t\n\r\f\v]+/g;
+        const tokens = Array.from(
+            original.matchAll(tokenPattern),
+            match => ({text: match[0], index: match.index}),
+        );
+        if (tokens.length === 0) {
+            return undefined;
+        }
+
+        const endsWithWhitespace = /[ \t\n\r\f\v]$/.test(original);
+        const partial = endsWithWhitespace ? "" : tokens.at(-1).text;
+        if (!"and".startsWith(partial)) {
+            return undefined;
+        }
+        const prefixTokens = endsWithWhitespace
+            ? tokens.map(token => token.text)
+            : tokens.slice(0, -1).map(token => token.text);
+        const compact =
+            (prefixTokens[0] === "usedby" ||
+                prefixTokens[0] === "used-by") &&
+            prefixTokens[1] === "path";
+        const twoWord =
+            prefixTokens[0] === "used" &&
+            prefixTokens[1] === "by" &&
+            prefixTokens[2] === "path";
+        const argument = compact ? 2 : twoWord ? 3 : undefined;
+        if (argument === undefined) {
+            return undefined;
+        }
+        const hasEndpoint =
+            (prefixTokens.length === argument + 1 &&
+                prefixTokens[argument] !== "between") ||
+            (prefixTokens.length === argument + 2 &&
+                prefixTokens[argument] === "between");
+        if (!hasEndpoint) {
+            return undefined;
+        }
+
+        const beforePartial = endsWithWhitespace
+            ? original
+            : original.slice(0, tokens.at(-1).index);
+        return `${beforePartial}and `;
+    };
     const completeDefinitionReferenceMode =
         inputHistoryTools.createCommandCompleter(
             [
@@ -122,6 +183,9 @@
     const completeCommand = source =>
         completeTopLevelCommand(source) ??
             completeDependencyAll(source) ??
+            completeDependencyPath(source) ??
+            completeDependencyPathBetween(source) ??
+            completeDependencyPathAnd(source) ??
             completeDefinitionReferenceMode(source) ??
             completeAbstractCommand(source) ??
             completeShowAll(source) ??

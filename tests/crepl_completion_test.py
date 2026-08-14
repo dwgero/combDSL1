@@ -304,6 +304,35 @@ def main():
             raise AssertionError(
                 f"expected used by result; received {output!r}")
 
+        for source, completed in [
+                (
+                    b"usedb\tp\tb\tDepUser a\tDepSource\n",
+                    b"usedby path between DepUser and DepSource\n",
+                ),
+                (
+                    b"used-\tp\tDepUser DepSource\n",
+                    b"used-by path DepUser DepSource\n",
+                ),
+                (
+                    b"used   b\tp\tb\tDepUser DepSource\n",
+                    b"used   by path between DepUser DepSource\n",
+                ),
+        ]:
+            write_all(master, source)
+            # A dependency path contains ``->``, so wait for readline's
+            # bracketed-paste prompt marker rather than the first ``>``.
+            output = reader.read_until(b"\x1b[?2004h>")
+            require_completed_line(output, completed)
+            normalized_output = normalized(output)
+            if b"Parse error" in normalized_output:
+                raise AssertionError(
+                    "expected successful usedby path; "
+                    f"received {output!r}")
+            if (b"DepUser uses DepSource via: "
+                    b"DepUser -> DepSource\n" not in normalized_output):
+                raise AssertionError(
+                    f"expected dependency path; received {output!r}")
+
         write_all(master, b"set Remember = 1 I\n")
         output = reader.read_until(b">")
         require_completed_line(output, b"set Remember = 1 I\n")

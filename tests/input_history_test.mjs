@@ -144,8 +144,19 @@ test("completes dependency commands with their delimiter", () => {
         "used-by all",
         "usedby all",
     ], {appendSpaceToExact: true});
+    const completePath = createCommandCompleter([
+        "used by path",
+        "used-by path",
+        "usedby path",
+    ], {appendSpaceToExact: true});
+    const completeBetween = createCommandCompleter([
+        "used by path between",
+        "used-by path between",
+        "usedby path between",
+    ], {appendSpaceToExact: true});
     const complete = source =>
-        completeTopLevel(source) ?? completeAll(source);
+        completeTopLevel(source) ?? completeAll(source) ??
+            completePath(source) ?? completeBetween(source);
 
     assert.equal(complete("dependso"), "dependson ");
     assert.equal(complete("depends-"), "depends-on ");
@@ -163,11 +174,24 @@ test("completes dependency commands with their delimiter", () => {
     assert.equal(complete("usedby a"), "usedby all ");
     assert.equal(complete("used-by all"), "used-by all ");
     assert.equal(complete("used by a"), "used by all ");
+    assert.equal(complete("usedby p"), "usedby path ");
+    assert.equal(complete("used-by path"), "used-by path ");
+    assert.equal(complete("used by p"), "used by path ");
+    assert.equal(
+        complete("usedby path b"),
+        "usedby path between ");
+    assert.equal(
+        complete("used-by path between"),
+        "used-by path between ");
+    assert.equal(
+        complete("  used\tby  path  b"),
+        "  used\tby  path  between ");
     assert.equal(
         complete("  depends\ton  a"),
         "  depends\ton  all ");
     assert.equal(complete("depends on Foo"), undefined);
     assert.equal(complete("usedby all Foo"), undefined);
+    assert.equal(complete("usedby path Foo"), undefined);
 });
 
 test("completes phrases while preserving multiple whitespace", () => {

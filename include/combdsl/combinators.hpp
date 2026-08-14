@@ -5888,6 +5888,107 @@ parser_dependency_names(
     return result;
 }
 
+using parser_dependency_path =
+    std::vector<registered_parser_basis_ptr>;
+
+[[nodiscard]] inline bool parser_dependency_path_less(
+    parser_dependency_path const& left,
+    parser_dependency_path const& right) {
+    auto const common_size = std::min(left.size(), right.size());
+    for (std::size_t index = 0; index < common_size; ++index) {
+        auto const left_name = left[index]->name();
+        auto const right_name = right[index]->name();
+        if (left_name != right_name) {
+            return left_name < right_name;
+        }
+    }
+    if (left.size() != right.size()) {
+        return left.size() < right.size();
+    }
+    for (std::size_t index = 0; index < left.size(); ++index) {
+        if (left[index]->version() != right[index]->version()) {
+            return left[index]->version() < right[index]->version();
+        }
+    }
+    return false;
+}
+
+[[nodiscard]] inline parser_dependency_path
+shortest_parser_dependency_path(
+    registered_parser_basis_ptr const& start,
+    std::string_view target_name,
+    registered_parser_basis_table const& registered_bases,
+    parser_basis_version_history const& registered_versions) {
+    std::vector<parser_dependency_path> current_paths{{start}};
+    std::unordered_set<registered_parser_basis const*> visited{
+        start.get()};
+    while (!current_paths.empty()) {
+        std::ranges::sort(
+            current_paths, parser_dependency_path_less);
+        for (auto const& path : current_paths) {
+            if (path.back()->name() == target_name) {
+                return path;
+            }
+        }
+
+        std::vector<parser_dependency_path> candidates;
+        for (auto const& path : current_paths) {
+            auto dependencies =
+                direct_registered_parser_bases_in_definition(
+                    path.back()->expression(), registered_bases,
+                    registered_versions);
+            for (auto const& dependency : dependencies) {
+                auto candidate = path;
+                candidate.push_back(dependency);
+                candidates.push_back(std::move(candidate));
+            }
+        }
+        std::ranges::sort(candidates, parser_dependency_path_less);
+        current_paths.clear();
+        for (auto& candidate : candidates) {
+            if (visited.emplace(candidate.back().get()).second) {
+                current_paths.push_back(std::move(candidate));
+            }
+        }
+    }
+    return {};
+}
+
+[[nodiscard]] inline parser_dependency_path
+parser_dependency_path_between(
+    std::string_view first_name,
+    std::string_view second_name,
+    registered_parser_basis_table const& registered_bases,
+    parser_basis_version_history const& registered_versions) {
+    auto const first = registered_bases.find(first_name);
+    auto const second = registered_bases.find(second_name);
+    if (first == registered_bases.end() ||
+        second == registered_bases.end()) {
+        return {};
+    }
+    auto first_to_second = shortest_parser_dependency_path(
+        first->second, second_name, registered_bases,
+        registered_versions);
+    auto second_to_first = shortest_parser_dependency_path(
+        second->second, first_name, registered_bases,
+        registered_versions);
+    if (first_to_second.empty()) {
+        return second_to_first;
+    }
+    if (second_to_first.empty()) {
+        return first_to_second;
+    }
+    if (first_to_second.size() != second_to_first.size()) {
+        return first_to_second.size() < second_to_first.size()
+            ? first_to_second
+            : second_to_first;
+    }
+    return parser_dependency_path_less(
+               first_to_second, second_to_first)
+        ? first_to_second
+        : second_to_first;
+}
+
 [[nodiscard]] inline bool same_registered_parser_bases(
     registered_parser_basis_table const& left,
     registered_parser_basis_table const& right) {
@@ -6613,6 +6714,97 @@ private:
         return quote(std::move(output).str());
     }
 
+    [[nodiscard]] quoted_expression parse_dependency_path_command() {
+        auto parse_name = [this](std::string_view missing_message) {
+            skip_whitespace();
+            auto const name_position = position_;
+            if (at_end()) {
+                fail(missing_message);
+            }
+            auto const [name_text, parsed_name_position] =
+                parse_definition_basis_name_token();
+            basis_label name = [&] {
+                try {
+                    return basis_label(name_text);
+                } catch (std::length_error const& error) {
+                    throw parse_error(
+                        parsed_name_position + 15, error.what());
+                } catch (std::invalid_argument const& error) {
+                    throw parse_error(
+                        parsed_name_position, error.what());
+                }
+            }();
+            return std::pair{std::move(name), name_position};
+        };
+        auto validate_name = [this](
+                                 basis_label const& name,
+                                 std::size_t name_position) {
+            if (is_primitive_name(name.view())) {
+                auto message = std::string(name.view());
+                message +=
+                    " is a fundamental name and cannot be queried";
+                throw parse_error(name_position, message);
+            }
+            if (!registered_bases_.contains(name.view())) {
+                auto message = unescape_input(name.view());
+                message += " is not a defined name";
+                throw parse_error(name_position, message);
+            }
+        };
+
+        skip_whitespace();
+        if (begins_command("between")) {
+            position_ += 7;
+        }
+        auto [first, first_position] =
+            parse_name("missing first combinator name");
+        skip_whitespace();
+        if (begins_command("and")) {
+            position_ += 3;
+        }
+        auto [second, second_position] =
+            parse_name("missing second combinator name");
+        skip_whitespace();
+        if (!at_end()) {
+            fail("unexpected input after second name");
+        }
+
+        validate_name(first, first_position);
+        validate_name(second, second_position);
+        if (first.view() == second.view()) {
+            throw parse_error(
+                second_position,
+                "dependency path endpoints must be different");
+        }
+
+        auto const path = parser_dependency_path_between(
+            first.view(), second.view(), registered_bases_,
+            registered_versions_);
+        if (path.empty()) {
+            auto first_text = unescape_input(first.view());
+            auto second_text = unescape_input(second.view());
+            if (second_text < first_text) {
+                std::swap(first_text, second_text);
+            }
+            first_text += " and ";
+            first_text += second_text;
+            first_text += " have no dependency path";
+            return quote(std::move(first_text));
+        }
+
+        std::string output = unescape_input(path.front()->name());
+        output += " uses ";
+        output += unescape_input(path.back()->name());
+        output += " via:";
+        bool first_dependency = true;
+        for (auto const& dependency : path) {
+            output += first_dependency ? " " : " -> ";
+            output += unescape_input(dependency->name());
+            first_dependency = false;
+        }
+        return quote(std::move(output));
+    }
+
     [[nodiscard]] quoted_expression parse_dependency_command(
         parser_dependency_direction direction) {
         if (direction ==
@@ -6651,6 +6843,11 @@ private:
         }
 
         skip_whitespace();
+        if (direction == parser_dependency_direction::uses &&
+            begins_command("path")) {
+            position_ += 4;
+            return parse_dependency_path_command();
+        }
         bool const include_indirect = begins_command("all");
         if (include_indirect) {
             position_ += 3;
@@ -7789,6 +7986,9 @@ private:
         }
         if (name == "abstract" ||
             name == "all" ||
+            name == "path" ||
+            name == "between" ||
+            name == "and" ||
             name == "captured" ||
             name == "live" ||
             name == "limit" ||

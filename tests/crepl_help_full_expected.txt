@@ -143,6 +143,20 @@ With all, captured and version-qualified references retain their exact
 revisions, while live references follow the current target or their retained
 last target while the name is removed.
 
+usedby path [between] <name1> [and] <name2>
+used-by path [between] <name1> [and] <name2>
+used by path [between] <name1> [and] <name2>
+The three forms are equivalent. The words "between" and "and" are independently
+optional. The two names must be different, current, non-fundamental names. The
+command searches the actual stored-reference graph in both directions. It
+chooses the path with the fewest edges, breaking ties by the lexicographically
+smallest stored basis-name sequence (the displayed order for ordinary names), so
+the argument order does not affect the result. A found path is printed as "A
+uses B via: A -> C -> B". Otherwise it prints "A and B have no dependency path",
+with those endpoint names in lexicographic order. Captured and version-qualified
+edges retain their exact revisions and may traverse removed captured
+intermediates; live edges follow their current or retained last targets.
+
 Abstracting Expressions
 
 abstract [steps | ministeps] ?<symbol_list> = <combinator_expression>

@@ -819,6 +819,39 @@ test("completes all forms of transitive dependency commands", () => {
     }
 });
 
+test("completes every Studio dependency-path alias", () => {
+    for (const [sourceText, completed] of [
+        ["usedby p", "usedby path "],
+        ["used-by p", "used-by path "],
+        ["used by p", "used by path "],
+        ["usedby path b", "usedby path between "],
+        ["used-by path b", "used-by path between "],
+        ["used by path b", "used by path between "],
+        ["usedby path A a", "usedby path A and "],
+        [
+            "used-by path between A a",
+            "used-by path between A and ",
+        ],
+        ["used by path A ", "used by path A and "],
+    ]) {
+        const harness = createHarness({
+            inputHistoryTools: createPopulatedHistoryTools([]),
+        });
+        const source = harness.element("source");
+        source.value = sourceText;
+        source.setSelectionRange(sourceText.length, sourceText.length);
+
+        const event = dispatchSourceKey(source, "Tab");
+
+        assert.equal(event.defaultPrevented, true);
+        assert.equal(source.value, completed);
+        assert.deepEqual(
+            [source.selectionStart, source.selectionEnd],
+            [completed.length, completed.length],
+        );
+    }
+});
+
 for (const [description, steppingMode] of [
     ["ordinary evaluation", undefined],
     ["automatic Single Step", "single-step"],
@@ -1860,6 +1893,18 @@ test("routes every dependency alias as display-only", () => {
         [
             "used by all A",
             "A directly uses: B C\nA indirectly uses: D E\n",
+        ],
+        [
+            "usedby path A B",
+            "A uses B via: A -> C -> B\n",
+        ],
+        [
+            "used-by path between A and B",
+            "A uses B via: A -> C -> B\n",
+        ],
+        [
+            "used by path A and B",
+            "A uses B via: A -> C -> B\n",
         ],
     ];
 

@@ -362,9 +362,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             color: #c33;
         }
     </style>
-    <script src="./evaluation_watchdog.js?v=2.9.2" defer></script>
-    <script src="./input_history.js?v=2.9.2" defer></script>
-    <script src="./app.js?v=2.9.2" defer></script>
+    <script src="./evaluation_watchdog.js?v=2.9.3" defer></script>
+    <script src="./input_history.js?v=2.9.3" defer></script>
+    <script src="./app.js?v=2.9.3" defer></script>
 </head>
 <body>
     <main aria-labelledby="studio-title">
@@ -693,6 +693,24 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             and version-qualified references retain their exact revisions,
             while live references follow the current target or their retained
             last target while the name is removed.
+            <br><br>
+            <code>usedby path [between] name1 [and] name2</code>,
+            <code>used-by path [between] name1 [and] name2</code>, or
+            <code>used by path [between] name1 [and] name2</code><br>
+            These equivalent display-only commands find a dependency path
+            between two different current, non-fundamental names. The words
+            <code>between</code> and <code>and</code> are independently
+            optional, and either endpoint order gives the same result. The
+            directed search follows actual stored references in both endpoint
+            directions. Captured and version-qualified edges retain their
+            exact revisions, including removed captured intermediates, while
+            live edges follow their current target or retained last target.
+            The path with the fewest edges wins; ties use the lexicographically
+            smallest stored basis-name sequence, which is the displayed order
+            for ordinary names. A match is displayed as
+            <code>A uses B via: A -&gt; C -&gt; B</code>. With no path, the
+            result is <code>A and B have no dependency path</code>, with the
+            endpoint names in lexicographic order.
         </div>
         <h2 class="help-subheading">Abstracting Expressions</h2>
         <div class="help-section">
@@ -868,7 +886,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             data-dialog-initial-focus>About</h2>
         <div class="license-text">
             <!-- Keep this version and the app.js cache key in sync. -->
-            <p>Combinator Studio, version 2.9.2<br>
+            <p>Combinator Studio, version 2.9.3<br>
                 Part of the C++ Combinator DSL<br>
                 Copyright (C) 2026  David W. Gero</p>
             <p>This program is free software: you can redistribute it and/or modify

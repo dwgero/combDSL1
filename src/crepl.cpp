@@ -60,7 +60,7 @@
 
 namespace {
 
-constexpr std::string_view crepl_version = "2.9.2";
+constexpr std::string_view crepl_version = "2.9.3";
 
 [[nodiscard]] bool stream_is_terminal(std::FILE* stream) noexcept {
 #if defined(_WIN32)
@@ -214,6 +214,12 @@ constexpr std::array<std::string_view, 1>
     used_by_completion_candidates = {"by"};
 constexpr std::array<std::string_view, 1>
     dependency_all_completion_candidates = {"all"};
+constexpr std::array<std::string_view, 2>
+    uses_dependency_option_completion_candidates = {"all", "path"};
+constexpr std::array<std::string_view, 1>
+    dependency_path_between_completion_candidates = {"between"};
+constexpr std::array<std::string_view, 1>
+    dependency_path_and_completion_candidates = {"and"};
 constexpr std::array<std::string_view, 1> show_completion_candidates = {
     "all"};
 constexpr std::array<std::string_view, 5> find_completion_candidates = {
@@ -380,7 +386,7 @@ template<std::size_t Size>
 [[nodiscard]] completion_candidates command_completions_after(
     std::string_view prefix,
     std::string_view partial) noexcept {
-    std::array<std::string_view, 3> words{};
+    std::array<std::string_view, 5> words{};
     std::size_t word_count = 0;
     std::size_t position = 0;
     while (position < prefix.size()) {
@@ -445,10 +451,13 @@ template<std::size_t Size>
                 used_by_completion_candidates);
         }
         if (words[0] == "dependson" ||
-            words[0] == "depends-on" ||
-            words[0] == "usedby" || words[0] == "used-by") {
+            words[0] == "depends-on") {
             return make_completion_candidates(
                 dependency_all_completion_candidates);
+        }
+        if (words[0] == "usedby" || words[0] == "used-by") {
+            return make_completion_candidates(
+                uses_dependency_option_completion_candidates);
         }
         if (words[0] == "show") {
             return make_completion_candidates(show_completion_candidates);
@@ -485,11 +494,44 @@ template<std::size_t Size>
         return make_completion_candidates(
             find_after_all_completion_candidates);
     }
-    if (word_count == 2 &&
-        ((words[0] == "depends" && words[1] == "on") ||
-         (words[0] == "used" && words[1] == "by"))) {
+    if (word_count == 2 && words[0] == "depends" &&
+        words[1] == "on") {
         return make_completion_candidates(
             dependency_all_completion_candidates);
+    }
+    if (word_count == 2 && words[0] == "used" &&
+        words[1] == "by") {
+        return make_completion_candidates(
+            uses_dependency_option_completion_candidates);
+    }
+    auto const path_argument_position = [&]() -> std::optional<std::size_t> {
+        if (word_count >= 2 &&
+            (words[0] == "usedby" || words[0] == "used-by") &&
+            words[1] == "path") {
+            return 2;
+        }
+        if (word_count >= 3 && words[0] == "used" &&
+            words[1] == "by" && words[2] == "path") {
+            return 3;
+        }
+        return std::nullopt;
+    }();
+    if (path_argument_position) {
+        auto const argument = *path_argument_position;
+        if (word_count == argument) {
+            return make_completion_candidates(
+                dependency_path_between_completion_candidates);
+        }
+        if (word_count == argument + 1 &&
+            words[argument] != "between") {
+            return make_completion_candidates(
+                dependency_path_and_completion_candidates);
+        }
+        if (word_count == argument + 2 &&
+            words[argument] == "between") {
+            return make_completion_candidates(
+                dependency_path_and_completion_candidates);
+        }
     }
     if (word_count == 2 && words[0] == "abstract" &&
         (words[1] == "steps" || words[1] == "ministeps")) {
@@ -838,7 +880,11 @@ void print_help_brief(std::ostream& output) {
         "single step [on | off]                | display each step of the reduction without pause\n"
         "step limit <off | num>                | limit ordinary and Single Step evaluations\n"
         "usedby [all] <name> | used-by [all] <name> | used by [all] <name>\n"
-        "                                      | display direct and optional indirect dependencies\n";
+        "                                      | display direct and optional indirect dependencies\n"
+        "usedby path [between] <name1> [and] <name2>\n"
+        "used-by path [between] <name1> [and] <name2>\n"
+        "used by path [between] <name1> [and] <name2>\n"
+        "                                      | display the shortest dependency path\n";
     output.flush();
 }
 
@@ -1054,6 +1100,26 @@ void print_help_full(std::ostream& output) {
         "With all, captured and version-qualified references retain their "
         "exact revisions, while live references follow the current target "
         "or their retained last target while the name is removed.");
+    output << '\n'
+           << "usedby path [between] <name1> [and] <name2>\n"
+           << "used-by path [between] <name1> [and] <name2>\n"
+           << "used by path [between] <name1> [and] <name2>\n";
+    write_wrapped_paragraph(
+        output,
+        "The three forms are equivalent. The words \"between\" and \"and\" "
+        "are independently optional. The two names must be different, "
+        "current, non-fundamental names. The command searches the actual "
+        "stored-reference graph in "
+        "both directions. It chooses the path with the fewest edges, breaking "
+        "ties by the lexicographically smallest stored basis-name sequence "
+        "(the displayed order for ordinary names), so the argument order "
+        "does not affect the result. A found path is "
+        "printed as \"A uses B via: A -> C -> B\". Otherwise it prints \"A and "
+        "B have no dependency path\", with those endpoint names in "
+        "lexicographic order. Captured and version-qualified edges retain "
+        "their exact revisions and may traverse removed captured "
+        "intermediates; live edges follow their current or retained last "
+        "targets.");
 
     output << "\nAbstracting Expressions\n\n"
            << "abstract [steps | ministeps] ?<symbol_list> = "

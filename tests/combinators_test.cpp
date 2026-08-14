@@ -1283,6 +1283,8 @@ int main() {
                  combdsl::detail::parse_input("depends on all O");
              auto const used_all =
                  combdsl::detail::parse_input("used by all U");
+             auto const path = combdsl::detail::parse_input(
+                 "used by path U O");
              std::cout << depends.is_display_only
                        << depends.is_definition
                        << used.is_display_only
@@ -1290,9 +1292,11 @@ int main() {
                        << depends_all.is_display_only
                        << depends_all.is_definition
                        << used_all.is_display_only
-                       << used_all.is_definition;
+                       << used_all.is_definition
+                       << path.is_display_only
+                       << path.is_definition;
          },
-         "10101010");
+         "1010101010");
     test_parse_failure(
         "plain depends requires on", "depends O", 8,
         "expected 'on'");
@@ -1323,6 +1327,33 @@ int main() {
     test_parse_failure(
         "used by all requires a name", "used by all", 11,
         "missing combinator name");
+    constexpr std::string_view path_missing_first = "usedby path";
+    test_parse_failure(
+        "usedby path requires a first name",
+        path_missing_first,
+        path_missing_first.size(),
+        "missing first combinator name");
+    constexpr std::string_view path_between_missing_first =
+        "used-by path between";
+    test_parse_failure(
+        "used-by path between requires a first name",
+        path_between_missing_first,
+        path_between_missing_first.size(),
+        "missing first combinator name");
+    constexpr std::string_view path_missing_second =
+        "used by path U";
+    test_parse_failure(
+        "used by path requires a second name",
+        path_missing_second,
+        path_missing_second.size(),
+        "missing second combinator name");
+    constexpr std::string_view path_and_missing_second =
+        "usedby path U and";
+    test_parse_failure(
+        "usedby path and requires a second name",
+        path_and_missing_second,
+        path_and_missing_second.size(),
+        "missing second combinator name");
     test_parse_failure(
         "dependson rejects an undefined name",
         "dependson MissingDep", 10,
@@ -1335,6 +1366,20 @@ int main() {
         "usedby all rejects an undefined name",
         "usedby all MissingDep", 11,
         "MissingDep is not a defined name");
+    constexpr std::string_view path_undefined_first =
+        "usedby path MissingDep U";
+    test_parse_failure(
+        "usedby path rejects an undefined first name",
+        path_undefined_first,
+        path_undefined_first.find("MissingDep"),
+        "MissingDep is not a defined name");
+    constexpr std::string_view path_undefined_second =
+        "used-by path U MissingDep";
+    test_parse_failure(
+        "used-by path rejects an undefined second name",
+        path_undefined_second,
+        path_undefined_second.find("MissingDep"),
+        "MissingDep is not a defined name");
     test_parse_failure(
         "dependson rejects a fundamental name", "dependson S", 10,
         "S is a fundamental name and cannot be queried");
@@ -1345,6 +1390,20 @@ int main() {
     test_parse_failure(
         "usedby rejects a fundamental name", "usedby Y", 7,
         "Y is a fundamental name and cannot be queried");
+    constexpr std::string_view path_fundamental =
+        "used by path S U";
+    test_parse_failure(
+        "used by path rejects a fundamental endpoint",
+        path_fundamental,
+        path_fundamental.find('S'),
+        "S is a fundamental name and cannot be queried");
+    constexpr std::string_view path_second_fundamental =
+        "usedby path U S";
+    test_parse_failure(
+        "usedby path rejects a fundamental second endpoint",
+        path_second_fundamental,
+        path_second_fundamental.rfind('S'),
+        "S is a fundamental name and cannot be queried");
     test_parse_failure(
         "dependson rejects trailing input", "dependson O extra", 12,
         "unexpected input after name");
@@ -1355,6 +1414,20 @@ int main() {
         "depends-on all rejects trailing input",
         "depends-on all O extra", 17,
         "unexpected input after name");
+    constexpr std::string_view path_same_endpoints =
+        "usedby path between U and U";
+    test_parse_failure(
+        "usedby path rejects equal endpoints",
+        path_same_endpoints,
+        path_same_endpoints.rfind('U'),
+        "dependency path endpoints must be different");
+    constexpr std::string_view path_trailing =
+        "used by path between U and O extra";
+    test_parse_failure(
+        "used by path rejects trailing input",
+        path_trailing,
+        path_trailing.find("extra"),
+        "unexpected input after second name");
     test("dependency command prefixes remain ordinary input",
          parse("dependsonx"), "dependsonx");
     test("reverse dependency command prefixes remain ordinary input",
@@ -1510,6 +1583,69 @@ int main() {
     test("dependson all accepts its two-word alias",
          parse("depends on all AllIndirectD"), all_depended_on_by);
 
+    constexpr std::string_view shortest_dependency_path =
+        "AllRoot uses AllIndirectD via: AllRoot -> AllDirectA -> "
+        "AllIndirectD";
+    test("usedby path accepts compact syntax without optional words",
+         parse("usedby path AllRoot AllIndirectD"),
+         shortest_dependency_path);
+    test("usedby path accepts both optional words",
+         parse("usedby path between AllRoot and AllIndirectD"),
+         shortest_dependency_path);
+    test("usedby path accepts between without and",
+         parse("usedby path between AllRoot AllIndirectD"),
+         shortest_dependency_path);
+    test("usedby path accepts and without between",
+         parse("usedby path AllRoot and AllIndirectD"),
+         shortest_dependency_path);
+    test("used-by path accepts syntax without optional words",
+         parse("used-by path AllRoot AllIndirectD"),
+         shortest_dependency_path);
+    test("used-by path accepts between without and",
+         parse("used-by path between AllRoot AllIndirectD"),
+         shortest_dependency_path);
+    test("used-by path accepts and without between",
+         parse("used-by path AllRoot and AllIndirectD"),
+         shortest_dependency_path);
+    test("used-by path accepts both optional words",
+         parse("used-by path between AllRoot and AllIndirectD"),
+         shortest_dependency_path);
+    test("used by path accepts syntax without optional words",
+         parse("used by path AllRoot AllIndirectD"),
+         shortest_dependency_path);
+    test("used by path accepts between without and",
+         parse("used by path between AllRoot AllIndirectD"),
+         shortest_dependency_path);
+    test("used by path accepts and without between and whitespace",
+         parse(" \tused\n by path\tAllRoot\n and\fAllIndirectD "),
+         shortest_dependency_path);
+    test("used by path accepts both optional words",
+         parse("used by path between AllRoot and AllIndirectD"),
+         shortest_dependency_path);
+    test("usedby path is independent of endpoint order",
+         parse("usedby path between AllIndirectD and AllRoot"),
+         shortest_dependency_path);
+    test("usedby path chooses a shorter direct edge",
+         parse("usedby path AllRoot AllIndirectC"),
+         "AllRoot uses AllIndirectC via: AllRoot -> AllIndirectC");
+    test("usedby path reports a normalized disconnected pair",
+         parse("usedby path AllIndirectE AllIndirectD"),
+         "AllIndirectD and AllIndirectE have no dependency path");
+    test("usedby path normalizes a reversed disconnected pair",
+         parse("usedby path AllIndirectD AllIndirectE"),
+         "AllIndirectD and AllIndirectE have no dependency path");
+
+    test("dependency path registers a punctuation-ending leaf",
+         parse("set PathLeaf: = 1 I"), "PathLeaf:");
+    test("dependency path registers a punctuation-ending intermediate",
+         parse("set PathMiddle: = 1 PathLeaf:"), "PathMiddle:");
+    test("dependency path registers a punctuation-ending root",
+         parse("set PathRoot: = 1 PathMiddle:"), "PathRoot:");
+    test("dependency path keeps separators after punctuation-ending names",
+         parse("usedby path PathRoot: PathLeaf:"),
+         "PathRoot: uses PathLeaf: via: PathRoot: -> PathMiddle: -> "
+         "PathLeaf:");
+
     test("captured traversal registers its first leaf",
          parse("set AllSnapC = 1 I"), "AllSnapC");
     test("captured traversal registers its replacement leaf",
@@ -1530,12 +1666,21 @@ int main() {
          parse("usedby all AllSnapA"), captured_uses);
     test("dependson all follows captured revisions after redefinition",
          parse("dependson all AllSnapC"), captured_depended_on_by);
+    constexpr std::string_view captured_path =
+        "AllSnapA uses AllSnapC via: AllSnapA -> AllSnapB -> AllSnapC";
+    test("usedby path follows the captured branch revision",
+         parse("usedby path AllSnapA AllSnapC"), captured_path);
+    test("usedby path excludes the replacement from a captured path",
+         parse("usedby path AllSnapA AllSnapD"),
+         "AllSnapA and AllSnapD have no dependency path");
     test("captured traversal removes the replacement branch",
          parse("remove AllSnapB"), "AllSnapB");
     test("usedby all retains a captured removed revision",
          parse("usedby all AllSnapA"), captured_uses);
     test("dependson all retains a captured removed revision",
          parse("dependson all AllSnapC"), captured_depended_on_by);
+    test("usedby path retains a removed captured intermediate",
+         parse("usedby path AllSnapA AllSnapC"), captured_path);
 
     test("live traversal enables live references",
          parse("references live"), "references live");
@@ -1557,6 +1702,17 @@ int main() {
          parse("dependson all AllLiveD"),
          "AllLiveD is directly depended on by: AllLiveB\n"
          "AllLiveD is indirectly depended on by: AllLiveA");
+    test("usedby path follows a live branch replacement",
+         parse("usedby path AllLiveA AllLiveD"),
+         "AllLiveA uses AllLiveD via: AllLiveA -> AllLiveB -> AllLiveD");
+    test("usedby path excludes the old live target",
+         parse("usedby path AllLiveA AllLiveC"),
+         "AllLiveA and AllLiveC have no dependency path");
+    test("live traversal removes the current branch name",
+         parse("remove AllLiveB"), "AllLiveB");
+    test("usedby path retains the last removed live target",
+         parse("usedby path AllLiveA AllLiveD"),
+         "AllLiveA uses AllLiveD via: AllLiveA -> AllLiveB -> AllLiveD");
     test("live traversal restores captured references",
          parse("references captured"), "references captured");
 
@@ -2039,6 +2195,15 @@ int main() {
     test("dependson all terminates and excludes its cyclic query",
          parse("dependson all FrozenTarget"),
          "FrozenTarget is directly depended on by: FrozenUse");
+    test("usedby path terminates on a revision-name cycle",
+         parse("usedby path FrozenTarget FrozenUse"),
+         "FrozenTarget uses FrozenUse via: FrozenTarget -> FrozenUse");
+    test("usedby path reverses endpoints around a revision-name cycle",
+         parse("usedby path FrozenUse FrozenTarget"),
+         "FrozenTarget uses FrozenUse via: FrozenTarget -> FrozenUse");
+    test("usedby path safely exhausts a disconnected name cycle",
+         parse("usedby path FrozenTarget AllIndirectC"),
+         "AllIndirectC and FrozenTarget have no dependency path");
 
     test("mixed-cycle setup uses live references",
          parse("references live"), "references live");
@@ -3692,7 +3857,7 @@ int main() {
          "11:step limit is too large");
     constexpr std::string_view reserved_definition_names[] = {
         "abstract", "all", "captured", "live", "limit", "step",
-        "steps", "ministeps", "set",
+        "steps", "ministeps", "path", "between", "and", "set",
         "define", "show", "single", "key", "basis", "colorize",
         "about", "birds", "find", "help", "load", "remove", "save",
         "revisions",
