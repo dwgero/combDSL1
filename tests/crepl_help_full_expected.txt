@@ -45,6 +45,14 @@ set [captured | live] <name> = <arity> <combinator_expression>
 In the second form, arity is a number specifying the minimal number of arguments
 required for the expression to reduce.
 
+The parser accepts signed decimal integers and floating-point values, including
+decimal points and e/E exponents. They are stored and displayed as numeric
+values, such as 42 and -0.025. Canonical output separates them from adjacent
+non-parenthesized operands. In a set command, an unsigned integer after '=' is
+the arity only when whitespace and a following expression are present: 'set Num
+= 2 I' has arity 2, while 'set Num = 2' and 'set Num = 2I' begin numeric bodies.
+Use '(2) I' to force a leading numeric body before whitespace.
+
 define [captured | live] <name> [<symbol_list>] = <combinator_expression>
 The "define" form accepts zero or more symbols (lower case letters) after the
 name, infers the arity from their count, and computes a series of combinators

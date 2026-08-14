@@ -60,7 +60,7 @@
 
 namespace {
 
-constexpr std::string_view crepl_version = "2.8.3";
+constexpr std::string_view crepl_version = "2.8.7";
 
 [[nodiscard]] bool stream_is_terminal(std::FILE* stream) noexcept {
 #if defined(_WIN32)
@@ -818,8 +818,8 @@ void print_help_brief(std::ostream& output) {
         "remove <name>                         | remove a user-defined combinator name\n"
         "revisions <name>                      | display every retained revision of <name>\n"
         "save <filename>                       | save the set-list journal to a file\n"
-        "set [captured | live] <name> = [number] <expression>\n"
-        "                                      | store <expression> as <name> with arity <number> or 0\n"
+        "set [captured | live] <name> = [arity] <expression>\n"
+        "                                      | store <expression> as <name> with arity <arity> or 0\n"
         "show <name | name@N | all>            | display one revision or the entire set list\n"
         "single step [on | off]                | display each step of the reduction without pause\n"
         "step limit <off | num>                | limit ordinary and Single Step evaluations\n"
@@ -902,6 +902,18 @@ void print_help_full(std::ostream& output) {
         output,
         "In the second form, arity is a number specifying the minimal "
         "number of arguments required for the expression to reduce.");
+    output.put('\n');
+    write_wrapped_paragraph(
+        output,
+        "The parser accepts signed decimal integers and floating-point "
+        "values, including decimal points and e/E exponents. They are "
+        "stored and displayed as numeric values, such as 42 and -0.025. "
+        "Canonical output separates them from adjacent non-parenthesized "
+        "operands. In a set command, an unsigned integer after '=' "
+        "is the arity only when whitespace and a following expression are "
+        "present: 'set Num = 2 I' has arity 2, while 'set Num = 2' and 'set "
+        "Num = 2I' begin numeric bodies. Use '(2) I' to force a leading "
+        "numeric body before whitespace.");
     output << '\n'
            << "define [captured | live] <name> [<symbol_list>] = "
               "<combinator_expression>\n";

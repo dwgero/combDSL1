@@ -223,6 +223,38 @@ int main() {
     check("an error-free load has no diagnostic messages",
           format_file_load_diagnostics(
               "successful.cmb", successful).empty());
+
+    auto const numeric_values = load_set_list(
+        "set FileInteger = 42\n"
+        "define FileFloating x = -2.5e-2\n");
+    check("a file can load integer and floating numeric values",
+          numeric_values.success &&
+          numeric_values.loaded == 2 &&
+          numeric_values.diagnostics.empty());
+    check("loaded numeric values retain their numeric bodies",
+          shown_definition("FileInteger") == "arity:0 42" &&
+          shown_definition("FileFloating") ==
+              "arity:1 K -0.025");
+    check("a loaded numeric function evaluates to its value",
+          stepped_expression("FileFloating y") == "-0.025");
+    auto const saved_numeric_values = combdsl::set_list();
+    check("saved numeric definitions contain parser-readable numbers",
+          saved_numeric_values.find(
+              "set FileInteger = 0 42") != std::string::npos &&
+          saved_numeric_values.find(
+              "define FileFloating x = -2.5e-2") !=
+              std::string::npos &&
+          saved_numeric_values.find('<') == std::string::npos);
+    auto const reloaded_numeric_values = load_set_list(
+        saved_numeric_values);
+    check("a saved file containing numeric values reloads",
+          reloaded_numeric_values.success &&
+          reloaded_numeric_values.diagnostics.empty());
+    check("reloaded numeric values still display without angle brackets",
+          shown_definition("FileInteger") == "arity:0 42" &&
+          shown_definition("FileFloating") ==
+              "arity:1 K -0.025");
+
     auto const legacy_live_update = load_set_list(
         "set FileGood = 0 K\n");
     check("a dependency loaded after legacy snapshot off follows changes",

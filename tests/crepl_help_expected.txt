@@ -20,8 +20,8 @@ references <captured | live>          | capture name references or follow later 
 remove <name>                         | remove a user-defined combinator name
 revisions <name>                      | display every retained revision of <name>
 save <filename>                       | save the set-list journal to a file
-set [captured | live] <name> = [number] <expression>
-                                      | store <expression> as <name> with arity <number> or 0
+set [captured | live] <name> = [arity] <expression>
+                                      | store <expression> as <name> with arity <arity> or 0
 show <name | name@N | all>            | display one revision or the entire set list
 single step [on | off]                | display each step of the reduction without pause
 step limit <off | num>                | limit ordinary and Single Step evaluations
@@ -49,8 +49,8 @@ references <captured | live>          | capture name references or follow later 
 remove <name>                         | remove a user-defined combinator name
 revisions <name>                      | display every retained revision of <name>
 save <filename>                       | save the set-list journal to a file
-set [captured | live] <name> = [number] <expression>
-                                      | store <expression> as <name> with arity <number> or 0
+set [captured | live] <name> = [arity] <expression>
+                                      | store <expression> as <name> with arity <arity> or 0
 show <name | name@N | all>            | display one revision or the entire set list
 single step [on | off]                | display each step of the reduction without pause
 step limit <off | num>                | limit ordinary and Single Step evaluations

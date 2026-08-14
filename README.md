@@ -129,6 +129,25 @@ Likewise, `K(x(y))()` prints `K(xy)`, and `S(K(x(y)))(z)()` prints
 `S(K(xy))z`. Deferred operands remain unforced while the symbolic tree is built
 or printed.
 
+The text parser accepts signed decimal numeric values. A value without a
+decimal point or exponent is stored as a signed 64-bit integer; a value with a
+decimal point or an `e`/`E` exponent is stored as a `double`. For example,
+`42`, `+4`, `-17`, `.5`, `1.`, `1.5`, `1e3`, and `-2.5e-2` are numeric
+values. They print without opaque-value angle brackets, such as `42`, `0.5`,
+and `-0.025`, and combinator reduction carries the typed value:
+`parse_eval("I 42")` prints `42`. Canonical output separates a numeric value
+from an adjacent non-parenthesized operand, so parsed `2x` prints `2 x` and
+parsed `1e2x` prints `100.0 x`; parentheses remain compact. A bare `e` or `E`
+after a number remains an operand when it does not form a complete exponent.
+Other opaque C++ values retain the `<...>` notation. Exact registered basis
+names and valid registered-name prefixes take precedence over numeric syntax.
+
+Numeric literals are decimal only. Hexadecimal notation, type suffixes,
+`NaN`, and infinity are not numeric-literal forms. An incomplete signed
+exponent, a repeated decimal point, or a value outside the selected integer or
+floating-point type's range is a parse error. Numeric values are data; the
+parser does not provide arithmetic operations for them.
+
 ### Named bases
 
 `M` and `T` are among the named bases provided by
@@ -182,15 +201,23 @@ combinator is immediately applied to every following argument. With no
 following arguments, printing the basis still prints its name as usual.
 
 Expression printing normally separates a multi-character basis name from
-adjacent non-parenthesis tokens. A name whose final byte is outside ASCII
-`A` through `Z`, `a` through `z`, and `0` through `9` is self-delimiting and
-needs no space on either side; for example, adjacent applications can print
-as `CstarC*Vstar` and `W*K`. A name ending outside lowercase ASCII `a`
-through `z` also stays attached to a following symbol. Parentheses act as
-boundaries and stay attached on either side. Thus `Q1(x)()` prints `Q1x`.
+adjacent non-parenthesis tokens. A name ending in an ASCII digit needs no
+space before it and also stays attached to a following symbol. It still needs
+a space after it before a combinator or another basis. For example,
+`K(Q1)()` prints `KQ1` and `Q1(x)()` prints `Q1x`, but adjacent operands print
+as `Q1 K` and `Q1 Q3`. The trailing-space rule for the left `Q1` takes
+precedence over the no-leading-space rule for the right `Q3`. A name whose
+final byte is outside ASCII `A` through `Z`, `a` through `z`, and `0` through
+`9` needs no space on either side; for example, adjacent applications can
+print as `CstarC*Vstar` and `W*K`. Any other name ending outside lowercase
+ASCII `a` through `z` also stays attached to a following symbol. Parentheses
+act as boundaries and stay attached on either side.
 For `auto Alias = basis("Alias", 1, I);`, `K(Alias)()` prints `K Alias`;
 `x(Cstar(y))()` prints `x(Cstar y)`; `Cstar(y(z))()` prints `Cstar(yz)`;
 and `x(y(z))(Cstar)()` prints `x(yz)Cstar`.
+The digit must belong to the basis name: a captured `Q1@2` keeps `Q1`'s
+compact leading boundary, while an `@2` suffix alone does not make an ordinary
+name compact on its left.
 
 Basis names are copied into the expression and may contain up to 15
 bytes. Names cannot be empty or begin with a null character; a later null
@@ -412,12 +439,15 @@ parse("set live Dynamic = 1 Alias");  // Dynamic follows later Alias changes
 
 Whitespace before `set` and around `=` is optional, while at least one
 whitespace character must separate `set` from the name and an explicit arity
-from its expression. The declaration acts like
+from its expression. An unsigned decimal integer immediately after `=` is an
+arity only when whitespace and a following expression are present. Therefore
+`set Num = 2 I` stores `I` with arity 2, while `set Num = 2` stores the integer
+value 2 with arity 0 and `set Num = 2I` stores the application of value 2 to
+`I`. Parentheses force a leading numeric value to be part of the body when it
+is followed by whitespace, as in `set Num = (2) I`. The declaration acts like
 `basis(name, arity, expression)`: names use the normal basis restrictions,
 and `S`, `K`, `I`, and `Y` retain their
-primitive meanings. Because a leading decimal token followed by whitespace is
-treated as the arity, parenthesize a numeric basis name when it begins the
-stored expression. `parse_eval`, `read_parse_eval`, `parse_and_step`, and
+primitive meanings. `parse_eval`, `read_parse_eval`, `parse_and_step`, and
 `parse_and_key_step` register a declaration without evaluating or stepping its
 stored expression, and produce no output for the declaration itself. A
 malformed declaration does not register its name.
@@ -805,7 +835,7 @@ expression produces no output, while malformed or empty lines throw
 The `crepl` executable applies `input_escape` to each line before passing it to
 `parse_eval`, so ordinary quoted words and backslashes can be entered directly.
 When standard output is a terminal, it first prints
-`Combinator Read-Eval-Print Loop, version 2.8.3`. Long evaluations display
+`Combinator Read-Eval-Print Loop, version 2.8.7`. Long evaluations display
 the accumulated step count every 1,000 reductions by overwriting one status
 line; the line is cleared before evaluation output is printed. Its interactive
 prompt is `>`. Interactive input uses GNU Readline, so previous nonempty
@@ -936,15 +966,22 @@ without starting the interactive loop.
 `S`, `K`, `I`, and `Y` are reserved combinators. A single-character name
 registered by `basis(...)` parses the same way, so `Mx` means `M` applied to
 `x`. A multi-character registered name that does not end in a lowercase ASCII
-letter may also be followed immediately by another operand, so `Q1xyz` means
-`Q1 x y z` and prints in that same compact form. A basis name whose final byte
-is not an ASCII letter or digit is self-delimiting on both sides, so `CstarW*`
-means `Cstar W*`, and a captured `Tail+@1` retains the compact boundaries of
-`Tail+`. When the entire compact token is itself a registered name, that exact
-name takes precedence. Other names ending in `a` through `z` still require
-whitespace, parentheses, or an escaped-word opener as a delimiter. Thus
-`Cstar x` means `Cstar` applied to `x`, while `Cstarx` is an unknown operand;
-it does not fall back to `C` followed by five symbols.
+letter may be followed immediately by another operand. A name ending in an
+ASCII digit may also immediately follow another operand and may be followed
+directly by lowercase symbols, so `KQ1xyz` means `K Q1 x y z` and prints in
+that same compact form. Printing nevertheless separates a digit-ended basis
+from a following combinator or basis: the results are `Q1 K` and `Q1 Q3`, not
+`Q1K` and `Q1Q3`. This trailing-space rule takes precedence over the following
+digit-ended basis's no-leading-space rule. A basis name whose final byte is not
+an ASCII letter or digit is self-delimiting on both sides, so
+`CstarW*` means `Cstar W*`, and a captured `Tail+@1` retains the compact
+boundaries of `Tail+`. When the entire compact token is itself a registered
+name, that exact name takes precedence. Other names ending in `a` through `z`
+still require whitespace, parentheses, or an escaped-word opener as a
+delimiter. Thus `Cstar x` means `Cstar` applied to `x`, while `Cstarx` is an
+unknown operand; it does not fall back to `C` followed by five symbols.
+The leading-boundary rule follows the underlying name, so `Q1@2` inherits it
+but an ordinary captured name does not gain it merely from its `@2` suffix.
 
 Whitespace also distinguishes an intended lowercase basis name from compact
 symbols. An unregistered run of two or more lowercase letters is an unknown

@@ -22,6 +22,8 @@
 #include <array>
 #include <atomic>
 #include <bit>
+#include <charconv>
+#include <cmath>
 #include <concepts>
 #include <csignal>
 #include <cstdint>
@@ -138,8 +140,10 @@ enum class printed_token : long {
     symbol,
     left_parenthesis,
     right_parenthesis,
+    numeric,
     multicharacter_basis,
     compact_multicharacter_basis,
+    digit_terminated_basis,
     nonalphanumeric_terminated_basis
 };
 
@@ -152,6 +156,7 @@ enum class printed_token : long {
     printed_token token) noexcept {
     return token == printed_token::multicharacter_basis ||
            token == printed_token::compact_multicharacter_basis ||
+           token == printed_token::digit_terminated_basis ||
            token == printed_token::nonalphanumeric_terminated_basis;
 }
 
@@ -166,6 +171,11 @@ enum class printed_token : long {
     return !text.empty() && !is_ascii_alphanumeric(text.back());
 }
 
+[[nodiscard]] constexpr bool ends_with_ascii_digit(
+    std::string_view text) noexcept {
+    return !text.empty() && text.back() >= '0' && text.back() <= '9';
+}
+
 [[nodiscard]] constexpr bool ends_with_lowercase_ascii_letter(
     std::string_view text) noexcept {
     return !text.empty() &&
@@ -177,6 +187,9 @@ enum class printed_token : long {
     std::string_view name) noexcept {
     if (ends_with_non_alphanumeric(name)) {
         return printed_token::nonalphanumeric_terminated_basis;
+    }
+    if (ends_with_ascii_digit(name)) {
+        return printed_token::digit_terminated_basis;
     }
     if (name.size() <= 1) {
         return printed_token::other;
@@ -236,21 +249,36 @@ inline void print_token(
     std::string_view text,
     printed_token token = printed_token::other) {
     auto const previous = previous_printed_token(output);
-    auto const follows_multicharacter_basis =
-        is_multicharacter_basis(previous) &&
+    auto const numeric_requires_separator =
+        ((previous == printed_token::numeric &&
+          !is_parenthesis(token)) ||
+         (token == printed_token::numeric &&
+          previous != printed_token::none &&
+          !is_parenthesis(previous)));
+    auto const digit_basis_requires_trailing_separator =
+        previous == printed_token::digit_terminated_basis &&
         !is_parenthesis(token) &&
-        token != printed_token::nonalphanumeric_terminated_basis &&
-        previous != printed_token::nonalphanumeric_terminated_basis &&
-        !(previous == printed_token::compact_multicharacter_basis &&
-          token == printed_token::symbol);
+        token != printed_token::symbol;
+    auto const follows_multicharacter_basis =
+        digit_basis_requires_trailing_separator ||
+        (is_multicharacter_basis(previous) &&
+         !is_parenthesis(token) &&
+         token != printed_token::digit_terminated_basis &&
+         token != printed_token::nonalphanumeric_terminated_basis &&
+         previous != printed_token::nonalphanumeric_terminated_basis &&
+         !((previous == printed_token::compact_multicharacter_basis ||
+            previous == printed_token::digit_terminated_basis) &&
+           token == printed_token::symbol));
     auto const is_unseparated_multicharacter_basis =
         is_multicharacter_basis(token) &&
+        token != printed_token::digit_terminated_basis &&
         token != printed_token::nonalphanumeric_terminated_basis &&
         previous != printed_token::nonalphanumeric_terminated_basis &&
         previous != printed_token::none &&
         !is_parenthesis(previous);
 
-    if (follows_multicharacter_basis ||
+    if (numeric_requires_separator ||
+        follows_multicharacter_basis ||
         is_unseparated_multicharacter_basis) {
         output.put(' ');
     }
@@ -265,6 +293,56 @@ inline void print_token(
     printed_token token = printed_token::other) {
     char const text[] = {value};
     print_token(output, std::string_view(text, 1), token);
+}
+
+inline void print_numeric_token(
+    std::ostream& output, std::int64_t value) {
+    std::array<char, 32> text{};
+    auto const result = std::to_chars(
+        text.data(), text.data() + text.size(), value);
+    if (result.ec != std::errc{}) {
+        output.setstate(std::ios_base::failbit);
+        return;
+    }
+    print_token(
+        output,
+        std::string_view(
+            text.data(), static_cast<std::size_t>(result.ptr - text.data())),
+        printed_token::numeric);
+}
+
+inline void print_numeric_token(std::ostream& output, double value) {
+    if (!std::isfinite(value)) {
+        std::ostringstream text;
+        text << '<' << value << '>';
+        print_token(output, text.str());
+        return;
+    }
+
+    std::array<char, 64> text{};
+    auto result = std::to_chars(
+        text.data(),
+        text.data() + text.size() - 2,
+        value,
+        std::chars_format::general);
+    if (result.ec != std::errc{}) {
+        output.setstate(std::ios_base::failbit);
+        return;
+    }
+
+    auto const has_floating_marker = std::find_if(
+        text.data(), result.ptr, [](char character) {
+            return character == '.' || character == 'e' || character == 'E';
+        }) != result.ptr;
+    if (!has_floating_marker) {
+        *result.ptr++ = '.';
+        *result.ptr++ = '0';
+    }
+    print_token(
+        output,
+        std::string_view(
+            text.data(), static_cast<std::size_t>(result.ptr - text.data())),
+        printed_token::numeric);
 }
 
 inline void print_layout(std::ostream& output, std::string_view text) {
@@ -1797,6 +1875,14 @@ public:
     atomic_name() const noexcept {
         return {};
     }
+    [[nodiscard]] virtual std::optional<std::int64_t>
+    integer_value() const noexcept {
+        return std::nullopt;
+    }
+    [[nodiscard]] virtual std::optional<double>
+    floating_value() const noexcept {
+        return std::nullopt;
+    }
     virtual void print_to(std::ostream& output) const = 0;
     virtual void print_as_operand_to(std::ostream& output) const {
         print_to(output);
@@ -1915,8 +2001,32 @@ public:
         }
     }
 
+    [[nodiscard]] std::optional<std::int64_t>
+    integer_value() const noexcept override {
+        if constexpr (std::same_as<Value, std::int64_t>) {
+            return *value_;
+        } else {
+            return std::nullopt;
+        }
+    }
+
+    [[nodiscard]] std::optional<double>
+    floating_value() const noexcept override {
+        if constexpr (std::same_as<Value, double>) {
+            return *value_;
+        } else {
+            return std::nullopt;
+        }
+    }
+
     void print_to(std::ostream& output) const override {
-        print_result(output, *value_);
+        if constexpr (std::same_as<Value, std::int64_t>) {
+            print_numeric_token(output, *value_);
+        } else if constexpr (std::same_as<Value, double>) {
+            print_numeric_token(output, *value_);
+        } else {
+            print_result(output, *value_);
+        }
     }
 
 private:
@@ -4594,7 +4704,11 @@ public:
     void print_to(std::ostream& output) const override {
         auto const token = ends_with_non_alphanumeric(definition_name_)
             ? printed_token::nonalphanumeric_terminated_basis
-            : basis_printed_token(printed_name_);
+            : ends_with_ascii_digit(definition_name_)
+                ? printed_token::digit_terminated_basis
+                : printed_name_ != definition_name_
+                    ? printed_token::compact_multicharacter_basis
+                    : basis_printed_token(printed_name_);
         print_token(
             output,
             printed_name_,
@@ -4797,6 +4911,24 @@ struct parser_definition_inspection {
         }
         if (left_root->kind() != right_root->kind()) {
             return false;
+        }
+
+        auto const left_integer = left_root->integer_value();
+        auto const right_integer = right_root->integer_value();
+        if (left_integer || right_integer) {
+            if (left_integer != right_integer) {
+                return false;
+            }
+            continue;
+        }
+
+        auto const left_floating = left_root->floating_value();
+        auto const right_floating = right_root->floating_value();
+        if (left_floating || right_floating) {
+            if (left_floating != right_floating) {
+                return false;
+            }
+            continue;
         }
 
         auto const left_atomic = left_root->atomic_kind();
@@ -7519,8 +7651,17 @@ private:
         }
 
         if (arity_end == arity_position ||
-            (arity_end < source_.size() &&
-             !is_whitespace(source_[arity_end]))) {
+            arity_end == source_.size() ||
+            !is_whitespace(source_[arity_end])) {
+            return 0;
+        }
+
+        auto body_position = arity_end;
+        while (body_position < source_.size() &&
+               is_whitespace(source_[body_position])) {
+            ++body_position;
+        }
+        if (body_position == source_.size()) {
             return 0;
         }
 
@@ -7538,8 +7679,7 @@ private:
             arity = arity * 10 + digit;
         }
 
-        position_ = arity_end;
-        skip_whitespace();
+        position_ = body_position;
         return arity;
     }
 
@@ -7634,8 +7774,115 @@ private:
                 ++position_;
                 return quote(symbol(name));
             }
+            if (auto number = parse_numeric_literal()) {
+                return std::move(*number);
+            }
             fail("unknown operand");
         }
+    }
+
+    [[nodiscard]] std::optional<quoted_expression>
+    parse_numeric_literal() {
+        auto const literal_position = position_;
+        auto end = position_;
+        if (source_[end] == '+' || source_[end] == '-') {
+            ++end;
+        }
+
+        auto const integer_begin = end;
+        while (end < source_.size() &&
+               source_[end] >= '0' && source_[end] <= '9') {
+            ++end;
+        }
+        auto has_digits = end != integer_begin;
+
+        bool floating = false;
+        if (end < source_.size() && source_[end] == '.') {
+            floating = true;
+            ++end;
+            auto const fraction_begin = end;
+            while (end < source_.size() &&
+                   source_[end] >= '0' && source_[end] <= '9') {
+                ++end;
+            }
+            has_digits = has_digits || end != fraction_begin;
+        }
+
+        if (!has_digits) {
+            if (floating) {
+                fail("invalid numeric literal");
+            }
+            return std::nullopt;
+        }
+
+        bool has_exponent = false;
+        if (end < source_.size() &&
+            (source_[end] == 'e' || source_[end] == 'E')) {
+            auto exponent_end = end + 1;
+            if (exponent_end < source_.size() &&
+                (source_[exponent_end] == '+' ||
+                 source_[exponent_end] == '-')) {
+                ++exponent_end;
+                if (exponent_end == source_.size() ||
+                    source_[exponent_end] < '0' ||
+                    source_[exponent_end] > '9') {
+                    fail("invalid numeric literal");
+                }
+            }
+            if (exponent_end < source_.size() &&
+                source_[exponent_end] >= '0' &&
+                source_[exponent_end] <= '9') {
+                floating = true;
+                has_exponent = true;
+                end = exponent_end + 1;
+                while (end < source_.size() &&
+                       source_[end] >= '0' && source_[end] <= '9') {
+                    ++end;
+                }
+            }
+        }
+
+        if (end < source_.size() &&
+            (source_[end] == '.' ||
+             (has_exponent &&
+              (source_[end] == 'e' || source_[end] == 'E')))) {
+            fail("invalid numeric literal");
+        }
+
+        auto literal = source_.substr(
+            literal_position, end - literal_position);
+        if (!literal.empty() && literal.front() == '+') {
+            literal.remove_prefix(1);
+        }
+
+        if (!floating) {
+            std::int64_t value = 0;
+            auto const [parsed_end, error] = std::from_chars(
+                literal.data(), literal.data() + literal.size(), value);
+            if (error == std::errc::result_out_of_range) {
+                fail("integer literal is out of range");
+            }
+            if (error != std::errc{} ||
+                parsed_end != literal.data() + literal.size()) {
+                fail("invalid numeric literal");
+            }
+            position_ = end;
+            return quote(value);
+        }
+
+        double value = 0;
+        auto const [parsed_end, error] = std::from_chars(
+            literal.data(), literal.data() + literal.size(), value,
+            std::chars_format::general);
+        if (error == std::errc::result_out_of_range) {
+            fail("floating-point literal is out of range");
+        }
+        if (error != std::errc{} ||
+            parsed_end != literal.data() + literal.size()) {
+            fail("invalid numeric literal");
+        }
+        position_ = end;
+        return quote(value);
     }
 
     [[nodiscard]] quoted_expression parse_escaped_atom() {
@@ -7768,6 +8015,10 @@ private:
             if (match == registered_versions_.end() ||
                 versioned->second == 0 ||
                 versioned->second > match->second.size()) {
+                if (has_valid_unseparated_versioned_basis_suffix(
+                        token)) {
+                    return std::nullopt;
+                }
                 fail("unknown operand");
             }
             position_ += token.size();
@@ -7781,6 +8032,32 @@ private:
         }
 
         return std::nullopt;
+    }
+
+    [[nodiscard]] bool
+    has_valid_unseparated_versioned_basis_suffix(
+        std::string_view token) const {
+        for (std::size_t suffix_position = 1;
+             suffix_position < token.size();
+             ++suffix_position) {
+            auto const suffix = token.substr(suffix_position);
+            auto const versioned = parse_versioned_basis_name(
+                suffix, position_ + suffix_position);
+            if (!versioned ||
+                (!ends_with_non_alphanumeric(versioned->first) &&
+                 !ends_with_ascii_digit(versioned->first))) {
+                continue;
+            }
+
+            auto const match = registered_versions_.find(
+                versioned->first);
+            if (match != registered_versions_.end() &&
+                versioned->second != 0 &&
+                versioned->second <= match->second.size()) {
+                return true;
+            }
+        }
+        return false;
     }
 
     [[nodiscard]] std::optional<quoted_expression>
@@ -7818,7 +8095,7 @@ private:
                 continue;
             }
             if (ends_with_lowercase_ascii_letter(prefix) &&
-                !begins_with_nonalphanumeric_terminated_basis(
+                !begins_with_basis_requiring_no_leading_separator(
                     token.substr(prefix_size))) {
                 continue;
             }
@@ -7839,11 +8116,12 @@ private:
     }
 
     [[nodiscard]] bool
-    begins_with_nonalphanumeric_terminated_basis(
+    begins_with_basis_requiring_no_leading_separator(
         std::string_view token) const noexcept {
         for (auto const& [name, basis] : registered_bases_) {
             static_cast<void>(basis);
-            if (ends_with_non_alphanumeric(name) &&
+            if ((ends_with_non_alphanumeric(name) ||
+                 ends_with_ascii_digit(name)) &&
                 token.starts_with(name)) {
                 return true;
             }
@@ -7852,14 +8130,16 @@ private:
         if (recursive_function_) {
             auto const name =
                 quoted_access::root(*recursive_function_)->atomic_name();
-            if (ends_with_non_alphanumeric(name) &&
+            if ((ends_with_non_alphanumeric(name) ||
+                 ends_with_ascii_digit(name)) &&
                 token.starts_with(name)) {
                 return true;
             }
         }
 
         for (auto const& [name, versions] : registered_versions_) {
-            if (!ends_with_non_alphanumeric(name) ||
+            if ((!ends_with_non_alphanumeric(name) &&
+                 !ends_with_ascii_digit(name)) ||
                 !token.starts_with(name) ||
                 token.size() <= name.size() + 1 ||
                 token[name.size()] != '@') {

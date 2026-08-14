@@ -1097,6 +1097,87 @@ int main() {
     test("parse right nested operand", parse("x(yz)"), "x(yz)");
     test("parse grouped operand", parse("S ( K I ) x"), "S(KI)x");
     test("parse redundant groups", parse("((SK)I)x"), "SKIx");
+    test("parse positive integer value", parse("42"), "42");
+    test("parse explicitly positive integer value", parse("+4"), "4");
+    test("parse negative integer value", parse("-17"), "-17");
+    test("parse maximum signed integer value",
+         parse("9223372036854775807"), "9223372036854775807");
+    test("parse minimum signed integer value",
+         parse("-9223372036854775808"), "-9223372036854775808");
+    test("parse fractional value", parse("1.5"), "1.5");
+    test("parse fractional value without leading digits",
+         parse(".5"), "0.5");
+    test("parse fractional value without trailing digits",
+         parse("1."), "1.0");
+    test("parse floating value with an exponent",
+         parse("1e3"), "1000.0");
+    test("parse floating value with an uppercase exponent",
+         parse("2E2"), "200.0");
+    test("parse signed floating value with a signed exponent",
+         parse("-2.5e-2"), "-0.025");
+    test("floating output retains enough precision to round trip",
+         parse("1.2345678901234567"), "1.2345678901234567");
+    test("numeric value may immediately follow a symbol",
+         parse("x2"), "x 2");
+    test("symbol may immediately follow a numeric value",
+         parse("2x"), "2 x");
+    test("numeric value is separated after a primitive",
+         parse("K2"), "K 2");
+    test("primitive is separated after a numeric value",
+         parse("2K"), "2 K");
+    test("exponent value may immediately precede a symbol",
+         parse("1e2x"), "100.0 x");
+    test("a bare lowercase exponent marker remains a symbol",
+         parse("1e"), "1 e");
+    test("a bare uppercase exponent marker remains a basis",
+         parse("1E"), "1 E");
+    test("unsupported hexadecimal notation remains an application",
+         parse("0x10"), "0 x 10");
+    test("adjacent numeric values print with a separator",
+         parse("1")(parse("2")), "1 2");
+    test("numeric values round trip with their exact types and values",
+         [] {
+             auto const expression = parse(
+                 "42 1. 1e3 1.2345678901234567 -2.5e-2");
+             std::ostringstream rendered;
+             expression.print_to(rendered);
+             auto const reparsed = parse(rendered.str());
+             std::cout
+                 << combdsl::detail::same_parser_definition_expression(
+                        expression, reparsed)
+                 << ' ' << rendered.str();
+         },
+         "1 42 1.0 1000.0 1.2345678901234567 -0.025");
+    test("numeric output cannot fuse with exponent-marker operands",
+         [] {
+             for (auto const source : {"1 e 2", "1 E 2"}) {
+                 auto const expression = parse(source);
+                 std::ostringstream rendered;
+                 expression.print_to(rendered);
+                 auto const reparsed = parse(rendered.str());
+                 std::cout
+                     << (combdsl::detail::
+                             same_parser_definition_expression(
+                                 expression, reparsed)
+                             ? "roundtrip "
+                             : "changed ");
+             }
+         },
+         "roundtrip roundtrip ");
+    test("parentheses group a numeric value",
+         parse("x(-2.5)"), "x -2.5");
+    test("a parenthesized operand stays compact after a numeric value",
+         parse("2(xy)"), "2(xy)");
+    test("numeric values stay separated inside a parenthesized operand",
+         parse("x(2 3)"), "x(2 3)");
+    test("identity evaluates to its integer value",
+         single_step(parse("I 42")), "42");
+    test("constant evaluates to its floating value",
+         single_step(parse("K 1.5 x")), "1.5");
+    test("ordinary C++ integer values retain opaque notation",
+         quote(42), "<42>");
+    test("ordinary nonnumeric C++ values retain opaque notation",
+         quote(named_value{}), "<named>");
     test_parse_failure(
         "spaced unknown lowercase basis",
         "x foo y", 2, "unknown operand");
@@ -2394,7 +2475,7 @@ int main() {
     test("define recursively optimizes nested B(QT)B",
          parse("define DefKQ1 x = B(QT)B"), "DefKQ1");
     test("show exposes nested Quixotic optimization",
-         parse("show DefKQ1"), "arity:1 K Q1");
+         parse("show DefKQ1"), "arity:1 KQ1");
     test("define optimizes BDD to Eagle",
          parse("define OptE xyzwv = xy(zwv)"), "OptE");
     test("show exposes optimized Eagle",
@@ -2414,7 +2495,7 @@ int main() {
     test("define recursively optimizes nested BT",
          parse("define DefKQ3 x = BT"), "DefKQ3");
     test("show exposes nested Quirky optimization",
-         parse("show DefKQ3"), "arity:1 K Q3");
+         parse("show DefKQ3"), "arity:1 KQ3");
     test("define recursively optimizes nested BW",
          parse("define DefKWstar x = BW"), "DefKWstar");
     test("show exposes nested Warbler star optimization",
@@ -2486,7 +2567,7 @@ int main() {
     test("define recursively optimizes nested WV",
          parse("define DefKW1 x = WV"), "DefKW1");
     test("show exposes nested Converse warbler optimization",
-         parse("show DefKW1"), "arity:1 K W1");
+         parse("show DefKW1"), "arity:1 KW1");
     test("define preserves nested WR",
          parse("define DefKNR x = WR"), "DefKNR");
     test("show exposes nested unoptimized WR",
@@ -2555,6 +2636,30 @@ int main() {
          parse(" \tdefine\nDws \tx y\nz =\v xyz\f"), "Dws");
     test("whitespace-separated define symbols preserve their order",
          single_step(parse("Dws a b c"), true), "Iabc");
+    test("define accepts an integer value body",
+         parse("define NumericDefine = 42"), "NumericDefine");
+    test("show preserves the integer value in a define body",
+         parse("show NumericDefine"), "arity:0 42");
+    test("define accepts a floating value body",
+         parse("define NumericFunction x = -2.5e-2"),
+         "NumericFunction");
+    test("defined floating constant evaluates to its numeric value",
+         single_step(parse("NumericFunction y")), "-0.025");
+    test("define preserves an integral floating type when shown",
+         parse("define NumIntFloat = 1e3"),
+         "NumIntFloat");
+    test("show marks an integral floating define body with a decimal point",
+         parse("show NumIntFloat"), "arity:0 1000.0");
+    test("equivalent floating spellings leave a define unchanged",
+         [] {
+             auto const before = set_list();
+             static_cast<void>(
+                 parse("define NumericFunction x = -2.50e-2"));
+             std::cout << (set_list() == before
+                 ? "unchanged"
+                 : "changed");
+         },
+         "unchanged");
     test("an adjacent equals makes a lowercase word a zero-arity name",
          parse("define zerodef=x"), "zerodef");
     test("show exposes a zero-symbol define by its full name",
@@ -2834,6 +2939,39 @@ int main() {
          parse("set SetK0 = 0 K"), "SetK0");
     test("explicit zero-arity set basis expands without arguments",
          single_step(parse("SetK0")), "K");
+    test("set accepts a numeric body after an explicit zero arity",
+         parse("set NumericSet = 0 42"), "NumericSet");
+    test("show preserves an explicit-arity numeric set body",
+         parse("show NumericSet"), "arity:0 42");
+    test("set accepts a parenthesized numeric body without an arity",
+         parse("set NumericParenSet = (1.5)"), "NumericParenSet");
+    test("show preserves a parenthesized numeric set body",
+         parse("show NumericParenSet"), "arity:0 1.5");
+    test("set accepts an integral floating value body",
+         parse("set NumIntFloatSet = 1."),
+         "NumIntFloatSet");
+    test("show marks an integral floating set body with a decimal point",
+         parse("show NumIntFloatSet"), "arity:0 1.0");
+    test("equivalent integer spellings leave a set unchanged",
+         [] {
+             auto const before = set_list();
+             static_cast<void>(parse("set NumericSet = 0 +42"));
+             std::cout << (set_list() == before
+                 ? "unchanged"
+                 : "changed");
+         },
+         "unchanged");
+    test("set accepts an integer for numeric type comparison",
+         parse("set NumericTyped = 1"), "NumericTyped");
+    test("an equal floating value is a distinct typed definition",
+         [] {
+             auto const before = set_list();
+             static_cast<void>(parse("set NumericTyped = 1.0"));
+             std::cout << (set_list() == before
+                 ? "unchanged"
+                 : "changed");
+         },
+         "changed");
     test("set accepts a unary arity",
          parse("set SetI1 = 1 I"), "SetI1");
     test("unary set basis remains named while undersaturated",
@@ -3116,6 +3254,8 @@ int main() {
     test("parse separated V4", single_step(parse("V4 x y z")), "V4xyz");
     test("parse V4 without a trailing delimiter",
          parse("V4x"), "V4x");
+    test("registered all-digit basis wins over a numeric literal",
+         parse("1234567"), "1234567");
     test("maximum-length digit-ending basis prints compactly",
          parse("123456789012345x"), "123456789012345x");
     test("maximum-length digit-ending basis needs no delimiter",
@@ -3191,7 +3331,23 @@ int main() {
     test_parse_failure("parse unexpected close", "x)", 1);
     test_parse_failure("parse extra nested close", "x(y))", 4);
     test_parse_failure("parse uppercase symbol", "P", 0);
-    test_parse_failure("parse numeric symbol", "x2", 1);
+    test_parse_failure(
+        "parse integer above signed range",
+        "9223372036854775808", 0);
+    test_parse_failure(
+        "parse integer below signed range",
+        "-9223372036854775809", 0);
+    test_parse_failure(
+        "parse positive floating value above range", "1e309", 0);
+    test_parse_failure(
+        "parse negative floating value above range", "-1e309", 0);
+    test_parse_failure("parse lone minus sign", "-", 0);
+    test_parse_failure("parse lone decimal point", ".", 0);
+    test_parse_failure("parse repeated sign", "--1", 0);
+    test_parse_failure("parse exponent without digits", "1e+", 0);
+    test_parse_failure("parse negative exponent without digits", "1e-", 0);
+    test_parse_failure("parse repeated decimal point", "1..2", 0);
+    test_parse_failure("parse multiple decimal points", "1.2.3", 0);
     test_parse_failure(
         "parse punctuation symbol", "@", 0, "unknown operand");
     test_parse_failure("parse UTF-8 symbol", "\xCE\xBB", 0);
@@ -3441,27 +3597,22 @@ int main() {
     test_parse_failure("set requires a basis name", "set = I", 4);
     test_parse_failure("set requires an equals sign", "set NoEq I", 9);
     test_parse_failure("set requires an expression", "set Empty = \t", 13);
-    constexpr std::string_view arity_without_expression =
-        "set ArOnly = 2";
-    test_parse_failure(
-        "set arity requires an expression",
-        arity_without_expression,
-        arity_without_expression.size());
-    constexpr std::string_view glued_arity = "set Glued = 2I";
-    test_parse_failure(
-        "set arity requires whitespace before its expression",
-        glued_arity,
-        glued_arity.find('2'));
-    constexpr std::string_view negative_arity = "set NegAr = -1 I";
-    test_parse_failure(
-        "set rejects a negative arity",
-        negative_arity,
-        negative_arity.find('-'));
-    constexpr std::string_view fractional_arity = "set FracAr = 1.5 I";
-    test_parse_failure(
-        "set rejects a fractional arity",
-        fractional_arity,
-        fractional_arity.find('1'));
+    test("a lone integer after set equals is a numeric body",
+         parse("set ArOnly = 2"), "ArOnly");
+    test("show exposes the lone integer as an arity-zero body",
+         parse("show ArOnly"), "arity:0 2");
+    test("an integer glued to an expression begins a numeric body",
+         parse("set Glued = 2I"), "Glued");
+    test("show preserves a glued numeric application body",
+         parse("show Glued"), "arity:0 2 I");
+    test("a negative integer after set equals begins a numeric body",
+         parse("set NegAr = -1 I"), "NegAr");
+    test("show preserves a negative numeric application body",
+         parse("show NegAr"), "arity:0 -1 I");
+    test("a fractional value after set equals begins a numeric body",
+         parse("set FracAr = 1.5 I"), "FracAr");
+    test("show preserves a fractional numeric application body",
+         parse("show FracAr"), "arity:0 1.5 I");
     constexpr std::string_view bracketed_arity = "set Brack = [2] K";
     test_parse_failure(
         "set rejects a bracketed arity",
@@ -3598,6 +3749,10 @@ int main() {
          "invalid");
 
     test("parse eval", [&] { parse_eval("K(Ix)y"); }, "x\n");
+    test("parse eval displays an evaluated integer without brackets",
+         [&] { parse_eval("I 42"); }, "42\n");
+    test("parse eval displays an evaluated floating value without brackets",
+         [&] { parse_eval("K 1.5 x"); }, "1.5\n");
     test("parse eval reports completed reductions",
          [] {
              std::vector<std::size_t> reports;
@@ -6776,6 +6931,26 @@ int main() {
              "\n->" +
              red_argument("Cstar") +
              "\n");
+    test("color step needs no space before digit-ending basis",
+         [&] {
+             static_cast<void>(
+                 color_step_html(quote(I)(Q1)));
+         },
+         std::string{"  I"} +
+             red_argument("Q1") +
+             "\n->" +
+             red_argument("Q1") +
+             "\n");
+    test("color step keeps space after digit-ending basis",
+         [&] {
+             static_cast<void>(
+                 color_step_html(quote(I)(Q1)(Q3)));
+         },
+         std::string{"  I"} +
+             red_argument("Q1") +
+             " Q3\n->" +
+             red_argument("Q1") +
+             " Q3\n");
     test("color step keeps punctuation-ending basis markup compact",
          [&] {
              static_cast<void>(
@@ -6945,6 +7120,26 @@ int main() {
              "\n->" +
              terminal_red_argument("Cstar") +
              "\n");
+    test("terminal color step needs no space before digit-ending basis",
+         [&] {
+             static_cast<void>(
+                 color_step_ansi(quote(I)(Q1)));
+         },
+         std::string{"  I"} +
+             terminal_red_argument("Q1") +
+             "\n->" +
+             terminal_red_argument("Q1") +
+             "\n");
+    test("terminal color step keeps space after digit-ending basis",
+         [&] {
+             static_cast<void>(
+                 color_step_ansi(quote(I)(Q1)(Q3)));
+         },
+         std::string{"  I"} +
+             terminal_red_argument("Q1") +
+             " Q3\n->" +
+             terminal_red_argument("Q1") +
+             " Q3\n");
     test("terminal color step keeps punctuation-ending basis compact",
          [&] {
              static_cast<void>(
@@ -7197,6 +7392,149 @@ int main() {
                  << ' ' << rendered.str();
          },
          "1 CstarUserTail+@1Vstar");
+    static_cast<void>(basis("LeftDigit1", 1, I));
+    test("digit-ending basis needs no leading space after a primitive",
+         quote(K)(Q1), "KQ1");
+    test("digit-ending basis needs no leading space after a symbol",
+         quote(x)(Q1), "xQ1");
+    test("digit-ending basis needs no leading space after another basis",
+         quote(Cstar)(Q1), "CstarQ1");
+    test("custom digit-ending basis needs no space before it",
+         quote(x)(parse("LeftDigit1")), "xLeftDigit1");
+    test("digit-ending basis output round trips through parser",
+         [] {
+             auto const spaced = parse(
+                 "K Q1 Q3 Q1 K Q1 Cstar Q1 W* x");
+             std::ostringstream rendered;
+             spaced.print_to(rendered);
+             auto const reparsed = parse(rendered.str());
+             std::cout
+                 << combdsl::detail::same_parser_definition_expression(
+                        spaced, reparsed)
+                 << ' ' << rendered.str();
+         },
+         "1 KQ1 Q3 Q1 KQ1 CstarQ1 W*x");
+    test("recursive digit-ending name round trips after lowercase basis",
+         [] {
+             static_cast<void>(parse(
+                 "define RecDigit1 x = CstarRecDigit1 Vstar"));
+             auto const definitions = set_list();
+             auto const line_position = definitions.rfind('\n');
+             auto const line = definitions.substr(
+                 line_position == std::string::npos
+                     ? 0
+                     : line_position + 1);
+             auto const inspected = combdsl::detail::parse_input(
+                 line,
+                 combdsl::detail::parser_definition_mode::
+                     inspect_definitions);
+             std::cout << line << ' '
+                       << (inspected.replaced_definition.empty()
+                               ? "same"
+                               : "changed");
+         },
+         "define RecDigit1 x = CstarRecDigit1 Vstar same");
+    static_cast<void>(basis("xLeftDigit1", 0, I));
+    test("exact longer digit-ending basis wins compact parsing",
+         single_step(parse("xLeftDigit1")), "I");
+    test("ordinary captured revision suffix keeps its leading separator",
+         [] {
+             static_cast<void>(parse("references captured"));
+             static_cast<void>(parse("set PlainCaptured = 1 I"));
+             auto const spaced = parse("K PlainCaptured");
+             std::ostringstream rendered;
+             spaced.print_to(rendered);
+             auto const reparsed = parse(rendered.str());
+             std::cout
+                 << combdsl::detail::same_parser_definition_expression(
+                        spaced, reparsed)
+                 << ' ' << rendered.str();
+         },
+         "1 K PlainCaptured@1");
+    test("a live user digit-ending basis round trips without a space before",
+         [] {
+             static_cast<void>(parse("references live"));
+             static_cast<void>(parse("set UserDigit1 = 1 I"));
+             auto const spaced = parse("Cstar UserDigit1 x Vstar");
+             std::ostringstream rendered;
+             spaced.print_to(rendered);
+             auto const reparsed = parse(rendered.str());
+             std::cout
+                 << combdsl::detail::same_parser_definition_expression(
+                        spaced, reparsed)
+                 << ' ' << rendered.str();
+             static_cast<void>(parse("references captured"));
+         },
+         "1 CstarUserDigit1x Vstar");
+    test("a live user digit-ending basis keeps a space after it",
+         [] {
+             static_cast<void>(parse("references live"));
+             auto const spaced = parse("Cstar UserDigit1 Vstar");
+             std::ostringstream rendered;
+             spaced.print_to(rendered);
+             auto const reparsed = parse(rendered.str());
+             std::cout
+                 << combdsl::detail::same_parser_definition_expression(
+                        spaced, reparsed)
+                 << ' ' << rendered.str();
+             static_cast<void>(parse("references captured"));
+         },
+         "1 CstarUserDigit1 Vstar");
+    test("a captured digit-ending basis round trips without a space before",
+         [] {
+             auto const spaced = parse("Cstar UserDigit1 x Vstar");
+             std::ostringstream rendered;
+             spaced.print_to(rendered);
+             auto const reparsed = parse(rendered.str());
+             std::cout
+                 << combdsl::detail::same_parser_definition_expression(
+                        spaced, reparsed)
+                 << ' ' << rendered.str();
+         },
+         "1 CstarUserDigit1@1x Vstar");
+    test("a captured digit-ending basis keeps a space after it",
+         [] {
+             auto const spaced = parse("Cstar UserDigit1 Vstar");
+             std::ostringstream rendered;
+             spaced.print_to(rendered);
+             auto const reparsed = parse(rendered.str());
+             std::cout
+                 << combdsl::detail::same_parser_definition_expression(
+                        spaced, reparsed)
+                 << ' ' << rendered.str();
+         },
+         "1 CstarUserDigit1@1 Vstar");
+    test_parse_failure(
+        "an unavailable compact captured digit revision stays unknown",
+        "CstarUserDigit1@2", 0, "unknown operand");
+    test_parse_failure(
+        "an invalid prefix before a valid captured digit revision stays unknown",
+        "PUserDigit1@1", 0, "unknown operand");
+    test("a removed digit-ending revision round trips without a space before",
+         [] {
+             static_cast<void>(parse("remove UserDigit1"));
+             auto const spaced = parse("Cstar UserDigit1@1 x Vstar");
+             std::ostringstream rendered;
+             spaced.print_to(rendered);
+             auto const reparsed = parse(rendered.str());
+             std::cout
+                 << combdsl::detail::same_parser_definition_expression(
+                        spaced, reparsed)
+                 << ' ' << rendered.str();
+         },
+         "1 CstarUserDigit1@1x Vstar");
+    test("a removed digit-ending revision keeps a space after it",
+         [] {
+             auto const spaced = parse("Cstar UserDigit1@1 Vstar");
+             std::ostringstream rendered;
+             spaced.print_to(rendered);
+             auto const reparsed = parse(rendered.str());
+             std::cout
+                 << combdsl::detail::same_parser_definition_expression(
+                        spaced, reparsed)
+                 << ' ' << rendered.str();
+         },
+         "1 CstarUserDigit1@1 Vstar");
     test("multi-character basis after primitive",
          K(copied_name_basis), "K Alias");
     test("multi-character basis after symbol",
@@ -7247,15 +7585,19 @@ int main() {
          "Cstar <deferred Y(I)>");
     test("opaque token after multi-character basis",
          quote(Cstar)(operand_named_value{}), "Cstar <operand>");
-    test("self-delimiting basis before a symbol stays compact",
+    test("digit-ending basis before a symbol stays compact",
          quote(Q1)(x), "Q1x");
-    test("self-delimiting basis before a UTF-8 symbol stays compact",
+    test("digit-ending basis before a UTF-8 symbol stays compact",
          quote(Q1)(circle), "Q1\xE2\x97\x8F");
-    test("self-delimiting basis before a primitive keeps a space",
+    test("digit-ending basis before a primitive keeps a space",
          quote(Q1)(K), "Q1 K");
-    test("self-delimiting basis before another basis keeps a space",
+    test("digit-ending basis before another digit-ending basis keeps a space",
          quote(Q1)(Q3), "Q1 Q3");
-    test("nested self-delimiting basis before a symbol stays compact",
+    test("digit-ending basis before an ordinary basis keeps a space",
+         quote(Q1)(Cstar), "Q1 Cstar");
+    test("digit-ending basis before a punctuation basis keeps a space",
+         quote(Q1)(W_star), "Q1 W*");
+    test("nested digit-ending basis before a symbol stays compact",
          x(parse("Q1y")), "x(Q1y)");
     test("single-character basis does not separate following token",
          quote(T)(x), "Tx");
