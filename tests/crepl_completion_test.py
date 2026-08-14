@@ -234,6 +234,25 @@ def main():
             raise AssertionError(
                 f"expected revision listing; received {output!r}")
 
+        write_all(master, b"ins\tS(Kx)(Iy)z\n")
+        output = reader.read_until(b">")
+        require_completed_line(output, b"inspect S(Kx)(Iy)z\n")
+        normalized_output = normalized(output)
+        expected_inspection = (
+            b"canonical: S(Kx)(Iy)z\n"
+            b"free symbols: x y z\n"
+            b"references:\n"
+            b"  S [fundamental]\n"
+            b"  K [fundamental]\n"
+            b"  I [fundamental]\n"
+            b"next redex: S(Kx)(Iy)z [S at root]\n")
+        if expected_inspection not in normalized_output:
+            raise AssertionError(
+                f"expected inspect report; received {output!r}")
+        if b"tree:" in normalized_output:
+            raise AssertionError(
+                f"inspect must not show tree statistics; received {output!r}")
+
         write_all(master, b"dependso\ta\tDepSource\n")
         output = reader.read_until(b">")
         require_completed_line(output, b"dependson all DepSource\n")

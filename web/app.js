@@ -41,6 +41,7 @@
         "depends-on",
         "dependson",
         "find",
+        "inspect",
         "references",
         "remove",
         "revisions",

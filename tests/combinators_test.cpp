@@ -2420,6 +2420,138 @@ int main() {
     test("revisions command prefixes remain ordinary input",
          parse("revisionsx"), "revisionsx");
 
+    test("inspect canonicalizes whitespace and redundant parentheses",
+         parse("inspect   ((S (K x)) (I y)) z"),
+         "canonical: S(Kx)(Iy)z\n"
+         "free symbols: x y z\n"
+         "references:\n"
+         "  S [fundamental]\n"
+         "  K [fundamental]\n"
+         "  I [fundamental]\n"
+         "next redex: S(Kx)(Iy)z [S at root]");
+    test("inspect canonicalizes numbers and digit-ended basis spacing",
+         parse("inspect ((Q1 x) (00042)) Q3"),
+         "canonical: Q1x 42 Q3\n"
+         "free symbols: x\n"
+         "references:\n"
+         "  Q1 [pre-defined]\n"
+         "  Q3 [pre-defined]\n"
+         "next redex: Q1x 42 Q3 [Q1 at root]");
+    test("inspect sorts and deduplicates free symbols",
+         parse("inspect zyxzx"),
+         "canonical: zyxzx\n"
+         "free symbols: x y z\n"
+         "references: none\n"
+         "next redex: none [normal form]");
+    test("inspect reports no free symbols or references",
+         parse("inspect 42"),
+         "canonical: 42\n"
+         "free symbols: none\n"
+         "references: none\n"
+         "next redex: none [normal form]");
+    test("inspect deduplicates direct references in first-use order",
+         parse("inspect x(M)(S)(M)(I)(K)"),
+         "canonical: xMSMIK\n"
+         "free symbols: x\n"
+         "references:\n"
+         "  M [pre-defined]\n"
+         "  S [fundamental]\n"
+         "  I [fundamental]\n"
+         "  K [fundamental]\n"
+         "next redex: none [normal form]");
+
+    test("inspect setup registers captured user references",
+         [] {
+             static_cast<void>(parse("references captured"));
+             static_cast<void>(parse(
+                 "set InspectCaptured = 1 I"));
+             static_cast<void>(parse(
+                 "set InspectLive = 1 I"));
+             static_cast<void>(parse(
+                 "set InspectRemoved = 1 I"));
+             static_cast<void>(parse("remove InspectRemoved"));
+             std::cout << "ready";
+         },
+         "ready");
+    test("inspect identifies a captured current revision",
+         parse("inspect InspectCaptured"),
+         "canonical: InspectCaptured@1\n"
+         "free symbols: none\n"
+         "references:\n"
+         "  InspectCaptured@1 [captured]\n"
+         "next redex: none [normal form]");
+    test("inspect identifies an explicit removed revision as captured",
+         parse("inspect InspectRemoved@1"),
+         "canonical: InspectRemoved@1\n"
+         "free symbols: none\n"
+         "references:\n"
+         "  InspectRemoved@1 [captured]\n"
+         "next redex: none [normal form]");
+    test("inspect identifies an explicit predefined revision",
+         parse("inspect M@1"),
+         "canonical: M@1\n"
+         "free symbols: none\n"
+         "references:\n"
+         "  M@1 [pre-defined]\n"
+         "next redex: none [normal form]");
+    test("inspect identifies a live current-name reference",
+         [] {
+             static_cast<void>(parse("references live"));
+             parse("inspect InspectLive").print_to(std::cout);
+             static_cast<void>(parse("references captured"));
+         },
+         "canonical: InspectLive\n"
+         "free symbols: none\n"
+         "references:\n"
+         "  InspectLive [live]\n"
+         "next redex: none [normal form]");
+    test("inspect selects a nested ordinary next redex",
+         parse("inspect x(Iy)"),
+         "canonical: x(Iy)\n"
+         "free symbols: x y\n"
+         "references:\n"
+         "  I [fundamental]\n"
+         "next redex: Iy [I at argument]");
+    test("inspect reports a stable deeper application path",
+         parse("inspect (x(Iy))z"),
+         "canonical: x(Iy)z\n"
+         "free symbols: x y z\n"
+         "references:\n"
+         "  I [fundamental]\n"
+         "next redex: Iy [I at function.argument]");
+    test("ordinary single step chooses inspect's nested redex",
+         single_step(parse("x(Iy)")), "xy");
+    test("inspect parser metadata is display only",
+         [] {
+             auto const parsed =
+                 combdsl::detail::parse_input("inspect Ix");
+             std::cout << parsed.is_display_only
+                       << parsed.is_definition
+                       << parsed.is_show_all
+                       << parsed.is_find;
+         },
+         "1000");
+    test("parse eval prints inspect without reducing its expression",
+         [] { parse_eval("inspect Ix"); },
+         "canonical: Ix\n"
+         "free symbols: x\n"
+         "references:\n"
+         "  I [fundamental]\n"
+         "next redex: Ix [I at root]\n");
+    test_parse_failure(
+        "inspect requires an expression", "inspect", 7,
+        "expected an expression");
+    test_parse_failure(
+        "inspect rejects a missing close parenthesis",
+        "inspect (Ix", 11);
+    test_parse_failure(
+        "inspect rejects a trailing close parenthesis",
+        "inspect Ix)", 10, "unexpected ')'");
+    test("inspect command prefixes remain ordinary input",
+         parse("inspectx"), "inspectx");
+    test("inspect requires a command boundary",
+         parse("inspect(Ix)"), "inspect(Ix)");
+
     test_parse_failure(
         "remove requires a name", "remove ", 7,
         "missing combinator name");
@@ -3860,7 +3992,7 @@ int main() {
         "steps", "ministeps", "path", "between", "and", "set",
         "define", "show", "single", "key", "basis", "colorize",
         "about", "birds", "find", "help", "load", "remove", "save",
-        "revisions",
+        "inspect", "revisions",
         "dependson", "depends-on", "depends", "on", "usedby",
         "used-by", "used", "by", "quit", "exit"};
     for (auto const name : reserved_definition_names) {

@@ -60,7 +60,7 @@
 
 namespace {
 
-constexpr std::string_view crepl_version = "2.9.4";
+constexpr std::string_view crepl_version = "2.9.5";
 
 [[nodiscard]] bool stream_is_terminal(std::FILE* stream) noexcept {
 #if defined(_WIN32)
@@ -185,12 +185,12 @@ struct completion_candidates {
     std::size_t size = 0;
 };
 
-constexpr std::array<std::string_view, 26> command_completion_candidates = {
+constexpr std::array<std::string_view, 27> command_completion_candidates = {
     "about", "abstract", "basis", "birds", "colorize", "define",
     "depends", "depends-on", "dependson", "exit", "find", "help",
-    "key", "load", "quit", "references", "remove", "revisions",
-    "save", "set", "show", "single", "step", "used", "used-by",
-    "usedby"};
+    "inspect", "key", "load", "quit", "references", "remove",
+    "revisions", "save", "set", "show", "single", "step", "used",
+    "used-by", "usedby"};
 constexpr std::array<std::string_view, 1> step_completion_candidates = {
     "step"};
 constexpr std::array<std::string_view, 1>
@@ -867,6 +867,7 @@ void print_help_brief(std::ostream& output) {
         "exit                                  | end the program\n"
         "find [all] [num] ?<symbols> = <expression> | find matching pre-defined bird forms\n"
         "help [brief | full]                   | display help information\n"
+        "inspect <expression>                  | describe an expression without evaluating it\n"
         "key step [on | off]                   | after each step, wait for a keypress to continue\n"
         "load <filename>                       | load a set-list journal from a file\n"
         "quit                                  | end the program\n"
@@ -1064,6 +1065,19 @@ void print_help_full(std::ostream& output) {
         "and follow the new current revision if the name is added again. "
         "The removal remains in the chronological saved set list. "
         "Pre-defined names cannot be removed.");
+
+    output << "\nInspecting Expressions\n\n"
+           << "inspect <expression>\n";
+    write_wrapped_paragraph(
+        output,
+        "Describes the parsed expression without evaluating it or expanding "
+        "named bases. The report displays its canonical spelling, its sorted "
+        "free symbols (or none), and its direct named references in first-use "
+        "order. Fundamental, pre-defined, captured, and live references are "
+        "labeled; captured references include their immutable name@N revision. "
+        "The final line identifies the next reducible subexpression, its head, "
+        "and its function/argument location, or reports normal form when no "
+        "redex exists. The report contains no tree-size or depth statistics.");
 
     output << "\nInspecting Dependencies\n\n"
            << "dependson [all] <name>\n"

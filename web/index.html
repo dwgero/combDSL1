@@ -388,9 +388,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             color: #c33;
         }
     </style>
-    <script src="./evaluation_watchdog.js?v=2.9.4" defer></script>
-    <script src="./input_history.js?v=2.9.4" defer></script>
-    <script src="./app.js?v=2.9.4" defer></script>
+    <script src="./evaluation_watchdog.js?v=2.9.5" defer></script>
+    <script src="./input_history.js?v=2.9.5" defer></script>
+    <script src="./app.js?v=2.9.5" defer></script>
 </head>
 <body>
     <main aria-labelledby="studio-title">
@@ -570,7 +570,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             Press <kbd>Tab</kbd> to complete a unique prefix for
             <code>abstract</code>, <code>set</code>, <code>define</code>,
             the dependency commands described below, <code>find</code>,
-            <code>references</code>, <code>remove</code>,
+            <code>inspect</code>, <code>references</code>, <code>remove</code>,
             <code>revisions</code>, <code>show</code>, or
             <code>step limit</code>, including supported command options.
             <br><br>
@@ -659,6 +659,20 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             the name is absent and follow the new current revision if the name
             is later added again. The removal remains in the chronological
             saved set list. Pre-defined names cannot be removed.
+        </div>
+        <h2 class="help-subheading">Inspecting Expressions</h2>
+        <div class="help-section">
+            <code>inspect expression</code><br>
+            Describes the parsed expression without evaluating it or expanding
+            named bases. The report displays the canonical spelling, sorted
+            free symbols (or <code>none</code>), and direct named references in
+            first-use order. Fundamental, pre-defined, captured, and live
+            references are labeled; captured references include their immutable
+            <code>name@N</code> revision. The final line identifies the next
+            reducible subexpression, its head, and its
+            <code>function</code>/<code>argument</code> location, or reports
+            normal form when no redex exists. The report contains no tree-size
+            or depth statistics.
         </div>
         <h2 class="help-subheading">Reference Mode</h2>
         <div class="help-section">
@@ -918,7 +932,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             data-dialog-initial-focus>About</h2>
         <div class="license-text">
             <!-- Keep this version and the app.js cache key in sync. -->
-            <p>Combinator Studio, version 2.9.4<br>
+            <p>Combinator Studio, version 2.9.5<br>
                 Part of the C++ Combinator DSL<br>
                 Copyright (C) 2026  David W. Gero</p>
             <p>This program is free software: you can redistribute it and/or modify

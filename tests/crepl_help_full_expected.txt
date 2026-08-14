@@ -116,6 +116,17 @@ recent target while the name is absent and follow the new current revision if
 the name is added again. The removal remains in the chronological saved set
 list. Pre-defined names cannot be removed.
 
+Inspecting Expressions
+
+inspect <expression>
+Describes the parsed expression without evaluating it or expanding named bases.
+The report displays its canonical spelling, its sorted free symbols (or none),
+and its direct named references in first-use order. Fundamental, pre-defined,
+captured, and live references are labeled; captured references include their
+immutable name@N revision. The final line identifies the next reducible
+subexpression, its head, and its function/argument location, or reports normal
+form when no redex exists. The report contains no tree-size or depth statistics.
+
 Inspecting Dependencies
 
 dependson [all] <name>

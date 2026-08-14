@@ -940,6 +940,24 @@ test("completes revisions as a typed Studio command", () => {
     );
 });
 
+test("completes inspect as a typed Studio command", () => {
+    const harness = createHarness({
+        inputHistoryTools: createPopulatedHistoryTools([]),
+    });
+    const source = harness.element("source");
+    source.value = "ins";
+    source.setSelectionRange(3, 3);
+
+    const event = dispatchSourceKey(source, "Tab");
+
+    assert.equal(event.defaultPrevented, true);
+    assert.equal(source.value, "inspect ");
+    assert.deepEqual(
+        [source.selectionStart, source.selectionEnd],
+        [8, 8],
+    );
+});
+
 test("completes abstract ministeps as a typed Studio command", () => {
     const harness = createHarness({
         inputHistoryTools: createPopulatedHistoryTools([]),
@@ -1959,6 +1977,78 @@ test("routes revisions as compact display-only output", () => {
         `${command}\n${revisions.trimEnd()}`,
     );
     assert.equal(outputEntry.dataset.compactAfter, "true");
+    assert.equal(outputEntry.textContent.includes("[show end]"), false);
+    assert.equal(harness.element("source-history").textContent, command);
+});
+
+test("routes inspect as compact display-only output", () => {
+    const harness = createHarness();
+    const source = harness.element("source");
+    const worker = harness.workers[0];
+    const command = "inspect S(Kx)(Iy)z";
+    const report =
+        "canonical: S(Kx)(Iy)z\n" +
+        "free symbols: x y z\n" +
+        "references:\n" +
+        "  S [fundamental]\n" +
+        "  K [fundamental]\n" +
+        "  I [fundamental]\n" +
+        "next redex: S(Kx)(Iy)z [S at root]\n";
+
+    worker.send({type: "ready", setList: ""});
+    harness.flushAnimationFrames();
+    harness.element("single-step").click();
+    harness.element("basis-step").click();
+    harness.element("key-step").click();
+    harness.element("colorize").click();
+
+    source.value = command;
+    harness.pressEnter();
+    harness.flushAnimationFrames();
+    const inspection = worker.messages.find(
+        message => message.type === "inspect-definition");
+    worker.send({
+        type: "definition-inspection-result",
+        id: inspection.id,
+        result: {
+            success: true,
+            definition: false,
+            displayOnly: true,
+            showAll: false,
+            find: false,
+            replacement: "",
+        },
+    });
+    harness.flushAnimationFrames();
+
+    const evaluation = worker.messages.find(
+        message => message.type === "evaluate");
+    assert.equal(evaluation.source, command);
+    assert.equal(evaluation.singleStep, false);
+    assert.equal(evaluation.keyStep, false);
+    assert.equal(evaluation.basisStep, false);
+    assert.equal(evaluation.colorize, false);
+
+    worker.send({
+        type: "result",
+        id: inspection.id,
+        result: {
+            success: true,
+            definition: false,
+            recoverWorker: false,
+            output: report,
+            error: "",
+            reductions: 0,
+        },
+    });
+
+    const outputEntry = harness.element("output").lastElementChild;
+    assert.equal(
+        outputEntry.textContent,
+        `${command}\n${report.trimEnd()}`,
+    );
+    assert.equal(outputEntry.dataset.compactAfter, "true");
+    assert.equal(outputEntry.textContent.includes("tree:"), false);
     assert.equal(outputEntry.textContent.includes("[show end]"), false);
     assert.equal(harness.element("source-history").textContent, command);
 });

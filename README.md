@@ -521,7 +521,7 @@ then printed on a new line beginning with `= `. Thus,
 passes are omitted.
 
 The names `abstract`, `all`, `captured`, `live`, `step`, `steps`, `ministeps`,
-`limit`, `set`, `define`, `show`, `remove`, `revisions`, `references`,
+`limit`, `set`, `define`, `show`, `remove`, `revisions`, `inspect`, `references`,
 `snapshot`, `dependson`, `depends-on`, `depends`, `on`, `usedby`, `used-by`,
 `used`, `by`, `path`, `between`, `and`, `single`, `key`, `basis`, `colorize`,
 `about`, `birds`, `find`, `help`, `load`, `save`, `quit`, and `exit` are
@@ -745,6 +745,28 @@ ends with `[removed]`. A pre-defined name has one revision ending with
 unversioned and cannot be queried. The command argument must be an unversioned
 name.
 
+At the start of a line, optionally preceded by whitespace,
+`inspect expression` describes the parsed expression without evaluating it or
+expanding named bases. Its report contains no tree-size or depth statistics.
+It displays, in order:
+
+- `canonical: expression`, using the parser's unambiguous canonical spelling;
+- `free symbols: symbols`, sorted and deduplicated, or `free symbols: none`;
+- direct named `references` in first-use order, labeled `[fundamental]`,
+  `[pre-defined]`, `[captured]`, or `[live]`; and
+- the next reducible subexpression, its head, and its
+  `function`/`argument` location, or `next redex: none [normal form]`.
+
+Captured references use their explicit immutable `name@N` spelling, including
+retained removed revisions, while live references keep the unversioned name.
+The command does not list references found only inside a named basis's stored
+definition. Canonical spelling can differ from the submitted text by removing
+redundant whitespace and parentheses, inserting required separators and
+parentheses, displaying captured revisions explicitly, and normalizing integer
+spelling. For example, `inspect S(Kx)(Iy)z` starts with
+`canonical: S(Kx)(Iy)z` and ends with
+`next redex: S(Kx)(Iy)z [S at root]`.
+
 The display-only commands `dependson [all] name`, `depends-on [all] name`, and
 `depends on [all] name` list the named bases whose current stored definitions
 directly contain `name`. The equivalent forms `usedby [all] name`,
@@ -868,7 +890,7 @@ expression produces no output, while malformed or empty lines throw
 The `crepl` executable applies `input_escape` to each line before passing it to
 `parse_eval`, so ordinary quoted words and backslashes can be entered directly.
 When standard output is a terminal, it first prints
-`Combinator Read-Eval-Print Loop, version 2.9.4`. Long evaluations display
+`Combinator Read-Eval-Print Loop, version 2.9.5`. Long evaluations display
 the accumulated step count every 1,000 reductions by overwriting one status
 line; the line is cleared before evaluation output is printed. Its interactive
 prompt is `>`. Interactive input uses GNU Readline, so previous nonempty
@@ -876,7 +898,7 @@ commands other than `exit` and `quit` can be recalled with Up Arrow or
 Ctrl-P, including commands from earlier interactive sessions. Press Tab to
 complete command words and supported
 options, including `captured` and `live` after `set` or `define`,
-`references captured`, `references live`, and `revisions`; whitespace already
+`references captured`, `references live`, `inspect`, and `revisions`; whitespace already
 entered between words is preserved. Save and load each remember their own most
 recently successful filename across interactive sessions, initially
 `set_list.cmb`; Tab at either filename position restores
@@ -945,7 +967,9 @@ cannot be removed. Enter `show <name>` to display the current revision and
 `show <name>@N` to display an exact historical revision. Enter `show all` to
 display the entire saved definition list, or `Nothing to show` when it is
 empty. Enter `revisions <name>` to display every retained immutable revision
-using the format described above.
+using the format described above. Enter `inspect <expression>` to display its
+canonical spelling, free symbols, direct labeled references, and next redex
+without evaluating it or expanding named bases.
 Enter `dependson [all] <name>`, `depends-on [all] <name>`, or
 `depends on [all] <name>` to list the named bases whose definitions directly
 contain that name. Enter `usedby [all] <name>`, `used-by [all] <name>`, or
@@ -1235,14 +1259,15 @@ are displayed in red and do not themselves add a blank line after them. A
 successfully registered `set`, `define`, `remove`, or `references` command
 leaves only that submitted command line, with no output beneath it.
 The following result begins on the next line without an intervening blank line.
-A successful `show` or `revisions` command is also followed without an
-intervening blank line.
+A successful `show`, `revisions`, or `inspect` command is also followed
+without an intervening blank line.
 In Combinator Studio, a nonempty `show all` ends with a red `[show end]` line.
 A submitted combinator expression nevertheless always begins after a blank line
 when the Results area already contains output.
 Press Tab to complete a unique prefix for the `abstract`, `set`, `define`,
-`dependson`, `depends-on`, `depends on`, `find`, `references`, `remove`,
-`revisions`, `show`, `step limit`, `usedby`, `used-by`, or `used by` command,
+`dependson`, `depends-on`, `depends on`, `find`, `inspect`, `references`,
+`remove`, `revisions`, `show`, `step limit`, `usedby`, `used-by`, or `used by`
+command,
 the dependency-query `all`, `path`, `between`, and `and` words, the `captured`
 or `live` definition modifier, and the `captured` or `live` references option;
 when no completion is available, Tab keeps its normal browser focus behavior.

@@ -40,6 +40,7 @@ test("completes unique Studio command prefixes", () => {
         "depends-on",
         "dependson",
         "find",
+        "inspect",
         "references",
         "remove",
         "revisions",
@@ -57,6 +58,7 @@ test("completes unique Studio command prefixes", () => {
     assert.equal(complete("depends-"), "depends-on");
     assert.equal(complete("dependso"), "dependson");
     assert.equal(complete("fin"), "find");
+    assert.equal(complete("ins"), "inspect");
     assert.equal(complete("re"), undefined);
     assert.equal(complete("ref"), "references");
     assert.equal(complete("rem"), "remove");
@@ -294,6 +296,16 @@ test("keeps revisions as a typed command without a UI button", () => {
     assert.doesNotMatch(
         html,
         /<button\b[^>]*\bid=["']revisions["']/i);
+});
+
+test("keeps inspect as a typed command without a UI button", () => {
+    const html = readFileSync(
+        new URL("../web/index.html", import.meta.url), "utf8");
+
+    assert.match(html, /<code>inspect expression<\/code>/);
+    assert.doesNotMatch(
+        html,
+        /<button\b[^>]*\bid=["']inspect["']/i);
 });
 
 test("completes unambiguous abstract command forms", () => {

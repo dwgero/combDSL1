@@ -2890,6 +2890,17 @@ struct reduction_trace {
     std::optional<quoted_expression> after;
 };
 
+struct redex_path_frame {
+    quoted_expression function;
+    quoted_expression argument;
+    bool visiting_argument = false;
+};
+
+struct located_redex {
+    quoted_expression expression;
+    std::vector<redex_path_frame> path;
+};
+
 [[nodiscard]] inline std::optional<quoted_expression>
 reduce_next_redex(quoted_expression const& expression,
                   reduction_options options,
@@ -2898,6 +2909,10 @@ reduce_next_redex(quoted_expression const& expression,
 [[nodiscard]] inline bool
 has_next_redex(quoted_expression const& expression,
                reduction_options options);
+
+[[nodiscard]] inline bool
+has_redex_at_head(quoted_expression const& expression,
+                  reduction_options options);
 
 [[nodiscard]] inline quoted_expression
 restore_basis_arguments(quoted_expression const& expression) {
@@ -3375,66 +3390,15 @@ reduce_at_head(
     return expression;
 }
 
-[[nodiscard]] inline std::optional<quoted_expression>
-reduce_next_redex(quoted_expression const& expression,
-                  reduction_options options,
-                  reduction_trace* trace) {
-    std::unique_lock transaction_lock(
-        parser_definition_transaction_mutex(), std::defer_lock);
-    if (quoted_access::root(expression)->contains_live_binding()) {
-        transaction_lock.lock();
-    }
-    std::size_t pending_replacements = 0;
-    if (auto pending = reduce_pending_sk_applications(
-            expression,
-            pending_replacements,
-            options.reduce_partial_k_argument)) {
-        if (trace != nullptr) {
-            trace->before = pending->before;
-            trace->after = pending->after;
-            return pending->after;
-        }
-        return pending->result;
-    }
-
-    struct path_frame {
-        quoted_expression function;
-        quoted_expression argument;
-        bool visiting_argument = false;
-    };
-
-    std::vector<path_frame> path;
+[[nodiscard]] inline std::optional<located_redex>
+locate_next_head_redex(quoted_expression const& expression,
+                       reduction_options options) {
+    std::vector<redex_path_frame> path;
     auto current = expression;
 
     for (;;) {
-        auto reduced = reduce_at_head(current, options, trace);
-        if (quoted_access::root(reduced) !=
-            quoted_access::root(current)) {
-            for (auto frame = path.rbegin();
-                 frame != path.rend();
-                 ++frame) {
-                if (frame->visiting_argument) {
-                    reduced = make_quoted_application(
-                        frame->function, std::move(reduced));
-                    if (trace != nullptr) {
-                        trace->before = make_quoted_application(
-                            frame->function,
-                            std::move(*trace->before));
-                    }
-                } else {
-                    reduced = make_quoted_application(
-                        std::move(reduced), frame->argument);
-                    if (trace != nullptr) {
-                        trace->before = make_quoted_application(
-                            std::move(*trace->before),
-                            frame->argument);
-                    }
-                }
-                if (trace != nullptr) {
-                    trace->after = reduced;
-                }
-            }
-            return reduced;
+        if (has_redex_at_head(current, options)) {
+            return located_redex{current, std::move(path)};
         }
 
         auto const& root = quoted_access::root(current);
@@ -3485,6 +3449,61 @@ reduce_next_redex(quoted_expression const& expression,
             return std::nullopt;
         }
     }
+}
+
+[[nodiscard]] inline std::optional<quoted_expression>
+reduce_next_redex(quoted_expression const& expression,
+                  reduction_options options,
+                  reduction_trace* trace) {
+    std::unique_lock transaction_lock(
+        parser_definition_transaction_mutex(), std::defer_lock);
+    if (quoted_access::root(expression)->contains_live_binding()) {
+        transaction_lock.lock();
+    }
+    std::size_t pending_replacements = 0;
+    if (auto pending = reduce_pending_sk_applications(
+            expression,
+            pending_replacements,
+            options.reduce_partial_k_argument)) {
+        if (trace != nullptr) {
+            trace->before = pending->before;
+            trace->after = pending->after;
+            return pending->after;
+        }
+        return pending->result;
+    }
+
+    auto selected = locate_next_head_redex(expression, options);
+    if (!selected) {
+        return std::nullopt;
+    }
+
+    auto reduced = reduce_at_head(
+        selected->expression, options, trace);
+    for (auto frame = selected->path.rbegin();
+         frame != selected->path.rend(); ++frame) {
+        if (frame->visiting_argument) {
+            reduced = make_quoted_application(
+                frame->function, std::move(reduced));
+            if (trace != nullptr) {
+                trace->before = make_quoted_application(
+                    frame->function,
+                    std::move(*trace->before));
+            }
+        } else {
+            reduced = make_quoted_application(
+                std::move(reduced), frame->argument);
+            if (trace != nullptr) {
+                trace->before = make_quoted_application(
+                    std::move(*trace->before),
+                    frame->argument);
+            }
+        }
+        if (trace != nullptr) {
+            trace->after = reduced;
+        }
+    }
+    return reduced;
 }
 
 [[nodiscard]] inline bool
@@ -3808,42 +3827,18 @@ has_next_redex(quoted_expression const& expression,
             expression, options.reduce_partial_k_argument)) {
         return true;
     }
+    return locate_next_head_redex(expression, options).has_value();
+}
 
-    std::vector<quoted_expression> pending{expression};
-    while (!pending.empty()) {
-        auto current = std::move(pending.back());
-        pending.pop_back();
-        if (has_redex_at_head(current, options)) {
-            return true;
-        }
-
-        auto const& root = quoted_access::root(current);
-        if (root->kind() != quoted_node_kind::application) {
-            continue;
-        }
-
-        auto head = current;
-        while (quoted_access::root(head)->kind() ==
-               quoted_node_kind::application) {
-            head = static_cast<quoted_application_node const&>(
-                *quoted_access::root(head)).function();
-        }
-        auto const head_kind = quoted_access::root(head)->kind();
-        if ((!options.reduce_fixed_point &&
-             head_kind == quoted_node_kind::fixed_point) ||
-            (!options.reduce_recursive_y &&
-             head_kind == quoted_node_kind::recursive_y) ||
-            (!options.reduce_partial_k_argument &&
-             is_partially_applied_k(current))) {
-            continue;
-        }
-
-        auto const& application =
-            static_cast<quoted_application_node const&>(*root);
-        pending.push_back(application.argument());
-        pending.push_back(application.function());
+[[nodiscard]] inline std::optional<located_redex>
+locate_next_parsed_redex(quoted_expression const& expression,
+                         reduction_options options = {}) {
+    std::unique_lock transaction_lock(
+        parser_definition_transaction_mutex(), std::defer_lock);
+    if (quoted_access::root(expression)->contains_live_binding()) {
+        transaction_lock.lock();
     }
-    return false;
+    return locate_next_head_redex(expression, options);
 }
 
 [[nodiscard]] inline quoted_expression
@@ -6328,6 +6323,8 @@ public:
             begins_command("show");
         auto const is_revisions_command =
             begins_command("revisions");
+        auto const is_inspect_command =
+            begins_command("inspect");
         auto const is_find_command =
             begins_command("find");
         auto const is_abstract_command =
@@ -6358,19 +6355,21 @@ public:
                                 ? parse_show_command()
                                 : is_revisions_command
                                     ? parse_revisions_command()
-                                : is_find_command
-                                    ? parse_find_command()
-                                    : is_abstract_command
-                                        ? parse_abstract_command()
-                                        : is_depended_on_by_command
-                                            ? parse_dependency_command(
-                                                  parser_dependency_direction::
-                                                      depended_on_by)
-                                        : is_uses_command
-                                            ? parse_dependency_command(
-                                                  parser_dependency_direction::
-                                                      uses)
-                                            : parse_expression();
+                                    : is_inspect_command
+                                        ? parse_inspect_command()
+                                        : is_find_command
+                                            ? parse_find_command()
+                                            : is_abstract_command
+                                                ? parse_abstract_command()
+                                                : is_depended_on_by_command
+                                                    ? parse_dependency_command(
+                                                          parser_dependency_direction::
+                                                              depended_on_by)
+                                                    : is_uses_command
+                                                        ? parse_dependency_command(
+                                                              parser_dependency_direction::
+                                                                  uses)
+                                                        : parse_expression();
         skip_whitespace();
         if (!at_end()) {
             fail("unexpected ')'");
@@ -6379,6 +6378,7 @@ public:
             std::move(result),
             is_definition,
             is_show_command || is_revisions_command ||
+                is_inspect_command ||
                 is_find_command ||
                 is_abstract_command ||
                 is_depended_on_by_command || is_uses_command,
@@ -6393,6 +6393,203 @@ private:
         quoted_expression before;
         quoted_expression after;
     };
+
+    struct inspect_reference {
+        std::string name;
+        std::string classification;
+    };
+
+    [[nodiscard]] static std::string inspect_printed_expression(
+        quoted_expression const& expression) {
+        std::ostringstream output;
+        expression.print_to(output);
+        return std::move(output).str();
+    }
+
+    static void inspect_expression_contents(
+        quoted_expression const& expression,
+        std::vector<std::string>& free_symbols,
+        std::vector<inspect_reference>& references) {
+        std::unordered_set<std::string> seen_references;
+        std::vector<quoted_expression> pending{expression};
+
+        auto append_reference = [&](std::string name,
+                                    std::string classification) {
+            if (seen_references.emplace(name).second) {
+                references.push_back({
+                    std::move(name), std::move(classification)});
+            }
+        };
+
+        while (!pending.empty()) {
+            auto current = std::move(pending.back());
+            pending.pop_back();
+            auto const& root = quoted_access::root(current);
+
+            switch (root->kind()) {
+            case quoted_node_kind::application: {
+                auto const& application =
+                    static_cast<quoted_application_node const&>(*root);
+                pending.push_back(application.argument());
+                pending.push_back(application.function());
+                break;
+            }
+            case quoted_node_kind::pending_sk:
+                pending.push_back(
+                    static_cast<quoted_pending_sk_node const&>(*root)
+                        .application());
+                break;
+            case quoted_node_kind::recursive_y:
+                pending.push_back(
+                    static_cast<quoted_recursive_y_node const&>(*root)
+                        .generator());
+                break;
+            case quoted_node_kind::basis_argument:
+                pending.push_back(
+                    static_cast<quoted_basis_argument_node const&>(*root)
+                        .argument());
+                break;
+            case quoted_node_kind::colored_argument:
+                pending.push_back(
+                    static_cast<quoted_colored_argument_node const&>(*root)
+                        .argument());
+                break;
+            case quoted_node_kind::opaque:
+                if (root->atomic_kind() == quoted_atomic_kind::symbol) {
+                    free_symbols.emplace_back(root->atomic_name());
+                }
+                break;
+            case quoted_node_kind::identity:
+                append_reference("I", "fundamental");
+                break;
+            case quoted_node_kind::constant:
+                append_reference("K", "fundamental");
+                break;
+            case quoted_node_kind::substitution:
+                append_reference("S", "fundamental");
+                break;
+            case quoted_node_kind::fixed_point:
+                append_reference("Y", "fundamental");
+                break;
+            case quoted_node_kind::basis: {
+                auto classification = std::string("pre-defined");
+                if (auto const* reference = dynamic_cast<
+                        quoted_parser_basis_reference_node const*>(
+                        root.get())) {
+                    if (!reference->frozen_target()->predefined()) {
+                        classification = reference->is_live_binding()
+                            ? "live"
+                            : "captured";
+                    }
+                }
+                append_reference(
+                    inspect_printed_expression(current),
+                    std::move(classification));
+                break;
+            }
+            case quoted_node_kind::rec_func:
+                break;
+            }
+        }
+
+        std::ranges::sort(free_symbols);
+        free_symbols.erase(
+            std::unique(free_symbols.begin(), free_symbols.end()),
+            free_symbols.end());
+    }
+
+    [[nodiscard]] static std::string inspect_redex_kind(
+        quoted_expression expression) {
+        while (quoted_access::root(expression)->kind() ==
+               quoted_node_kind::application) {
+            expression = static_cast<quoted_application_node const&>(
+                *quoted_access::root(expression)).function();
+        }
+
+        switch (quoted_access::root(expression)->kind()) {
+        case quoted_node_kind::identity:
+            return "I";
+        case quoted_node_kind::constant:
+            return "K";
+        case quoted_node_kind::substitution:
+            return "S";
+        case quoted_node_kind::fixed_point:
+        case quoted_node_kind::recursive_y:
+            return "Y";
+        case quoted_node_kind::basis:
+            return inspect_printed_expression(expression);
+        case quoted_node_kind::pending_sk:
+            return "SK";
+        default:
+            return "unknown";
+        }
+    }
+
+    [[nodiscard]] static std::string inspect_redex_location(
+        std::vector<redex_path_frame> const& path) {
+        if (path.empty()) {
+            return "root";
+        }
+
+        std::string result;
+        for (auto const& frame : path) {
+            if (!result.empty()) {
+                result.push_back('.');
+            }
+            result += frame.visiting_argument
+                ? "argument"
+                : "function";
+        }
+        return result;
+    }
+
+    [[nodiscard]] quoted_expression parse_inspect_command() {
+        constexpr std::size_t keyword_size = 7;
+        position_ += keyword_size;
+        skip_whitespace();
+
+        auto expression = parse_expression();
+        std::vector<std::string> free_symbols;
+        std::vector<inspect_reference> references;
+        inspect_expression_contents(
+            expression, free_symbols, references);
+
+        std::ostringstream output;
+        output << "canonical: ";
+        expression.print_to(output);
+        output << "\nfree symbols:";
+        if (free_symbols.empty()) {
+            output << " none";
+        } else {
+            for (auto const& symbol : free_symbols) {
+                output << ' ' << symbol;
+            }
+        }
+
+        if (references.empty()) {
+            output << "\nreferences: none";
+        } else {
+            output << "\nreferences:";
+            for (auto const& reference : references) {
+                output << "\n  " << reference.name << " ["
+                       << reference.classification << ']';
+            }
+        }
+
+        auto selected = locate_next_parsed_redex(expression);
+        output << "\nnext redex: ";
+        if (!selected) {
+            output << "none [normal form]";
+        } else {
+            selected->expression.print_to(output);
+            output << " ["
+                   << inspect_redex_kind(selected->expression)
+                   << " at "
+                   << inspect_redex_location(selected->path)
+                   << ']';
+        }
+        return quote(std::move(output).str());
+    }
 
     [[nodiscard]] quoted_expression parse_references_command(
         bool legacy_snapshot) {
@@ -7997,6 +8194,7 @@ private:
             name == "ministeps" ||
             name == "references" ||
             name == "revisions" ||
+            name == "inspect" ||
             name == "snapshot" ||
             name == "set" ||
             name == "define" ||

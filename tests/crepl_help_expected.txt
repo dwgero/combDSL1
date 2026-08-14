@@ -13,6 +13,7 @@ dependson [all] <name> | depends-on [all] <name> | depends on [all] <name>
 exit                                  | end the program
 find [all] [num] ?<symbols> = <expression> | find matching pre-defined bird forms
 help [brief | full]                   | display help information
+inspect <expression>                  | describe an expression without evaluating it
 key step [on | off]                   | after each step, wait for a keypress to continue
 load <filename>                       | load a set-list journal from a file
 quit                                  | end the program
@@ -46,6 +47,7 @@ dependson [all] <name> | depends-on [all] <name> | depends on [all] <name>
 exit                                  | end the program
 find [all] [num] ?<symbols> = <expression> | find matching pre-defined bird forms
 help [brief | full]                   | display help information
+inspect <expression>                  | describe an expression without evaluating it
 key step [on | off]                   | after each step, wait for a keypress to continue
 load <filename>                       | load a set-list journal from a file
 quit                                  | end the program
