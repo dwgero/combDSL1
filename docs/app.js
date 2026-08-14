@@ -53,6 +53,17 @@
     ], {appendSpaceToExact: true});
     const completeShowAll =
         inputHistoryTools.createCommandCompleter(["show all"]);
+    const completeDependencyAll =
+        inputHistoryTools.createCommandCompleter(
+            [
+                "depends on all",
+                "depends-on all",
+                "dependson all",
+                "used by all",
+                "used-by all",
+                "usedby all",
+            ],
+            {appendSpaceToExact: true});
     const completeDefinitionReferenceMode =
         inputHistoryTools.createCommandCompleter(
             [
@@ -110,6 +121,7 @@
     };
     const completeCommand = source =>
         completeTopLevelCommand(source) ??
+            completeDependencyAll(source) ??
             completeDefinitionReferenceMode(source) ??
             completeAbstractCommand(source) ??
             completeShowAll(source) ??

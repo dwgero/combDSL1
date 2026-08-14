@@ -792,6 +792,33 @@ test("completes abstract ministeps as a typed Studio command", () => {
     );
 });
 
+test("completes all forms of transitive dependency commands", () => {
+    for (const [sourceText, completed] of [
+        ["dependson a", "dependson all "],
+        ["depends-on a", "depends-on all "],
+        ["depends on a", "depends on all "],
+        ["usedby a", "usedby all "],
+        ["used-by a", "used-by all "],
+        ["used by a", "used by all "],
+    ]) {
+        const harness = createHarness({
+            inputHistoryTools: createPopulatedHistoryTools([]),
+        });
+        const source = harness.element("source");
+        source.value = sourceText;
+        source.setSelectionRange(sourceText.length, sourceText.length);
+
+        const event = dispatchSourceKey(source, "Tab");
+
+        assert.equal(event.defaultPrevented, true);
+        assert.equal(source.value, completed);
+        assert.deepEqual(
+            [source.selectionStart, source.selectionEnd],
+            [completed.length, completed.length],
+        );
+    }
+});
+
 for (const [description, steppingMode] of [
     ["ordinary evaluation", undefined],
     ["automatic Single Step", "single-step"],
@@ -1801,12 +1828,39 @@ test("routes captured and live definitions as silent commands", () => {
 
 test("routes every dependency alias as display-only", () => {
     const cases = [
-        ["dependson A", "A is depended on by: B C\n"],
-        ["depends-on A", "A is depended on by: B C\n"],
-        ["depends on A", "A is depended on by: B C\n"],
-        ["usedby A", "A uses: B C\n"],
-        ["used-by A", "A uses: B C\n"],
-        ["used by A", "A uses: B C\n"],
+        ["dependson A", "A is directly depended on by: B C\n"],
+        ["depends-on A", "A is directly depended on by: B C\n"],
+        ["depends on A", "A is directly depended on by: B C\n"],
+        ["usedby A", "A directly uses: B C\n"],
+        ["used-by A", "A directly uses: B C\n"],
+        ["used by A", "A directly uses: B C\n"],
+        [
+            "dependson all A",
+            "A is directly depended on by: B C\n" +
+                "A is indirectly depended on by: D E\n",
+        ],
+        [
+            "depends-on all A",
+            "A is directly depended on by: B C\n" +
+                "A is indirectly depended on by: D E\n",
+        ],
+        [
+            "depends on all A",
+            "A is directly depended on by: B C\n" +
+                "A is indirectly depended on by: D E\n",
+        ],
+        [
+            "usedby all A",
+            "A directly uses: B C\nA indirectly uses: D E\n",
+        ],
+        [
+            "used-by all A",
+            "A directly uses: B C\nA indirectly uses: D E\n",
+        ],
+        [
+            "used by all A",
+            "A directly uses: B C\nA indirectly uses: D E\n",
+        ],
     ];
 
     for (const [command, commandOutput] of cases) {

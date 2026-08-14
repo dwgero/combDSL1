@@ -1249,37 +1249,50 @@ int main() {
          },
          "all name");
     test("usedby accepts its compact alias",
-         parse("usedby U"), "U uses: B M O");
+         parse("usedby U"), "U directly uses: B M O");
     test("usedby accepts its hyphenated alias",
-         parse("used-by U"), "U uses: B M O");
+         parse("used-by U"), "U directly uses: B M O");
     test("usedby accepts its two-word alias and extra whitespace",
-         parse(" \tused\n  by\t U\f"), "U uses: B M O");
+         parse(" \tused\n  by\t U\f"), "U directly uses: B M O");
     test("dependson accepts its compact alias",
-         parse("dependson O"), "O is depended on by: U");
+         parse("dependson O"), "O is directly depended on by: U");
     test("dependson accepts its hyphenated alias",
-         parse("depends-on O"), "O is depended on by: U");
+         parse("depends-on O"), "O is directly depended on by: U");
     test("dependson accepts its two-word alias and extra whitespace",
          parse(" \tdepends\n  on\t O\f"),
-         "O is depended on by: U");
+         "O is directly depended on by: U");
     test("usedby excludes fundamental combinators",
-         parse("usedby M"), "M uses nothing");
+         parse("usedby M"), "M directly uses nothing");
     test("usedby deduplicates and sorts direct named bases",
-         parse("usedby Q1"), "Q1 uses: B C");
+         parse("usedby Q1"), "Q1 directly uses: B C");
     test("dependson reports no direct users",
          parse("dependson J"),
-         "J is not depended on by anything");
+         "J is not directly depended on by anything");
+    test("usedby all retains the direct no-dependency message",
+         parse("usedby all M"), "M directly uses nothing");
+    test("dependson all retains the direct no-user message",
+         parse("dependson all J"),
+         "J is not directly depended on by anything");
     test("dependency commands are display only",
          [] {
              auto const depends =
                  combdsl::detail::parse_input("depends on O");
              auto const used =
                  combdsl::detail::parse_input("used by U");
+             auto const depends_all =
+                 combdsl::detail::parse_input("depends on all O");
+             auto const used_all =
+                 combdsl::detail::parse_input("used by all U");
              std::cout << depends.is_display_only
                        << depends.is_definition
                        << used.is_display_only
-                       << used.is_definition;
+                       << used.is_definition
+                       << depends_all.is_display_only
+                       << depends_all.is_definition
+                       << used_all.is_display_only
+                       << used_all.is_definition;
          },
-         "1010");
+         "10101010");
     test_parse_failure(
         "plain depends requires on", "depends O", 8,
         "expected 'on'");
@@ -1305,6 +1318,12 @@ int main() {
         "used by requires a name", "used by", 7,
         "missing combinator name");
     test_parse_failure(
+        "dependson all requires a name", "dependson all", 13,
+        "missing combinator name");
+    test_parse_failure(
+        "used by all requires a name", "used by all", 11,
+        "missing combinator name");
+    test_parse_failure(
         "dependson rejects an undefined name",
         "dependson MissingDep", 10,
         "MissingDep is not a defined name");
@@ -1313,7 +1332,15 @@ int main() {
         "usedby MissingDep", 7,
         "MissingDep is not a defined name");
     test_parse_failure(
+        "usedby all rejects an undefined name",
+        "usedby all MissingDep", 11,
+        "MissingDep is not a defined name");
+    test_parse_failure(
         "dependson rejects a fundamental name", "dependson S", 10,
+        "S is a fundamental name and cannot be queried");
+    test_parse_failure(
+        "dependson all rejects a fundamental name",
+        "dependson all S", 14,
         "S is a fundamental name and cannot be queried");
     test_parse_failure(
         "usedby rejects a fundamental name", "usedby Y", 7,
@@ -1323,6 +1350,10 @@ int main() {
         "unexpected input after name");
     test_parse_failure(
         "usedby rejects trailing input", "usedby U extra", 9,
+        "unexpected input after name");
+    test_parse_failure(
+        "depends-on all rejects trailing input",
+        "depends-on all O extra", 17,
         "unexpected input after name");
     test("dependency command prefixes remain ordinary input",
          parse("dependsonx"), "dependsonx");
@@ -1364,15 +1395,15 @@ int main() {
     test("set list raw word basis replays",
          single_step(parse(input_escape("LRaw x"))), "a b()\\c");
     test("usedby reports a direct user dependency",
-         parse("usedby LUse"), "LUse uses: LZero");
+         parse("usedby LUse"), "LUse directly uses: LZero");
     test("dependson reports a direct user",
          parse("dependson LZero"),
-         "LZero is depended on by: LUse");
+         "LZero is directly depended on by: LUse");
     test("usedby stops at the directly contained named basis",
-         parse("usedby LMulti"), "LMulti uses: Cstar");
+         parse("usedby LMulti"), "LMulti directly uses: Cstar");
     test("dependson includes predefined and user bases",
          parse("dependson Cstar"),
-         "Cstar is depended on by: LMulti Vstar");
+         "Cstar is directly depended on by: LMulti Vstar");
 
     test("set list accepts a later duplicate definition",
          parse(input_escape("set LPair = 1 I")), "LPair");
@@ -1439,6 +1470,95 @@ int main() {
              std::cout << set_list();
          },
          expected_definition_list);
+
+    test("transitive dependency graph registers first leaf",
+         parse("set AllIndirectC = 1 I"), "AllIndirectC");
+    test("transitive dependency graph registers second leaf",
+         parse("set AllIndirectD = 1 I"), "AllIndirectD");
+    test("transitive dependency graph registers third leaf",
+         parse("set AllIndirectE = 1 I"), "AllIndirectE");
+    test("transitive dependency graph registers first branch",
+         parse("set AllDirectA = 1 AllIndirectE AllIndirectD "
+               "AllIndirectC"),
+         "AllDirectA");
+    test("transitive dependency graph registers second branch",
+         parse("set AllDirectB = 1 AllIndirectD AllIndirectC "
+               "AllIndirectE"),
+         "AllDirectB");
+    test("transitive dependency graph registers a deduplicated root",
+         parse("set AllRoot = 1 AllDirectB AllIndirectC "
+               "AllDirectA AllDirectA"),
+         "AllRoot");
+
+    constexpr std::string_view all_uses =
+        "AllRoot directly uses: AllDirectA AllDirectB AllIndirectC\n"
+        "AllRoot indirectly uses: AllIndirectD AllIndirectE";
+    test("usedby all accepts its compact alias",
+         parse("usedby all AllRoot"), all_uses);
+    test("usedby all accepts its hyphenated alias",
+         parse("used-by all AllRoot"), all_uses);
+    test("usedby all accepts its two-word alias",
+         parse("used by all AllRoot"), all_uses);
+
+    constexpr std::string_view all_depended_on_by =
+        "AllIndirectD is directly depended on by: AllDirectA AllDirectB\n"
+        "AllIndirectD is indirectly depended on by: AllRoot";
+    test("dependson all accepts its compact alias",
+         parse("dependson all AllIndirectD"), all_depended_on_by);
+    test("dependson all accepts its hyphenated alias",
+         parse("depends-on all AllIndirectD"), all_depended_on_by);
+    test("dependson all accepts its two-word alias",
+         parse("depends on all AllIndirectD"), all_depended_on_by);
+
+    test("captured traversal registers its first leaf",
+         parse("set AllSnapC = 1 I"), "AllSnapC");
+    test("captured traversal registers its replacement leaf",
+         parse("set AllSnapD = 1 I"), "AllSnapD");
+    test("captured traversal registers its original branch",
+         parse("set AllSnapB = 1 AllSnapC"), "AllSnapB");
+    test("captured traversal snapshots the original branch",
+         parse("set AllSnapA = 1 AllSnapB"), "AllSnapA");
+    test("captured traversal replaces the branch",
+         parse("set AllSnapB = 1 AllSnapD"), "AllSnapB");
+    constexpr std::string_view captured_uses =
+        "AllSnapA directly uses: AllSnapB\n"
+        "AllSnapA indirectly uses: AllSnapC";
+    constexpr std::string_view captured_depended_on_by =
+        "AllSnapC is not directly depended on by anything\n"
+        "AllSnapC is indirectly depended on by: AllSnapA";
+    test("usedby all follows captured revisions after redefinition",
+         parse("usedby all AllSnapA"), captured_uses);
+    test("dependson all follows captured revisions after redefinition",
+         parse("dependson all AllSnapC"), captured_depended_on_by);
+    test("captured traversal removes the replacement branch",
+         parse("remove AllSnapB"), "AllSnapB");
+    test("usedby all retains a captured removed revision",
+         parse("usedby all AllSnapA"), captured_uses);
+    test("dependson all retains a captured removed revision",
+         parse("dependson all AllSnapC"), captured_depended_on_by);
+
+    test("live traversal enables live references",
+         parse("references live"), "references live");
+    test("live traversal registers its first leaf",
+         parse("set AllLiveC = 1 I"), "AllLiveC");
+    test("live traversal registers its replacement leaf",
+         parse("set AllLiveD = 1 I"), "AllLiveD");
+    test("live traversal registers its original branch",
+         parse("set AllLiveB = 1 AllLiveC"), "AllLiveB");
+    test("live traversal refers to the branch by name",
+         parse("set AllLiveA = 1 AllLiveB"), "AllLiveA");
+    test("live traversal replaces the branch",
+         parse("set AllLiveB = 1 AllLiveD"), "AllLiveB");
+    test("usedby all follows a live branch replacement",
+         parse("usedby all AllLiveA"),
+         "AllLiveA directly uses: AllLiveB\n"
+         "AllLiveA indirectly uses: AllLiveD");
+    test("dependson all follows a live branch replacement",
+         parse("dependson all AllLiveD"),
+         "AllLiveD is directly depended on by: AllLiveB\n"
+         "AllLiveD is indirectly depended on by: AllLiveA");
+    test("live traversal restores captured references",
+         parse("references captured"), "references captured");
 
     test("set registers a basis for circular-redefinition checks",
          parse("set SelfReplay = 0 I"), "SelfReplay");
@@ -1537,7 +1657,8 @@ int main() {
     test("a dependent basis keeps the removed snapshot",
          parse("show RemoveUse"), "arity:0 RemoveBase@1");
     test("usedby recognizes a removed historical dependency",
-         parse("usedby RemoveUse"), "RemoveUse uses: RemoveBase");
+         parse("usedby RemoveUse"),
+         "RemoveUse directly uses: RemoveBase");
     test("set list keeps a referred definition and its removal",
          [] {
              constexpr std::string_view suffix =
@@ -1912,6 +2033,12 @@ int main() {
          parse("set FrozenTarget = 1 FrozenUse"), "FrozenTarget");
     test("the frozen chain points to a specific revision",
          parse("show FrozenTarget"), "arity:1 FrozenUse@1");
+    test("usedby all terminates on a revision-name cycle",
+         parse("usedby all FrozenTarget"),
+         "FrozenTarget directly uses: FrozenUse");
+    test("dependson all terminates and excludes its cyclic query",
+         parse("dependson all FrozenTarget"),
+         "FrozenTarget is directly depended on by: FrozenUse");
 
     test("mixed-cycle setup uses live references",
          parse("references live"), "references live");
@@ -3046,10 +3173,10 @@ int main() {
     test("captured dependency keeps its earlier snapshot",
          single_step(single_step(parse("HistB x"))), "Ix");
     test("usedby recognizes a captured earlier snapshot by name",
-         parse("usedby HistB"), "HistB uses: HistA");
+         parse("usedby HistB"), "HistB directly uses: HistA");
     test("dependson recognizes a captured earlier snapshot by name",
          parse("dependson HistA"),
-         "HistA is depended on by: HistB");
+         "HistA is directly depended on by: HistB");
     test("the replaced dependency uses its new definition",
          single_step(parse("HistA x")), "Kx");
     test("same source can change after a captured dependency changes",
@@ -3078,7 +3205,7 @@ int main() {
          parse("set Self = 1 Self"), "Self");
     test("a frozen self-name creates no live self-dependency",
          parse("dependson Self"),
-         "Self is not depended on by anything");
+         "Self is not directly depended on by anything");
     test("a deeply nested equivalent definition is unchanged",
          [] {
              std::string definition = "set DeepEq = ";

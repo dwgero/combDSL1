@@ -525,7 +525,9 @@ The names `abstract`, `all`, `captured`, `live`, `step`, `steps`, `ministeps`,
 `snapshot`, `dependson`, `depends-on`, `depends`, `on`, `usedby`, `used-by`,
 `used`, `by`, `single`, `key`, `basis`, `colorize`, `about`, `birds`, `find`,
 `help`, `load`, `save`, `quit`, and `exit` are reserved words and cannot be
-used as names by either `set` or `define`.
+used as names by either `set` or `define`. The reserved word `all` serves as
+the modifier for the dependency queries described below, as well as for
+`show all` and `find all`.
 
 Occurrences of the defined name in the combinator expression are recursive
 references. If any remain after the argument symbols are abstracted, `define`
@@ -743,21 +745,39 @@ ends with `[removed]`. A pre-defined name has one revision ending with
 unversioned and cannot be queried. The command argument must be an unversioned
 name.
 
-The display-only commands `dependson name`, `depends-on name`, and
-`depends on name` list the named bases whose current stored definitions
-directly contain `name`. The equivalent forms `usedby name`, `used-by name`,
-and `used by name` list the named bases directly contained in `name`'s current
-stored definition. Both pre-defined and user-defined named bases participate,
-while the fundamental names `S`, `K`, `I`, and `Y` are excluded. Results are
-deduplicated and sorted by name. Empty results are reported as
-`name is not depended on by anything` or `name uses nothing`. For example:
+The display-only commands `dependson [all] name`, `depends-on [all] name`, and
+`depends on [all] name` list the named bases whose current stored definitions
+directly contain `name`. The equivalent forms `usedby [all] name`,
+`used-by [all] name`, and `used by [all] name` list the named bases directly
+contained in `name`'s current stored definition. With `all`, the queries also
+follow dependencies transitively. Captured and version-qualified references
+retain their exact revisions during that traversal, while live references
+follow the current target or their retained last target while the name is
+removed. The direct result is always printed first; an indirect result is
+appended only when that list is nonempty. A name found both directly and along
+a longer path remains in the direct list. Both pre-defined and user-defined
+named bases participate, while the fundamental names `S`, `K`, `I`, and `Y`
+are excluded. Each list is deduplicated and sorted by name. Direct results are
+reported as
+`name is directly depended on by: names` or `name directly uses: names`.
+Empty direct results are reported as
+`name is not directly depended on by anything` or
+`name directly uses nothing`. Nonempty indirect results are reported as
+`name is indirectly depended on by: names` or
+`name indirectly uses: names`. For example:
 
 ```cpp
 parse("set Base = 0 I");
-parse("set Left = 0 Base");
-parse("set Right = 0 Base");
-parse_eval("depends on Base"); // Base is depended on by: Left Right
-parse_eval("usedby Left");     // Left uses: Base
+parse("set Middle = 0 Base");
+parse("set Outer = 0 Middle");
+parse_eval("depends on Base"); // Base is directly depended on by: Middle
+parse_eval("usedby Outer");    // Outer directly uses: Middle
+parse_eval("depends on all Base");
+// Base is directly depended on by: Middle
+// Base is indirectly depended on by: Outer
+parse_eval("usedby all Outer");
+// Outer directly uses: Middle
+// Outer indirectly uses: Base
 ```
 
 At the start of a line, optionally preceded by whitespace, `remove` followed
@@ -830,7 +850,7 @@ expression produces no output, while malformed or empty lines throw
 The `crepl` executable applies `input_escape` to each line before passing it to
 `parse_eval`, so ordinary quoted words and backslashes can be entered directly.
 When standard output is a terminal, it first prints
-`Combinator Read-Eval-Print Loop, version 2.9.1`. Long evaluations display
+`Combinator Read-Eval-Print Loop, version 2.9.2`. Long evaluations display
 the accumulated step count every 1,000 reductions by overwriting one status
 line; the line is cleared before evaluation output is printed. Its interactive
 prompt is `>`. Interactive input uses GNU Readline, so previous nonempty
@@ -908,12 +928,16 @@ cannot be removed. Enter `show <name>` to display the current revision and
 display the entire saved definition list, or `Nothing to show` when it is
 empty. Enter `revisions <name>` to display every retained immutable revision
 using the format described above.
-Enter `dependson <name>`, `depends-on <name>`, or `depends on <name>` to list
-the named bases whose definitions directly contain that name. Enter
-`usedby <name>`, `used-by <name>`, or `used by <name>` to list the named
-bases directly contained in that name's definition. Both queries include
-pre-defined and user-defined bases, exclude `S`, `K`, `I`, and `Y`, and ignore
-the stepping and color modes.
+Enter `dependson [all] <name>`, `depends-on [all] <name>`, or
+`depends on [all] <name>` to list the named bases whose definitions directly
+contain that name. Enter `usedby [all] <name>`, `used-by [all] <name>`, or
+`used by [all] <name>` to list the named bases directly contained in that
+name's definition. With `all`, each query also displays a separate nonempty
+list of indirect matches. Captured and version-qualified references retain
+their exact revisions during that traversal, while live references follow the
+current target or their retained last target while the name is removed. Both
+queries include pre-defined and user-defined bases, exclude `S`, `K`, `I`, and
+`Y`, and ignore the stepping and color modes.
 Enter `abstract [steps | ministeps] ?<symbol_list> =
 <combinator_expression>` to perform `define`'s abstraction without creating a
 name. The required `?` marks the unknown result. The ordinary form prints only
@@ -1196,7 +1220,7 @@ when the Results area already contains output.
 Press Tab to complete a unique prefix for the `abstract`, `set`, `define`,
 `dependson`, `depends-on`, `depends on`, `find`, `references`, `remove`,
 `revisions`, `show`, `step limit`, `usedby`, `used-by`, or `used by` command,
-the `captured` or `live` definition
+the dependency-query `all` modifier, the `captured` or `live` definition
 modifier, and the `captured` or `live` references option; when no completion is
 available, Tab keeps its normal browser focus behavior. Studio accepts the
 same `abstract [steps | ministeps] ?...`,

@@ -5297,6 +5297,45 @@ direct_named_parser_bases_in_definition(
         basis.body(), registered_bases, registered_versions);
 }
 
+[[nodiscard]] inline std::vector<registered_parser_basis_ptr>
+direct_registered_parser_bases_in_definition(
+    quoted_expression const& expression,
+    registered_parser_basis_table const& registered_bases,
+    parser_basis_version_history const& registered_versions) {
+    auto const& root = quoted_access::root(expression);
+    if (root->kind() != quoted_node_kind::basis) {
+        throw std::logic_error(
+            "combdsl::registered parser basis is not a basis");
+    }
+    auto const& basis =
+        static_cast<quoted_basis_node_base const&>(*root);
+    auto result = referenced_user_parser_bases(
+        basis.body(), registered_bases);
+    auto const names = direct_named_parser_bases_in_expression(
+        basis.body(), registered_bases, registered_versions);
+    std::unordered_set<std::string> represented_names;
+    for (auto const& dependency : result) {
+        represented_names.emplace(dependency->name());
+    }
+    for (auto const& name : names) {
+        if (represented_names.contains(name)) {
+            continue;
+        }
+        if (auto const current = registered_bases.find(name);
+            current != registered_bases.end()) {
+            result.push_back(current->second);
+            represented_names.emplace(name);
+        } else if (auto const versions =
+                       registered_versions.find(name);
+                   versions != registered_versions.end() &&
+                   !versions->second.empty()) {
+            result.push_back(versions->second.back());
+            represented_names.emplace(name);
+        }
+    }
+    return result;
+}
+
 [[nodiscard]] inline std::vector<std::string>
 parser_basis_definition_circular_path(
     std::string_view name,
@@ -5672,8 +5711,13 @@ enum class parser_dependency_direction {
     uses
 };
 
+struct parser_dependency_name_lists {
+    std::vector<std::string> direct;
+    std::vector<std::string> indirect;
+};
+
 [[nodiscard]] inline std::vector<std::string>
-parser_dependency_names(
+direct_parser_dependency_names(
     std::string_view name,
     parser_dependency_direction direction,
     registered_parser_basis_table const& registered_bases,
@@ -5705,6 +5749,142 @@ parser_dependency_names(
         }
     }
     std::ranges::sort(result);
+    return result;
+}
+
+[[nodiscard]] inline parser_dependency_name_lists
+parser_dependency_names(
+    std::string_view name,
+    parser_dependency_direction direction,
+    bool include_indirect,
+    registered_parser_basis_table const& registered_bases,
+    parser_basis_version_history const& registered_versions) {
+    parser_dependency_name_lists result;
+    result.direct = direct_parser_dependency_names(
+        name, direction, registered_bases, registered_versions);
+    if (!include_indirect) {
+        return result;
+    }
+
+    if (direction == parser_dependency_direction::depended_on_by) {
+        struct dependency_graph_entry {
+            registered_parser_basis_ptr basis;
+            std::vector<registered_parser_basis_ptr> dependencies;
+        };
+        std::vector<registered_parser_basis_ptr> pending;
+        pending.reserve(registered_bases.size());
+        for (auto const& [candidate_name, candidate] :
+             registered_bases) {
+            static_cast<void>(candidate_name);
+            pending.push_back(candidate);
+        }
+        for (auto const& [version_name, versions] :
+             registered_versions) {
+            static_cast<void>(version_name);
+            pending.insert(
+                pending.end(), versions.begin(), versions.end());
+        }
+
+        std::unordered_set<registered_parser_basis const*> visited;
+        std::vector<dependency_graph_entry> graph;
+        while (!pending.empty()) {
+            auto current = std::move(pending.back());
+            pending.pop_back();
+            if (!visited.emplace(current.get()).second) {
+                continue;
+            }
+            auto dependencies =
+                direct_registered_parser_bases_in_definition(
+                    current->expression(), registered_bases,
+                    registered_versions);
+            pending.insert(
+                pending.end(), dependencies.begin(), dependencies.end());
+            graph.push_back({
+                std::move(current), std::move(dependencies)});
+        }
+
+        std::unordered_map<
+            registered_parser_basis const*,
+            std::vector<registered_parser_basis const*>> reverse_edges;
+        std::vector<registered_parser_basis const*> reachable;
+        std::unordered_set<registered_parser_basis const*>
+            reaches_query;
+        for (auto const& entry : graph) {
+            if (entry.basis->name() == name &&
+                reaches_query.emplace(entry.basis.get()).second) {
+                reachable.push_back(entry.basis.get());
+            }
+            for (auto const& dependency : entry.dependencies) {
+                reverse_edges[dependency.get()].push_back(
+                    entry.basis.get());
+            }
+        }
+        while (!reachable.empty()) {
+            auto const current = reachable.back();
+            reachable.pop_back();
+            auto const users = reverse_edges.find(current);
+            if (users == reverse_edges.end()) {
+                continue;
+            }
+            for (auto const user : users->second) {
+                if (reaches_query.emplace(user).second) {
+                    reachable.push_back(user);
+                }
+            }
+        }
+
+        std::unordered_set<std::string> direct_names(
+            result.direct.begin(), result.direct.end());
+        for (auto const& [candidate_name, candidate] :
+             registered_bases) {
+            if (candidate_name != name &&
+                !direct_names.contains(candidate_name) &&
+                reaches_query.contains(candidate.get())) {
+                result.indirect.push_back(candidate_name);
+            }
+        }
+        std::ranges::sort(result.indirect);
+        return result;
+    }
+
+    std::unordered_set<std::string> direct_names(
+        result.direct.begin(), result.direct.end());
+    std::unordered_set<registered_parser_basis const*> visited;
+    auto const target = registered_bases.find(name);
+    if (target == registered_bases.end()) {
+        return result;
+    }
+    visited.emplace(target->second.get());
+    std::vector<registered_parser_basis_ptr> pending;
+    for (auto& dependency :
+         direct_registered_parser_bases_in_definition(
+             target->second->expression(), registered_bases,
+             registered_versions)) {
+        if (visited.emplace(dependency.get()).second) {
+            pending.push_back(std::move(dependency));
+        }
+    }
+    std::unordered_set<std::string> indirect_names;
+    while (!pending.empty()) {
+        auto current = std::move(pending.back());
+        pending.pop_back();
+        auto nested = direct_registered_parser_bases_in_definition(
+            current->expression(), registered_bases,
+            registered_versions);
+        for (auto& dependency : nested) {
+            if (!visited.emplace(dependency.get()).second) {
+                continue;
+            }
+            if (dependency->name() != name &&
+                !direct_names.contains(dependency->name())) {
+                indirect_names.emplace(dependency->name());
+            }
+            pending.push_back(std::move(dependency));
+        }
+    }
+    result.indirect.assign(
+        indirect_names.begin(), indirect_names.end());
+    std::ranges::sort(result.indirect);
     return result;
 }
 
@@ -6471,6 +6651,11 @@ private:
         }
 
         skip_whitespace();
+        bool const include_indirect = begins_command("all");
+        if (include_indirect) {
+            position_ += 3;
+            skip_whitespace();
+        }
         auto const name_position = position_;
         if (at_end()) {
             fail("missing combinator name");
@@ -6504,23 +6689,35 @@ private:
             throw parse_error(name_position, message);
         }
 
-        auto names = parser_dependency_names(
-            name.view(), direction, registered_bases_,
+        auto const names = parser_dependency_names(
+            name.view(), direction, include_indirect, registered_bases_,
             registered_versions_);
         std::string output = unescape_input(name.view());
         if (direction ==
             parser_dependency_direction::depended_on_by) {
-            output += names.empty()
-                ? " is not depended on by anything"
-                : " is depended on by:";
+            output += names.direct.empty()
+                ? " is not directly depended on by anything"
+                : " is directly depended on by:";
         } else {
-            output += names.empty()
-                ? " uses nothing"
-                : " uses:";
+            output += names.direct.empty()
+                ? " directly uses nothing"
+                : " directly uses:";
         }
-        for (auto const& dependency_name : names) {
+        for (auto const& dependency_name : names.direct) {
             output.push_back(' ');
             output += unescape_input(dependency_name);
+        }
+        if (!names.indirect.empty()) {
+            output.push_back('\n');
+            output += unescape_input(name.view());
+            output += direction ==
+                    parser_dependency_direction::depended_on_by
+                ? " is indirectly depended on by:"
+                : " indirectly uses:";
+            for (auto const& dependency_name : names.indirect) {
+                output.push_back(' ');
+                output += unescape_input(dependency_name);
+            }
         }
         return quote(std::move(output));
     }

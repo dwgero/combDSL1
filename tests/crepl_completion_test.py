@@ -234,72 +234,73 @@ def main():
             raise AssertionError(
                 f"expected revision listing; received {output!r}")
 
-        write_all(master, b"dependso\tDepSource\n")
+        write_all(master, b"dependso\ta\tDepSource\n")
         output = reader.read_until(b">")
-        require_completed_line(output, b"dependson DepSource\n")
+        require_completed_line(output, b"dependson all DepSource\n")
         normalized_output = normalized(output)
         if b"Parse error" in normalized_output:
             raise AssertionError(
                 f"expected successful dependson; received {output!r}")
-        if (b"DepSource is depended on by: DepUser\n"
+        if (b"DepSource is directly depended on by: DepUser\n"
                 not in normalized_output):
             raise AssertionError(
                 f"expected dependson result; received {output!r}")
 
-        write_all(master, b"depends-\tDepSource\n")
+        write_all(master, b"depends-\ta\tDepSource\n")
         output = reader.read_until(b">")
-        require_completed_line(output, b"depends-on DepSource\n")
+        require_completed_line(output, b"depends-on all DepSource\n")
         normalized_output = normalized(output)
         if b"Parse error" in normalized_output:
             raise AssertionError(
                 f"expected successful depends-on; received {output!r}")
-        if (b"DepSource is depended on by: DepUser\n"
+        if (b"DepSource is directly depended on by: DepUser\n"
                 not in normalized_output):
             raise AssertionError(
                 f"expected depends-on result; received {output!r}")
 
-        write_all(master, b"depends   o\tDepSource\n")
+        write_all(master, b"depends   o\ta\tDepSource\n")
         output = reader.read_until(b">")
-        require_completed_line(output, b"depends   on DepSource\n")
+        require_completed_line(
+            output, b"depends   on all DepSource\n")
         normalized_output = normalized(output)
         if b"Parse error" in normalized_output:
             raise AssertionError(
                 f"expected successful depends on; received {output!r}")
-        if (b"DepSource is depended on by: DepUser\n"
+        if (b"DepSource is directly depended on by: DepUser\n"
                 not in normalized_output):
             raise AssertionError(
                 f"expected depends on result; received {output!r}")
 
-        write_all(master, b"usedb\tDepUser\n")
+        write_all(master, b"usedb\ta\tDepUser\n")
         output = reader.read_until(b">")
-        require_completed_line(output, b"usedby DepUser\n")
+        require_completed_line(output, b"usedby all DepUser\n")
         normalized_output = normalized(output)
         if b"Parse error" in normalized_output:
             raise AssertionError(
                 f"expected successful usedby; received {output!r}")
-        if b"DepUser uses: DepSource\n" not in normalized_output:
+        if b"DepUser directly uses: DepSource\n" not in normalized_output:
             raise AssertionError(
                 f"expected usedby result; received {output!r}")
 
-        write_all(master, b"used-\tDepUser\n")
+        write_all(master, b"used-\ta\tDepUser\n")
         output = reader.read_until(b">")
-        require_completed_line(output, b"used-by DepUser\n")
+        require_completed_line(output, b"used-by all DepUser\n")
         normalized_output = normalized(output)
         if b"Parse error" in normalized_output:
             raise AssertionError(
                 f"expected successful used-by; received {output!r}")
-        if b"DepUser uses: DepSource\n" not in normalized_output:
+        if b"DepUser directly uses: DepSource\n" not in normalized_output:
             raise AssertionError(
                 f"expected used-by result; received {output!r}")
 
-        write_all(master, b"used   b\tDepUser\n")
+        write_all(master, b"used   b\ta\tDepUser\n")
         output = reader.read_until(b">")
-        require_completed_line(output, b"used   by DepUser\n")
+        require_completed_line(output, b"used   by all DepUser\n")
         normalized_output = normalized(output)
         if b"Parse error" in normalized_output:
             raise AssertionError(
                 f"expected successful used by; received {output!r}")
-        if b"DepUser uses: DepSource\n" not in normalized_output:
+        if b"DepUser directly uses: DepSource\n" not in normalized_output:
             raise AssertionError(
                 f"expected used by result; received {output!r}")
 

@@ -128,7 +128,7 @@ test("completes the revisions command with its delimiter", () => {
 });
 
 test("completes dependency commands with their delimiter", () => {
-    const complete = createCommandCompleter([
+    const completeTopLevel = createCommandCompleter([
         "depends on",
         "depends-on",
         "dependson",
@@ -136,6 +136,16 @@ test("completes dependency commands with their delimiter", () => {
         "used-by",
         "usedby",
     ], {appendSpaceToExact: true});
+    const completeAll = createCommandCompleter([
+        "depends on all",
+        "depends-on all",
+        "dependson all",
+        "used by all",
+        "used-by all",
+        "usedby all",
+    ], {appendSpaceToExact: true});
+    const complete = source =>
+        completeTopLevel(source) ?? completeAll(source);
 
     assert.equal(complete("dependso"), "dependson ");
     assert.equal(complete("depends-"), "depends-on ");
@@ -147,7 +157,17 @@ test("completes dependency commands with their delimiter", () => {
     assert.equal(complete("used by"), "used by ");
     assert.equal(complete("depends"), undefined);
     assert.equal(complete("used"), undefined);
+    assert.equal(complete("dependson a"), "dependson all ");
+    assert.equal(complete("depends-on all"), "depends-on all ");
+    assert.equal(complete("depends on a"), "depends on all ");
+    assert.equal(complete("usedby a"), "usedby all ");
+    assert.equal(complete("used-by all"), "used-by all ");
+    assert.equal(complete("used by a"), "used by all ");
+    assert.equal(
+        complete("  depends\ton  a"),
+        "  depends\ton  all ");
     assert.equal(complete("depends on Foo"), undefined);
+    assert.equal(complete("usedby all Foo"), undefined);
 });
 
 test("completes phrases while preserving multiple whitespace", () => {

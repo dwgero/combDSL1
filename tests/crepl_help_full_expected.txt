@@ -118,21 +118,30 @@ list. Pre-defined names cannot be removed.
 
 Inspecting Dependencies
 
-dependson <name>
-depends-on <name>
-depends on <name>
-The three forms are equivalent. They display the named bases whose definitions
-directly contain name. Results are printed as "A is depended on by: B C" or "A
-is not depended on by anything".
+dependson [all] <name>
+depends-on [all] <name>
+depends on [all] <name>
+The three forms are equivalent. Without all, they display the named bases whose
+definitions directly contain name. The direct line is printed as "A is directly
+depended on by: B C", or "A is not directly depended on by anything" when empty.
+With all, the search also follows dependencies transitively and appends "A is
+indirectly depended on by: D E" only when the indirect list is nonempty.
 
-usedby <name>
-used-by <name>
-used by <name>
-The three forms are equivalent. They display the named bases directly contained
-in name's definition. Results are printed as "A uses: B C" or "A uses nothing".
+usedby [all] <name>
+used-by [all] <name>
+used by [all] <name>
+The three forms are equivalent. Without all, they display the named bases
+directly contained in name's definition. The direct line is printed as "A
+directly uses: B C", or "A directly uses nothing" when empty. With all, the
+search also follows dependencies transitively and appends "A indirectly uses: D
+E" only when the indirect list is nonempty.
 
 Both searches include pre-defined and current user-defined named bases, but
 exclude the fundamental names S, K, I, and Y.
+
+With all, captured and version-qualified references retain their exact
+revisions, while live references follow the current target or their retained
+last target while the name is removed.
 
 Abstracting Expressions
 

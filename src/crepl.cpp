@@ -60,7 +60,7 @@
 
 namespace {
 
-constexpr std::string_view crepl_version = "2.9.1";
+constexpr std::string_view crepl_version = "2.9.2";
 
 [[nodiscard]] bool stream_is_terminal(std::FILE* stream) noexcept {
 #if defined(_WIN32)
@@ -212,6 +212,8 @@ constexpr std::array<std::string_view, 1>
     depends_on_completion_candidates = {"on"};
 constexpr std::array<std::string_view, 1>
     used_by_completion_candidates = {"by"};
+constexpr std::array<std::string_view, 1>
+    dependency_all_completion_candidates = {"all"};
 constexpr std::array<std::string_view, 1> show_completion_candidates = {
     "all"};
 constexpr std::array<std::string_view, 5> find_completion_candidates = {
@@ -442,6 +444,12 @@ template<std::size_t Size>
             return make_completion_candidates(
                 used_by_completion_candidates);
         }
+        if (words[0] == "dependson" ||
+            words[0] == "depends-on" ||
+            words[0] == "usedby" || words[0] == "used-by") {
+            return make_completion_candidates(
+                dependency_all_completion_candidates);
+        }
         if (words[0] == "show") {
             return make_completion_candidates(show_completion_candidates);
         }
@@ -476,6 +484,12 @@ template<std::size_t Size>
         words[1] == "all") {
         return make_completion_candidates(
             find_after_all_completion_candidates);
+    }
+    if (word_count == 2 &&
+        ((words[0] == "depends" && words[1] == "on") ||
+         (words[0] == "used" && words[1] == "by"))) {
+        return make_completion_candidates(
+            dependency_all_completion_candidates);
     }
     if (word_count == 2 && words[0] == "abstract" &&
         (words[1] == "steps" || words[1] == "ministeps")) {
@@ -806,8 +820,8 @@ void print_help_brief(std::ostream& output) {
         "define [captured | live] <name> [<xyz...>] = <expression>\n"
         "                                      | compute and store combinators such that\n"
         "                                      | <name> [<xyz...>] reduces to <expression>\n"
-        "dependson <name> | depends-on <name> | depends on <name>\n"
-        "                                      | display named bases that directly contain <name>\n"
+        "dependson [all] <name> | depends-on [all] <name> | depends on [all] <name>\n"
+        "                                      | display direct and optional indirect users\n"
         "exit                                  | end the program\n"
         "find [all] [num] ?<symbols> = <expression> | find matching pre-defined bird forms\n"
         "help [brief | full]                   | display help information\n"
@@ -823,8 +837,8 @@ void print_help_brief(std::ostream& output) {
         "show <name | name@N | all>            | display one revision or the entire set list\n"
         "single step [on | off]                | display each step of the reduction without pause\n"
         "step limit <off | num>                | limit ordinary and Single Step evaluations\n"
-        "usedby <name> | used-by <name> | used by <name>\n"
-        "                                      | display named bases directly contained in <name>\n";
+        "usedby [all] <name> | used-by [all] <name> | used by [all] <name>\n"
+        "                                      | display direct and optional indirect dependencies\n";
     output.flush();
 }
 
@@ -1006,28 +1020,40 @@ void print_help_full(std::ostream& output) {
         "Pre-defined names cannot be removed.");
 
     output << "\nInspecting Dependencies\n\n"
-           << "dependson <name>\n"
-           << "depends-on <name>\n"
-           << "depends on <name>\n";
+           << "dependson [all] <name>\n"
+           << "depends-on [all] <name>\n"
+           << "depends on [all] <name>\n";
     write_wrapped_paragraph(
         output,
-        "The three forms are equivalent. They display the named bases whose "
-        "definitions directly contain name. Results are printed as \"A is "
-        "depended on by: B C\" or \"A is not depended on by anything\".");
+        "The three forms are equivalent. Without all, they display the named "
+        "bases whose definitions directly contain name. The direct line is "
+        "printed as \"A is directly depended on by: B C\", or \"A is not "
+        "directly depended on by anything\" when empty. With all, the search "
+        "also follows dependencies transitively and appends \"A is indirectly "
+        "depended on by: D E\" only when the indirect list is nonempty.");
     output << '\n'
-           << "usedby <name>\n"
-           << "used-by <name>\n"
-           << "used by <name>\n";
+           << "usedby [all] <name>\n"
+           << "used-by [all] <name>\n"
+           << "used by [all] <name>\n";
     write_wrapped_paragraph(
         output,
-        "The three forms are equivalent. They display the named bases "
-        "directly contained in name's definition. Results are printed as "
-        "\"A uses: B C\" or \"A uses nothing\".");
+        "The three forms are equivalent. Without all, they display the named "
+        "bases directly contained in name's definition. The direct line is "
+        "printed as \"A directly uses: B C\", or \"A directly uses nothing\" "
+        "when empty. With all, the search also follows dependencies "
+        "transitively and appends \"A indirectly uses: D E\" only when the "
+        "indirect list is nonempty.");
     output.put('\n');
     write_wrapped_paragraph(
         output,
         "Both searches include pre-defined and current user-defined named "
         "bases, but exclude the fundamental names S, K, I, and Y.");
+    output.put('\n');
+    write_wrapped_paragraph(
+        output,
+        "With all, captured and version-qualified references retain their "
+        "exact revisions, while live references follow the current target "
+        "or their retained last target while the name is removed.");
 
     output << "\nAbstracting Expressions\n\n"
            << "abstract [steps | ministeps] ?<symbol_list> = "
