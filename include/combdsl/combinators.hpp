@@ -6406,6 +6406,26 @@ private:
         return std::move(output).str();
     }
 
+    [[nodiscard]] static bool inspect_input_matches_canonical(
+        std::string_view input,
+        std::string_view canonical) noexcept {
+        std::size_t input_position = 0;
+        std::size_t canonical_position = 0;
+        while (input_position < input.size()) {
+            auto byte = input[input_position++];
+            if (byte == '\\' && input_position < input.size() &&
+                (input[input_position] == '\\' ||
+                 input[input_position] == '"')) {
+                byte = input[input_position++];
+            }
+            if (canonical_position == canonical.size() ||
+                canonical[canonical_position++] != byte) {
+                return false;
+            }
+        }
+        return canonical_position == canonical.size();
+    }
+
     static void inspect_expression_contents(
         quoted_expression const& expression,
         std::vector<std::string>& free_symbols,
@@ -6548,16 +6568,21 @@ private:
         position_ += keyword_size;
         skip_whitespace();
 
+        auto const original_expression = source_.substr(position_);
         auto expression = parse_expression();
         std::vector<std::string> free_symbols;
         std::vector<inspect_reference> references;
         inspect_expression_contents(
             expression, free_symbols, references);
 
+        auto const canonical =
+            inspect_printed_expression(expression);
         std::ostringstream output;
-        output << "canonical: ";
-        expression.print_to(output);
-        output << "\nfree symbols:";
+        if (!inspect_input_matches_canonical(
+                original_expression, canonical)) {
+            output << "canonical: " << canonical << '\n';
+        }
+        output << "free symbols:";
         if (free_symbols.empty()) {
             output << " none";
         } else {

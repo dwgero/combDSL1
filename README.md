@@ -750,7 +750,8 @@ At the start of a line, optionally preceded by whitespace,
 expanding named bases. Its report contains no tree-size or depth statistics.
 It displays, in order:
 
-- `canonical: expression`, using the parser's unambiguous canonical spelling;
+- `canonical: expression`, using the parser's unambiguous canonical spelling,
+  only when that spelling differs from the submitted expression;
 - `free symbols: symbols`, sorted and deduplicated, or `free symbols: none`;
 - direct named `references` in first-use order, labeled `[fundamental]`,
   `[pre-defined]`, `[captured]`, or `[live]`; and
@@ -763,9 +764,10 @@ The command does not list references found only inside a named basis's stored
 definition. Canonical spelling can differ from the submitted text by removing
 redundant whitespace and parentheses, inserting required separators and
 parentheses, displaying captured revisions explicitly, and normalizing integer
-spelling. For example, `inspect S(Kx)(Iy)z` starts with
-`canonical: S(Kx)(Iy)z` and ends with
-`next reduction: S(Kx)(Iy)z [S at root]`.
+spelling. For example, `inspect S(Kx)(Iy)z` omits the unchanged canonical line
+and ends with `next reduction: S(Kx)(Iy)z [S at root]`; redundant parentheses
+in `inspect ((S(Kx))(Iy))z` cause it to include
+`canonical: S(Kx)(Iy)z`.
 
 The display-only commands `dependson [all] name`, `depends-on [all] name`, and
 `depends on [all] name` list the named bases whose current stored definitions
@@ -890,7 +892,7 @@ expression produces no output, while malformed or empty lines throw
 The `crepl` executable applies `input_escape` to each line before passing it to
 `parse_eval`, so ordinary quoted words and backslashes can be entered directly.
 When standard output is a terminal, it first prints
-`Combinator Read-Eval-Print Loop, version 2.9.7`. Long evaluations display
+`Combinator Read-Eval-Print Loop, version 2.9.8`. Long evaluations display
 the accumulated step count every 1,000 reductions by overwriting one status
 line; the line is cleared before evaluation output is printed. Its interactive
 prompt is `>`. Interactive input uses GNU Readline, so previous nonempty
@@ -968,8 +970,9 @@ cannot be removed. Enter `show <name>` to display the current revision and
 display the entire saved definition list, or `Nothing to show` when it is
 empty. Enter `revisions <name>` to display every retained immutable revision
 using the format described above. Enter `inspect <expression>` to display its
-canonical spelling, free symbols, direct labeled references, and next reduction
-without evaluating it or expanding named bases.
+canonical spelling when it differs from the submitted expression, followed by
+free symbols, direct labeled references, and the next reduction, without
+evaluating it or expanding named bases.
 Enter `dependson [all] <name>`, `depends-on [all] <name>`, or
 `depends on [all] <name>` to list the named bases whose definitions directly
 contain that name. Enter `usedby [all] <name>`, `used-by [all] <name>`, or

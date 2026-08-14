@@ -2420,8 +2420,38 @@ int main() {
     test("revisions command prefixes remain ordinary input",
          parse("revisionsx"), "revisionsx");
 
-    test("inspect canonicalizes whitespace and redundant parentheses",
-         parse("inspect   ((S (K x)) (I y)) z"),
+    test("inspect omits an already identical canonical spelling",
+         parse("inspect S(Kx)(Iy)z"),
+         "free symbols: x y z\n"
+         "references:\n"
+         "  S [fundamental]\n"
+         "  K [fundamental]\n"
+         "  I [fundamental]\n"
+         "next reduction: S(Kx)(Iy)z [S at root]");
+    test("inspect ignores leading command and delimiter whitespace",
+         parse(" \tinspect   Ix"),
+         "free symbols: x\n"
+         "references:\n"
+         "  I [fundamental]\n"
+         "next reduction: Ix [I at root]");
+    test("inspect retains canonical for trailing expression whitespace",
+         parse("inspect Ix \n"),
+         "canonical: Ix\n"
+         "free symbols: x\n"
+         "references:\n"
+         "  I [fundamental]\n"
+         "next reduction: Ix [I at root]");
+    test("inspect retains canonical for internal whitespace",
+         parse("inspect S(Kx) (Iy)z"),
+         "canonical: S(Kx)(Iy)z\n"
+         "free symbols: x y z\n"
+         "references:\n"
+         "  S [fundamental]\n"
+         "  K [fundamental]\n"
+         "  I [fundamental]\n"
+         "next reduction: S(Kx)(Iy)z [S at root]");
+    test("inspect retains canonical for redundant parentheses",
+         parse("inspect (S(Kx))(Iy)z"),
          "canonical: S(Kx)(Iy)z\n"
          "free symbols: x y z\n"
          "references:\n"
@@ -2437,15 +2467,24 @@ int main() {
          "  Q1 [pre-defined]\n"
          "  Q3 [pre-defined]\n"
          "next reduction: Q1x 42 Q3 [Q1 at root]");
+    test("inspect omits canonical for an input-escaped backslash",
+         parse(input_escape("inspect \\")),
+         "free symbols: none\n"
+         "references: none\n"
+         "next reduction: none [normal form]");
+    test("inspect retains canonical for an input-escaped quoted word",
+         parse(input_escape("inspect \"a\\b\"")),
+         "canonical: a\\b\n"
+         "free symbols: none\n"
+         "references: none\n"
+         "next reduction: none [normal form]");
     test("inspect sorts and deduplicates free symbols",
          parse("inspect zyxzx"),
-         "canonical: zyxzx\n"
          "free symbols: x y z\n"
          "references: none\n"
          "next reduction: none [normal form]");
     test("inspect reports no free symbols or references",
          parse("inspect 42"),
-         "canonical: 42\n"
          "free symbols: none\n"
          "references: none\n"
          "next reduction: none [normal form]");
@@ -2482,14 +2521,12 @@ int main() {
          "next reduction: none [normal form]");
     test("inspect identifies an explicit removed revision as captured",
          parse("inspect InspectRemoved@1"),
-         "canonical: InspectRemoved@1\n"
          "free symbols: none\n"
          "references:\n"
          "  InspectRemoved@1 [captured]\n"
          "next reduction: none [normal form]");
     test("inspect identifies an explicit predefined revision",
          parse("inspect M@1"),
-         "canonical: M@1\n"
          "free symbols: none\n"
          "references:\n"
          "  M@1 [pre-defined]\n"
@@ -2500,14 +2537,12 @@ int main() {
              parse("inspect InspectLive").print_to(std::cout);
              static_cast<void>(parse("references captured"));
          },
-         "canonical: InspectLive\n"
          "free symbols: none\n"
          "references:\n"
          "  InspectLive [live]\n"
          "next reduction: none [normal form]");
     test("inspect selects a nested ordinary next reduction",
          parse("inspect x(Iy)"),
-         "canonical: x(Iy)\n"
          "free symbols: x y\n"
          "references:\n"
          "  I [fundamental]\n"
@@ -2533,7 +2568,6 @@ int main() {
          "1000");
     test("parse eval prints inspect without reducing its expression",
          [] { parse_eval("inspect Ix"); },
-         "canonical: Ix\n"
          "free symbols: x\n"
          "references:\n"
          "  I [fundamental]\n"

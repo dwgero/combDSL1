@@ -239,7 +239,6 @@ def main():
         require_completed_line(output, b"inspect S(Kx)(Iy)z\n")
         normalized_output = normalized(output)
         expected_inspection = (
-            b"canonical: S(Kx)(Iy)z\n"
             b"free symbols: x y z\n"
             b"references:\n"
             b"  S [fundamental]\n"
@@ -249,9 +248,30 @@ def main():
         if expected_inspection not in normalized_output:
             raise AssertionError(
                 f"expected inspect report; received {output!r}")
+        if b"canonical:" in normalized_output:
+            raise AssertionError(
+                f"unchanged inspect source must omit canonical; "
+                f"received {output!r}")
         if b"tree:" in normalized_output:
             raise AssertionError(
                 f"inspect must not show tree statistics; received {output!r}")
+
+        write_all(master, b"inspect \\\n")
+        output = reader.read_until(b">")
+        require_completed_line(output, b"inspect \\\n")
+        normalized_output = normalized(output)
+        expected_backslash_inspection = (
+            b"free symbols: none\n"
+            b"references: none\n"
+            b"next reduction: none [normal form]\n")
+        if expected_backslash_inspection not in normalized_output:
+            raise AssertionError(
+                f"expected literal-backslash inspect report; "
+                f"received {output!r}")
+        if b"canonical:" in normalized_output:
+            raise AssertionError(
+                f"transport escaping must not add canonical; "
+                f"received {output!r}")
 
         write_all(master, b"dependso\ta\tDepSource\n")
         output = reader.read_until(b">")

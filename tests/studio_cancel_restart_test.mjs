@@ -2186,7 +2186,6 @@ test("routes inspect as compact display-only output", () => {
     const worker = harness.workers[0];
     const command = "inspect S(Kx)(Iy)z";
     const report =
-        "canonical: S(Kx)(Iy)z\n" +
         "free symbols: x y z\n" +
         "references:\n" +
         "  S [fundamental]\n" +
@@ -2206,6 +2205,7 @@ test("routes inspect as compact display-only output", () => {
     harness.flushAnimationFrames();
     const inspection = worker.messages.find(
         message => message.type === "inspect-definition");
+    assert.equal(inspection.source, command);
     worker.send({
         type: "definition-inspection-result",
         id: inspection.id,
@@ -2247,10 +2247,71 @@ test("routes inspect as compact display-only output", () => {
         `${command}\n${report.trimEnd()}`,
     );
     assert.equal(outputEntry.dataset.compactAfter, "true");
+    assert.equal(outputEntry.textContent.includes("canonical:"), false);
     assert.equal(outputEntry.textContent.includes("tree:"), false);
     assert.equal(outputEntry.textContent.includes("[show end]"), false);
     assert.equal(harness.element("source-history").textContent, command);
 });
+
+test("routes literal-backslash inspect without escape-only canonical output",
+    () => {
+        const harness = createHarness();
+        const source = harness.element("source");
+        const worker = harness.workers[0];
+        const command = "inspect \\";
+        const report =
+            "free symbols: none\n" +
+            "references: none\n" +
+            "next reduction: none [normal form]\n";
+
+        worker.send({type: "ready", setList: ""});
+        harness.flushAnimationFrames();
+
+        source.value = command;
+        harness.pressEnter();
+        harness.flushAnimationFrames();
+        const inspection = worker.messages.find(
+            message => message.type === "inspect-definition");
+        assert.equal(inspection.source, command);
+        worker.send({
+            type: "definition-inspection-result",
+            id: inspection.id,
+            result: {
+                success: true,
+                definition: false,
+                displayOnly: true,
+                showAll: false,
+                find: false,
+                replacement: "",
+            },
+        });
+        harness.flushAnimationFrames();
+
+        const evaluation = worker.messages.find(
+            message => message.type === "evaluate");
+        assert.equal(evaluation.source, command);
+        worker.send({
+            type: "result",
+            id: inspection.id,
+            result: {
+                success: true,
+                definition: false,
+                recoverWorker: false,
+                output: report,
+                error: "",
+                reductions: 0,
+            },
+        });
+
+        const outputEntry = harness.element("output").lastElementChild;
+        assert.equal(
+            outputEntry.textContent,
+            `${command}\n${report.trimEnd()}`,
+        );
+        assert.equal(
+            outputEntry.textContent.includes("canonical:"), false);
+        assert.equal(outputEntry.dataset.compactAfter, "true");
+    });
 
 test("routes captured and live definitions as silent commands", () => {
     const cases = [

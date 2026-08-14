@@ -60,7 +60,7 @@
 
 namespace {
 
-constexpr std::string_view crepl_version = "2.9.7";
+constexpr std::string_view crepl_version = "2.9.8";
 
 [[nodiscard]] bool stream_is_terminal(std::FILE* stream) noexcept {
 #if defined(_WIN32)
@@ -1071,9 +1071,10 @@ void print_help_full(std::ostream& output) {
     write_wrapped_paragraph(
         output,
         "Describes the parsed expression without evaluating it or expanding "
-        "named bases. The report displays its canonical spelling, its sorted "
-        "free symbols (or none), and its direct named references in first-use "
-        "order. Fundamental, pre-defined, captured, and live references are "
+        "named bases. The report displays its canonical spelling only when it "
+        "differs from the submitted expression, then its sorted free symbols "
+        "(or none) and direct named references in first-use order. Fundamental, "
+        "pre-defined, captured, and live references are "
         "labeled; captured references include their immutable name@N revision. "
         "The final line identifies the next reducible subexpression, its head, "
         "and its function/argument location, or reports normal form when no "
