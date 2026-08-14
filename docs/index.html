@@ -231,6 +231,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             font: 650 1.15rem system-ui, sans-serif;
         }
 
+        #help-title:focus,
         #combinator-info-title:focus,
         #about-title:focus {
             outline: none;
@@ -270,16 +271,41 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
         }
 
         #help-dialog,
-        #combinator-info-dialog {
+        #combinator-info-dialog,
+        #about-dialog {
             max-height: calc(100vh - 2rem);
             max-height: calc(100dvh - 2rem);
+            overflow: hidden;
+        }
+
+        #help-dialog[open],
+        #combinator-info-dialog[open],
+        #about-dialog[open] {
+            display: grid;
+            grid-template-rows: minmax(0, 1fr) auto;
+        }
+
+        .dialog-scroll {
+            grid-row: 1;
+            box-sizing: border-box;
+            width: 100%;
+            min-width: 0;
+            min-height: 0;
             overflow-y: auto;
             overscroll-behavior-y: contain;
+        }
+
+        .dialog-scroll + .dialog-controls {
+            grid-row: 2;
+            overflow: visible;
         }
 
         #help-dialog {
             width: min(48rem, calc(100% - 2rem));
             max-width: calc(100vw - 2rem);
+            min-width: min(16rem, calc(100vw - 2rem));
+            min-height: min(12rem, calc(100vh - 2rem));
+            min-height: min(12rem, calc(100dvh - 2rem));
             resize: both;
         }
 
@@ -362,9 +388,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             color: #c33;
         }
     </style>
-    <script src="./evaluation_watchdog.js?v=2.9.3" defer></script>
-    <script src="./input_history.js?v=2.9.3" defer></script>
-    <script src="./app.js?v=2.9.3" defer></script>
+    <script src="./evaluation_watchdog.js?v=2.9.4" defer></script>
+    <script src="./input_history.js?v=2.9.4" defer></script>
+    <script src="./app.js?v=2.9.4" defer></script>
 </head>
 <body>
     <main aria-labelledby="studio-title">
@@ -453,7 +479,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
     </dialog>
 
     <dialog id="help-dialog" aria-labelledby="help-title">
-        <h2 id="help-title">Stepping Options</h2>
+        <div class="dialog-scroll">
+        <h2 id="help-title" tabindex="-1"
+            data-dialog-initial-focus>Stepping Options</h2>
         <dl>
             <dt>Single Step</dt>
             <dd>
@@ -779,13 +807,15 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             and replays its definitions, removals, and reference-mode changes in
             order, applying redefinitions without confirmation.
         </div>
+        </div>
         <form method="dialog" class="dialog-controls">
-            <button type="submit" autofocus>Close</button>
+            <button type="submit">Close</button>
         </form>
     </dialog>
 
     <dialog id="combinator-info-dialog"
         aria-labelledby="combinator-info-title">
+        <div class="dialog-scroll">
         <h2 id="combinator-info-title" tabindex="-1"
             data-dialog-initial-focus>Pre-Defined Bird Combinators</h2>
         <p class="dialog-intro">
@@ -876,17 +906,19 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
                 </tr>
             </tbody>
         </table>
+        </div>
         <form method="dialog" class="dialog-controls">
             <button type="submit">Close</button>
         </form>
     </dialog>
 
     <dialog id="about-dialog" aria-labelledby="about-title">
+        <div class="dialog-scroll">
         <h2 id="about-title" tabindex="-1"
             data-dialog-initial-focus>About</h2>
         <div class="license-text">
             <!-- Keep this version and the app.js cache key in sync. -->
-            <p>Combinator Studio, version 2.9.3<br>
+            <p>Combinator Studio, version 2.9.4<br>
                 Part of the C++ Combinator DSL<br>
                 Copyright (C) 2026  David W. Gero</p>
             <p>This program is free software: you can redistribute it and/or modify
@@ -907,6 +939,7 @@ at &lt;<a href="https://www.gnu.org/licenses/agpl-3.0.html#license-text"
                 &lt;<a href="https://github.com/dwgero/combDSL1" target="_blank"
                     rel="noopener noreferrer">https://github.com/dwgero/combDSL1</a>&gt;.
                     My hidden email is &lt;<span id="email-box"></span>&gt;</p>
+        </div>
         </div>
         <form method="dialog" class="dialog-controls">
             <button type="submit">Close</button>

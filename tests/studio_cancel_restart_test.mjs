@@ -24,6 +24,80 @@ import vm from "node:vm";
 const sourceUrl = new URL("../web/app.js", import.meta.url);
 const indexUrl = new URL("../web/index.html", import.meta.url);
 const indexSource = readFileSync(indexUrl, "utf8");
+const embeddedStyle = indexSource.match(/<style>([\s\S]*?)<\/style>/)?.[1];
+assert.ok(embeddedStyle, "Studio index must contain its embedded stylesheet");
+
+const cssDeclarationsFor = selector => {
+    const declarations = new Map();
+    for (const rule of embeddedStyle.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+        const selectors = rule[1].split(",").map(item => item.trim());
+        if (!selectors.includes(selector)) {
+            continue;
+        }
+        for (const item of rule[2].split(";")) {
+            const separator = item.indexOf(":");
+            if (separator === -1) {
+                continue;
+            }
+            declarations.set(
+                item.slice(0, separator).trim(),
+                item.slice(separator + 1).trim(),
+            );
+        }
+    }
+    return declarations;
+};
+
+const dialogMarkup = id => {
+    const markup = indexSource.match(new RegExp(
+        `<dialog\\b[^>]*\\bid="${id}"[^>]*>[\\s\\S]*?<\\/dialog>`,
+    ))?.[0];
+    assert.ok(markup, `missing #${id}`);
+    return markup;
+};
+
+const mergedCssDeclarationsFor = (...selectors) => {
+    const declarations = new Map();
+    for (const selector of selectors) {
+        for (const [property, value] of cssDeclarationsFor(selector)) {
+            declarations.set(property, value);
+        }
+    }
+    return declarations;
+};
+
+const assertNoVisibleDividerEdge = (declarations, edge, description) => {
+    const explicitlyInvisible = value => value !== undefined &&
+        /(?:^|\s)(?:0(?:\.0+)?(?:px|rem|em)?|none|hidden|transparent)(?:\s|$)/
+            .test(value);
+    const border = declarations.get(`border-${edge}`) ??
+        declarations.get("border");
+    const borderStyle = declarations.get(`border-${edge}-style`) ??
+        declarations.get("border-style");
+    const borderWidth = declarations.get(`border-${edge}-width`) ??
+        declarations.get("border-width");
+    const borderColor = declarations.get(`border-${edge}-color`) ??
+        declarations.get("border-color");
+    const invisibleBorder = border === undefined
+        ? borderStyle === undefined || explicitlyInvisible(borderStyle) ||
+            explicitlyInvisible(borderWidth) ||
+            explicitlyInvisible(borderColor)
+        : explicitlyInvisible(border);
+    assert.ok(
+        invisibleBorder,
+        `${description} must not draw a ${edge} border`,
+    );
+    assert.ok(
+        [undefined, "none"].includes(declarations.get("box-shadow")),
+        `${description} must not draw a separator with box-shadow`,
+    );
+    assert.ok(
+        declarations.get("outline") === undefined ||
+            explicitlyInvisible(declarations.get("outline")),
+        `${description} must not draw a separator with an outline`,
+    );
+};
+
 const evaluationWatchdogUrl = new URL(
     "../web/evaluation_watchdog.js", import.meta.url);
 const evaluationWatchdogContext = vm.createContext({});
@@ -740,6 +814,105 @@ test("labels the active-evaluation control Pause", () => {
         indexSource,
         /<button id="step-limit-resume"[^>]*>\s*Resume\s*<\/button>/,
     );
+});
+
+test("keeps informational dialog Close buttons below the sole scroller", () => {
+    const dialogIds = [
+        "help-dialog",
+        "combinator-info-dialog",
+        "about-dialog",
+    ];
+    for (const id of dialogIds) {
+        const closedDeclarations = cssDeclarationsFor(`#${id}`);
+        assert.match(
+            closedDeclarations.get("max-height") ?? "",
+            /^calc\(100dvh - 2rem\)$/,
+            `#${id} must remain bounded by the viewport`,
+        );
+        assert.equal(
+            closedDeclarations.get("overflow"),
+            "hidden",
+            `#${id} itself must not scroll its footer`,
+        );
+
+        const openDeclarations = cssDeclarationsFor(`#${id}[open]`);
+        assert.equal(openDeclarations.get("display"), "grid");
+        assert.match(
+            openDeclarations.get("grid-template-rows") ?? "",
+            /^minmax\(0,\s*1fr\)\s+auto$/,
+            `#${id} must reserve its second row for Close`,
+        );
+
+        const markup = dialogMarkup(id);
+        const scrollStart = markup.search(
+            /<[^>]+class="[^"]*\bdialog-scroll\b[^"]*"[^>]*>/,
+        );
+        const controlsStart = markup.search(
+            /<form\b[^>]*class="[^"]*\bdialog-controls\b[^"]*"[^>]*>/,
+        );
+        assert.ok(scrollStart !== -1, `#${id} needs a content scroller`);
+        assert.ok(controlsStart > scrollStart,
+            `#${id} Close controls must follow the content scroller`);
+        assert.match(
+            markup.slice(controlsStart),
+            /<button\b[^>]*type="submit"[^>]*>\s*Close\s*<\/button>/,
+        );
+    }
+
+    const scrollDeclarations = cssDeclarationsFor(".dialog-scroll");
+    assert.equal(scrollDeclarations.get("grid-row"), "1");
+    assert.equal(scrollDeclarations.get("box-sizing"), "border-box");
+    assert.equal(scrollDeclarations.get("width"), "100%");
+    assert.equal(scrollDeclarations.get("min-width"), "0");
+    assert.equal(scrollDeclarations.get("min-height"), "0");
+    assert.equal(scrollDeclarations.get("overflow-y"), "auto");
+
+    const footerDeclarations = mergedCssDeclarationsFor(
+        ".dialog-controls",
+        ".dialog-scroll + .dialog-controls",
+    );
+    assert.equal(footerDeclarations.get("grid-row"), "2");
+    assert.equal(footerDeclarations.get("overflow"), "visible");
+    assert.doesNotMatch(
+        footerDeclarations.get("overflow-y") ?? "visible",
+        /^(?:auto|scroll)$/,
+        "the Close footer must not become another vertical scroller",
+    );
+    assertNoVisibleDividerEdge(
+        scrollDeclarations,
+        "bottom",
+        "the scrolling content",
+    );
+    assertNoVisibleDividerEdge(
+        footerDeclarations,
+        "top",
+        "the Close footer",
+    );
+});
+
+test("focuses the Help heading for keyboard scrolling", () => {
+    const markup = dialogMarkup("help-dialog");
+    const heading = markup.match(
+        /<h2\b[^>]*\bid="help-title"[^>]*>/,
+    )?.[0];
+    assert.ok(heading, "Help must retain its labelled heading");
+    assert.match(heading, /\btabindex="-1"/);
+    assert.match(heading, /\bdata-dialog-initial-focus(?:\s|>)/);
+
+    const scrollStart = markup.search(
+        /<[^>]+class="[^"]*\bdialog-scroll\b[^"]*"[^>]*>/,
+    );
+    const headingStart = markup.indexOf(heading);
+    const controlsStart = markup.search(
+        /<form\b[^>]*class="[^"]*\bdialog-controls\b[^"]*"[^>]*>/,
+    );
+    assert.ok(scrollStart < headingStart && headingStart < controlsStart,
+        "Help's focused heading must be inside the scrolling row");
+    const close = markup.slice(controlsStart).match(
+        /<button\b[^>]*>\s*Close\s*<\/button>/,
+    )?.[0];
+    assert.ok(close, "Help must retain its Close button");
+    assert.doesNotMatch(close, /\bautofocus\b/);
 });
 
 test("completes revisions as a typed Studio command", () => {
