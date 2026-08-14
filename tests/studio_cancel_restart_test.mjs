@@ -260,9 +260,34 @@ class FakeWorker extends FakeEventTarget {
     }
 }
 
+const createMemoryStorage = () => {
+    const values = new Map();
+    return Object.freeze({
+        get length() {
+            return values.size;
+        },
+        clear() {
+            values.clear();
+        },
+        getItem(key) {
+            return values.get(String(key)) ?? null;
+        },
+        key(index) {
+            return [...values.keys()][index] ?? null;
+        },
+        removeItem(key) {
+            values.delete(String(key));
+        },
+        setItem(key, value) {
+            values.set(String(key), String(value));
+        },
+    });
+};
+
 const createHarness = ({
     historyValues = [],
     inputHistoryTools: suppliedInputHistoryTools,
+    storage = createMemoryStorage(),
     watchdog,
 } = {}) => {
     FakeWorker.instances = [];
@@ -321,27 +346,33 @@ const createHarness = ({
     document.createElement = tagName => new FakeElement(tagName);
     document.createTextNode = text => new FakeTextNode(text);
 
-    const storage = new Map();
     const window = new FakeEventTarget();
-    window.localStorage = {
-        getItem: key => storage.get(key) ?? null,
-        setItem: (key, value) => storage.set(key, String(value)),
-    };
+    window.localStorage = storage;
     window.location = {protocol: "https:"};
     window.focus = () => {};
     const selection = {isCollapsed: true};
     window.getSelection = () => selection;
 
+    const visibleHistory = [...historyValues];
     const inputHistory = {
-        record: (source, outcome = "") => outcome === ""
-            ? source
-            : `${source} [${outcome}]`,
-        values: () => historyValues,
+        record(source, outcome = "") {
+            const entry = outcome === ""
+                ? source
+                : `${source} [${outcome}]`;
+            visibleHistory.push(entry);
+            return entry;
+        },
+        values: () => visibleHistory,
         resetNavigation: () => {},
         previous: () => undefined,
         next: () => undefined,
         hasCurrent: () => false,
         removeCurrent: () => undefined,
+        handlesStorageKey: () => false,
+        synchronizeStorage: () => ({
+            changed: false,
+            currentRemoved: false,
+        }),
         prepareOperateAndGetNext: () => undefined,
         resumeOperateAndGetNext: () => undefined,
     };
@@ -432,6 +463,22 @@ const createHarness = ({
                 target: elements.get("source"),
             });
         },
+        dispatchStorage({
+            key,
+            newValue = key === null
+                ? null
+                : storage.getItem(key),
+            oldValue = null,
+            storageArea = storage,
+        }) {
+            return window.dispatch("storage", {
+                key,
+                newValue,
+                oldValue,
+                storageArea,
+            });
+        },
+        storage,
         selection,
         workers: FakeWorker.instances,
     };
@@ -448,6 +495,48 @@ const createPopulatedHistoryTools = entries => {
             realInputHistoryTools.createCommandCompleter,
     });
 };
+
+const storageKeys = storage =>
+    Array.from({length: storage.length}, (_, index) => storage.key(index));
+
+const assertSameNodes = (actual, expected, message) => {
+    assert.equal(actual.length, expected.length, message);
+    assert.ok(actual.every((node, index) => node === expected[index]),
+        message);
+};
+
+const dispatchSourceKey = (source, key, {ctrlKey = false} = {}) =>
+    source.dispatch("keydown", {
+        key,
+        ctrlKey,
+        isComposing: false,
+        shiftKey: false,
+        metaKey: false,
+        altKey: false,
+    });
+
+const recordAndGetStorageKey = (
+    history,
+    storage,
+    source,
+    outcome = "",
+) => {
+    const before = new Set(storageKeys(storage));
+    history.record(source, outcome);
+    const added = storageKeys(storage).filter(key => !before.has(key));
+    assert.equal(added.length, 1,
+        "recording one entry must add one immutable storage key");
+    return added[0];
+};
+
+const createCapturedHistoryTools = capture => Object.freeze({
+    ...realInputHistoryTools,
+    create(options) {
+        const history = realInputHistoryTools.create(options);
+        capture(history);
+        return history;
+    },
+});
 
 const beginLimitedEvaluation = (harness, limit, expression) => {
     const source = harness.element("source");
@@ -851,7 +940,6 @@ test("Ctrl-D removes an untouched recalled history item", () => {
     });
     const source = harness.element("source");
     const displayedHistory = harness.element("source-history");
-    const originalRows = [...displayedHistory.childNodes];
     source.value = "draft";
 
     source.dispatch("keydown", {
@@ -892,9 +980,6 @@ test("Ctrl-D removes an untouched recalled history item", () => {
         displayedHistory.childNodes.map(row => row.textContent),
         ["A", "C"],
     );
-    assert.strictEqual(displayedHistory.childNodes[0], originalRows[0]);
-    assert.strictEqual(displayedHistory.childNodes[1], originalRows[2]);
-    assert.equal(originalRows[1].parentNode, null);
 
     const secondRemoval = source.dispatch("keydown", {
         key: "d",
@@ -911,7 +996,6 @@ test("Ctrl-D removes an untouched recalled history item", () => {
         displayedHistory.childNodes.map(row => row.textContent),
         ["A"],
     );
-    assert.strictEqual(displayedHistory.childNodes[0], originalRows[0]);
 });
 
 for (const [description, key, ctrlKey] of [
@@ -1027,7 +1111,8 @@ test("Ctrl-D stays in editing mode after the caret moves away and back", () => {
         displayedHistory.childNodes.map(row => row.textContent),
         ["ABC"],
     );
-    assert.strictEqual(displayedHistory.childNodes[0], originalRow);
+    assert.notStrictEqual(displayedHistory.childNodes[0], originalRow,
+        "a successful removal rerenders the merged history snapshot");
 });
 
 test("history-removal keys retain their normal behavior on the live draft", () => {
@@ -1060,13 +1145,320 @@ test("history-removal keys retain their normal behavior on the live draft", () =
     );
 });
 
+test("synchronizes concurrent history changes between Studio tabs", () => {
+    const storage = createMemoryStorage();
+    const otherHistory = realInputHistoryTools.create({storage});
+    let studioHistory;
+    const harness = createHarness({
+        storage,
+        inputHistoryTools: createCapturedHistoryTools(history => {
+            studioHistory = history;
+        }),
+    });
+    const displayedHistory = harness.element("source-history");
+
+    const studioKey = recordAndGetStorageKey(
+        studioHistory, storage, "Ix");
+    const otherKey = recordAndGetStorageKey(
+        otherHistory, storage, "YI", "cancelled");
+    assert.notEqual(studioKey, otherKey,
+        "independent tabs must store additions under distinct keys");
+
+    const unrelatedStorage = createMemoryStorage();
+    harness.dispatchStorage({
+        key: otherKey,
+        storageArea: unrelatedStorage,
+    });
+    storage.setItem("unrelated", "value");
+    harness.dispatchStorage({key: "unrelated"});
+    assert.equal(displayedHistory.textContent, "",
+        "unrelated storage events must not change the visible history");
+
+    harness.dispatchStorage({key: otherKey});
+    assert.deepEqual(
+        displayedHistory.childNodes.map(row => row.textContent),
+        [...studioHistory.values()],
+    );
+    assert.deepEqual(new Set(studioHistory.values()), new Set([
+        "Ix",
+        "YI [cancelled]",
+    ]));
+    assertRedNotice(displayedHistory, "[cancelled]");
+
+    const synchronizedRows = [...displayedHistory.childNodes];
+    harness.dispatchStorage({key: otherKey});
+    assertSameNodes(displayedHistory.childNodes, synchronizedRows,
+        "an already-applied storage event must not rerender history");
+
+    const staleHistory = realInputHistoryTools.create({storage});
+    assert.equal(otherHistory.previous(""), "YI");
+    const keysBeforeRemoval = new Set(storageKeys(storage));
+    assert.ok(otherHistory.removeCurrent());
+    const removedKeys = [...keysBeforeRemoval].filter(
+        key => !storageKeys(storage).includes(key));
+    assert.deepEqual(removedKeys, [otherKey]);
+    harness.dispatchStorage({key: otherKey, newValue: null});
+    assert.deepEqual([...studioHistory.values()], ["Ix"]);
+    assert.equal(displayedHistory.textContent, "Ix");
+
+    const staleKey = recordAndGetStorageKey(
+        staleHistory, storage, "Kx");
+    harness.dispatchStorage({key: staleKey});
+    assert.deepEqual(new Set(studioHistory.values()), new Set([
+        "Ix",
+        "Kx",
+    ]));
+    assert.equal(studioHistory.values().includes("YI [cancelled]"), false,
+        "a stale tab must not resurrect a remotely removed entry");
+
+    storage.clear();
+    harness.dispatchStorage({key: null, newValue: null});
+    assert.deepEqual([...studioHistory.values()], []);
+    assert.equal(displayedHistory.textContent, "");
+});
+
+test("preserves recalled text and draft across remote history changes", () => {
+    const storage = createMemoryStorage();
+    const seedHistory = realInputHistoryTools.create({storage});
+    recordAndGetStorageKey(seedHistory, storage, "A");
+    const selectedKey = recordAndGetStorageKey(
+        seedHistory, storage, "B");
+    let studioHistory;
+    const harness = createHarness({
+        storage,
+        inputHistoryTools: createCapturedHistoryTools(history => {
+            studioHistory = history;
+        }),
+    });
+    const otherHistory = realInputHistoryTools.create({storage});
+    const source = harness.element("source");
+    const displayedHistory = harness.element("source-history");
+    source.value = "draft";
+
+    dispatchSourceKey(source, "ArrowUp");
+    assert.equal(source.value, "B");
+    const recalledSelection = [
+        source.selectionStart,
+        source.selectionEnd,
+    ];
+
+    const addedKey = recordAndGetStorageKey(
+        otherHistory, storage, "C");
+    harness.dispatchStorage({key: addedKey});
+    assert.equal(source.value, "B");
+    assert.deepEqual([
+        source.selectionStart,
+        source.selectionEnd,
+    ], recalledSelection);
+    assert.deepEqual([...studioHistory.values()], ["A", "B", "C"]);
+
+    dispatchSourceKey(source, "ArrowDown");
+    assert.equal(source.value, "C",
+        "the remote addition must become the next newer entry");
+    dispatchSourceKey(source, "ArrowUp");
+    assert.equal(source.value, "B");
+
+    assert.equal(otherHistory.previous(""), "C");
+    assert.equal(otherHistory.previous(""), "B");
+    assert.ok(otherHistory.removeCurrent());
+    harness.dispatchStorage({key: selectedKey, newValue: null});
+    assert.deepEqual(
+        displayedHistory.childNodes.map(row => row.textContent),
+        ["A", "C"],
+    );
+    assert.equal(source.value, "B",
+        "removing the recalled entry remotely must preserve its editor text");
+    assert.deepEqual([
+        source.selectionStart,
+        source.selectionEnd,
+    ], recalledSelection);
+
+    const forwardDelete = dispatchSourceKey(
+        source, "d", {ctrlKey: true});
+    assert.equal(forwardDelete.defaultPrevented, false,
+        "Ctrl-D must not delete a neighboring item after remote removal");
+    assert.deepEqual([...studioHistory.values()], ["A", "C"]);
+
+    dispatchSourceKey(source, "ArrowUp");
+    assert.equal(source.value, "A",
+        "Up must continue from the removed entry's ordering anchor");
+    dispatchSourceKey(source, "ArrowDown");
+    assert.equal(source.value, "C");
+    dispatchSourceKey(source, "ArrowDown");
+    assert.equal(source.value, "draft",
+        "the original live draft must survive remote changes");
+});
+
+test("history navigation renders a remote add before its storage event", () => {
+    const storage = createMemoryStorage();
+    const otherHistory = realInputHistoryTools.create({storage});
+    let studioHistory;
+    const harness = createHarness({
+        storage,
+        inputHistoryTools: createCapturedHistoryTools(history => {
+            studioHistory = history;
+        }),
+    });
+    const source = harness.element("source");
+    const displayedHistory = harness.element("source-history");
+    source.value = "draft";
+    const remoteKey = recordAndGetStorageKey(
+        otherHistory, storage, "Remote");
+
+    dispatchSourceKey(source, "ArrowUp");
+    assert.equal(source.value, "Remote");
+    assert.deepEqual([...studioHistory.values()], ["Remote"]);
+    assert.equal(displayedHistory.textContent, "Remote");
+
+    const renderedRow = displayedHistory.childNodes[0];
+    harness.dispatchStorage({key: remoteKey});
+    assert.strictEqual(displayedHistory.childNodes[0], renderedRow,
+        "the late event must not rerender an already-imported entry");
+});
+
+test("local duplicate record renders history imported before its event", () => {
+    const storage = createMemoryStorage();
+    const otherHistory = realInputHistoryTools.create({storage});
+    let studioHistory;
+    const harness = createHarness({
+        storage,
+        inputHistoryTools: createCapturedHistoryTools(history => {
+            studioHistory = history;
+        }),
+    });
+    const source = harness.element("source");
+    const displayedHistory = harness.element("source-history");
+    const worker = harness.workers[0];
+    const remoteKey = recordAndGetStorageKey(
+        otherHistory, storage, "Ix");
+    const storedKeys = storageKeys(storage);
+
+    worker.send({type: "ready", setList: ""});
+    harness.flushAnimationFrames();
+    source.value = "Ix";
+    harness.pressEnter();
+    harness.flushAnimationFrames();
+    const inspection = worker.messages.find(
+        message => message.type === "inspect-definition");
+    worker.send({
+        type: "definition-inspection-result",
+        id: inspection.id,
+        result: {
+            success: true,
+            definition: false,
+            displayOnly: false,
+            showAll: false,
+            find: false,
+            replacement: "",
+        },
+    });
+    harness.flushAnimationFrames();
+    worker.send({
+        type: "result",
+        id: inspection.id,
+        result: {
+            success: true,
+            definition: false,
+            recoverWorker: false,
+            output: "x\n",
+            error: "",
+            reductions: 1,
+            limitReached: false,
+        },
+    });
+
+    assert.deepEqual(
+        displayedHistory.childNodes.map(row => row.textContent),
+        [...studioHistory.values()],
+    );
+    assert.deepEqual([...studioHistory.values()], ["Ix"]);
+    assert.deepEqual(storageKeys(storage), storedKeys,
+        "the adjacent duplicate must not add another storage entry");
+    const renderedRows = [...displayedHistory.childNodes];
+    harness.dispatchStorage({key: remoteKey});
+    assertSameNodes(displayedHistory.childNodes, renderedRows,
+        "the late event must not rerender an already-imported entry");
+});
+
+test("local removal rerenders history imported before a late storage event", () => {
+    const storage = createMemoryStorage();
+    const seedHistory = realInputHistoryTools.create({storage});
+    recordAndGetStorageKey(seedHistory, storage, "A");
+    recordAndGetStorageKey(seedHistory, storage, "B");
+    let studioHistory;
+    const harness = createHarness({
+        storage,
+        inputHistoryTools: createCapturedHistoryTools(history => {
+            studioHistory = history;
+        }),
+    });
+    const otherHistory = realInputHistoryTools.create({storage});
+    const source = harness.element("source");
+    const displayedHistory = harness.element("source-history");
+    source.value = "draft";
+
+    dispatchSourceKey(source, "ArrowUp");
+    assert.equal(source.value, "B");
+    const remoteKey = recordAndGetStorageKey(
+        otherHistory, storage, "C");
+
+    const removal = dispatchSourceKey(source, "d", {ctrlKey: true});
+    assert.equal(removal.defaultPrevented, true);
+    assert.equal(source.value, "C");
+    assert.deepEqual([...studioHistory.values()], ["A", "C"]);
+    assert.deepEqual(
+        displayedHistory.childNodes.map(row => row.textContent),
+        ["A", "C"],
+    );
+
+    const renderedRows = [...displayedHistory.childNodes];
+    harness.dispatchStorage({key: remoteKey});
+    assertSameNodes(displayedHistory.childNodes, renderedRows,
+        "the late event must not rerender an already-imported entry");
+});
+
+test("Ctrl-D safely discovers remote removal before its storage event", () => {
+    const storage = createMemoryStorage();
+    const seedHistory = realInputHistoryTools.create({storage});
+    recordAndGetStorageKey(seedHistory, storage, "A");
+    const removedKey = recordAndGetStorageKey(
+        seedHistory, storage, "B");
+    let studioHistory;
+    const harness = createHarness({
+        storage,
+        inputHistoryTools: createCapturedHistoryTools(history => {
+            studioHistory = history;
+        }),
+    });
+    const otherHistory = realInputHistoryTools.create({storage});
+    const source = harness.element("source");
+    const displayedHistory = harness.element("source-history");
+    source.value = "draft";
+
+    dispatchSourceKey(source, "ArrowUp");
+    assert.equal(source.value, "B");
+    assert.equal(otherHistory.previous(""), "B");
+    assert.ok(otherHistory.removeCurrent());
+
+    const forwardDelete = dispatchSourceKey(
+        source, "d", {ctrlKey: true});
+    assert.equal(forwardDelete.defaultPrevented, false);
+    assert.equal(source.value, "B");
+    assert.deepEqual([...studioHistory.values()], ["A"]);
+    assert.equal(displayedHistory.textContent, "A");
+
+    const renderedRow = displayedHistory.childNodes[0];
+    harness.dispatchStorage({key: removedKey, newValue: null});
+    assert.strictEqual(displayedHistory.childNodes[0], renderedRow,
+        "the late event must not rerender an already-imported removal");
+});
+
 test("does not display an adjacent duplicate history entry", () => {
     const harness = createHarness({
         inputHistoryTools: createPopulatedHistoryTools([["Ix"]]),
     });
     const source = harness.element("source");
     const displayedHistory = harness.element("source-history");
-    const originalRow = displayedHistory.childNodes[0];
     const worker = harness.workers[0];
 
     worker.send({type: "ready", setList: ""});
@@ -1104,7 +1496,6 @@ test("does not display an adjacent duplicate history entry", () => {
     });
 
     assert.equal(displayedHistory.childNodes.length, 1);
-    assert.strictEqual(displayedHistory.childNodes[0], originalRow);
     assert.equal(displayedHistory.textContent, "Ix");
 });
 

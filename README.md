@@ -830,7 +830,7 @@ expression produces no output, while malformed or empty lines throw
 The `crepl` executable applies `input_escape` to each line before passing it to
 `parse_eval`, so ordinary quoted words and backslashes can be entered directly.
 When standard output is a terminal, it first prints
-`Combinator Read-Eval-Print Loop, version 2.9.0`. Long evaluations display
+`Combinator Read-Eval-Print Loop, version 2.9.1`. Long evaluations display
 the accumulated step count every 1,000 reductions by overwriting one status
 line; the line is cleared before evaluation output is printed. Its interactive
 prompt is `>`. Interactive input uses GNU Readline, so previous nonempty
@@ -1169,6 +1169,8 @@ The Combinator Expression box is a scrollable history with the current editable
 input at the bottom. Successful commands and expressions that reach normal form
 remain visible in submission order and are saved in the browser's local storage,
 so they return when Studio is reloaded on the same site and browser profile.
+History additions and removals are synchronized automatically among open Studio
+tabs on that same site and browser profile.
 Cancelled and timed-out expressions are retained with
 ` [cancelled]` and ` [timed out]` appended, respectively;
 recalling them restores only the original expression. Parse errors are not

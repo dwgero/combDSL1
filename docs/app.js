@@ -322,13 +322,34 @@
         sourceText,
         outcome = "",
     ) => {
-        const entry = inputHistory.record(sourceText, outcome);
-        if (entry !== undefined) {
-            appendSourceHistoryEntry(entry);
-        }
+        inputHistory.record(sourceText, outcome);
+        renderSourceHistory();
     };
 
-    inputHistory.values().forEach(appendSourceHistoryEntry);
+    const renderSourceHistory = () => {
+        sourceHistory.textContent = "";
+        inputHistory.values().forEach(appendSourceHistoryEntry);
+    };
+
+    renderSourceHistory();
+
+    window.addEventListener("storage", event => {
+        if (inputHistoryStorage === undefined ||
+            event.storageArea !== inputHistoryStorage ||
+            !inputHistory.handlesStorageKey(event.key)) {
+            return;
+        }
+
+        const update = inputHistory.synchronizeStorage();
+        if (!update.changed) {
+            return;
+        }
+
+        renderSourceHistory();
+        if (update.currentRemoved) {
+            clearUntouchedHistoryRecall();
+        }
+    });
 
     const afterNextPaint = callback => {
         requestAnimationFrame(() => requestAnimationFrame(callback));
@@ -1562,6 +1583,14 @@
         if (!event.isComposing && !event.shiftKey &&
             !event.metaKey && !event.altKey && !source.readOnly &&
             (previousHistory || nextHistory)) {
+            const synchronized = inputHistory.synchronizeStorage();
+            if (synchronized.changed) {
+                renderSourceHistory();
+            }
+            if (synchronized.currentRemoved) {
+                clearUntouchedHistoryRecall();
+            }
+
             event.preventDefault();
             const recalled = previousHistory
                 ? inputHistory.previous(source.value)
@@ -1580,11 +1609,20 @@
         if (!event.isComposing && !event.shiftKey &&
             !event.metaKey && !event.altKey && !source.readOnly &&
             removeHistory) {
+            const synchronized = inputHistory.synchronizeStorage();
+            if (synchronized.changed) {
+                renderSourceHistory();
+            }
+            if (synchronized.currentRemoved) {
+                clearUntouchedHistoryRecall();
+                return;
+            }
+
             const removed = inputHistory.removeCurrent();
             clearUntouchedHistoryRecall();
+            renderSourceHistory();
             if (removed !== undefined) {
                 event.preventDefault();
-                sourceHistory.childNodes[removed.index]?.remove();
                 setSourceText(removed.nextSource);
                 rememberUntouchedHistoryRecall();
             }

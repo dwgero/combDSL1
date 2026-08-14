@@ -342,6 +342,60 @@ test("uses the parser's ASCII command whitespace", () => {
     assert.equal(complete("key\vst"), "key\vstep");
 });
 
+const historyStorageKey = "combdsl.studio.input-history.v1";
+const historyEntryPrefix = `${historyStorageKey}.entry.`;
+const historyLegacyDeletionPrefix =
+    `${historyStorageKey}.legacy-deleted.`;
+
+const createMemoryStorage = (initial = {}) => {
+    const items = new Map(Object.entries(initial).map(
+        ([key, value]) => [String(key), String(value)]));
+    const operations = [];
+    return {
+        get length() {
+            return items.size;
+        },
+        key(index) {
+            return [...items.keys()][index] ?? null;
+        },
+        getItem(key) {
+            key = String(key);
+            return items.has(key) ? items.get(key) : null;
+        },
+        setItem(key, value) {
+            key = String(key);
+            value = String(value);
+            operations.push(["set", key, value]);
+            items.set(key, value);
+        },
+        removeItem(key) {
+            key = String(key);
+            operations.push(["remove", key]);
+            items.delete(key);
+        },
+        clear() {
+            operations.push(["clear"]);
+            items.clear();
+        },
+        entries() {
+            return [...items.entries()];
+        },
+        operations,
+    };
+};
+
+const storedHistoryEntries = storage => storage.entries()
+    .filter(([key]) => key.startsWith(historyEntryPrefix))
+    .map(([, value]) => JSON.parse(value))
+    .sort((left, right) => left.id < right.id ? -1 : 1);
+
+const setStoredHistoryEntry = (storage, entry) => {
+    storage.setItem(
+        historyEntryPrefix + encodeURIComponent(entry.id),
+        JSON.stringify({version: 2, outcome: "", ...entry}),
+    );
+};
+
 test("starts with an empty visible history", () => {
     const history = createHistory();
 
@@ -381,23 +435,15 @@ test("preserves exact entries and suppresses adjacent duplicate sources", () => 
 });
 
 test("does not persist an adjacent duplicate source", () => {
-    let writes = 0;
-    let stored = null;
-    const storage = {
-        getItem() {
-            return stored;
-        },
-        setItem(_key, value) {
-            ++writes;
-            stored = value;
-        },
-    };
+    const storage = createMemoryStorage();
     const history = createHistory({storage});
 
     history.record("YI", "cancelled");
+    const operationsAfterFirstRecord = storage.operations.length;
     assert.equal(history.record("YI", "timed out"), undefined);
-    assert.equal(writes, 1);
-    assert.deepEqual(JSON.parse(stored).entries, [
+    assert.equal(storage.operations.length, operationsAfterFirstRecord);
+    assert.deepEqual(storedHistoryEntries(storage).map(
+        ({source, outcome}) => ({source, outcome})), [
         {source: "YI", outcome: "cancelled"},
     ]);
 });
@@ -434,19 +480,7 @@ test("returns immutable history snapshots", () => {
 });
 
 test("persists and restores structured history entries", () => {
-    let stored = null;
-    const storage = {
-        getItem(key) {
-            assert.equal(
-                key, "combdsl.studio.input-history.v1");
-            return stored;
-        },
-        setItem(key, value) {
-            assert.equal(
-                key, "combdsl.studio.input-history.v1");
-            stored = value;
-        },
-    };
+    const storage = createMemoryStorage();
     const history = createHistory({
         storage,
         maximumStoredEntries: 3,
@@ -456,14 +490,16 @@ test("persists and restores structured history entries", () => {
     history.record("BKM(BKM)", "timed out");
     history.record("IIIx", "step limit");
 
-    assert.deepEqual(JSON.parse(stored), {
-        version: 1,
-        entries: [
+    assert.deepEqual(JSON.parse(storage.getItem(historyStorageKey)), {
+        version: 2,
+        format: "entry-keys",
+    });
+    assert.deepEqual(storedHistoryEntries(storage).map(
+        ({source, outcome}) => ({source, outcome})), [
             {source: "YI", outcome: "cancelled"},
             {source: "BKM(BKM)", outcome: "timed out"},
             {source: "IIIx", outcome: "step limit"},
-        ],
-    });
+        ]);
     assert.deepEqual(
         [...createHistory({
             storage,
@@ -533,15 +569,7 @@ test("reports whether a recalled history entry is current", () => {
 });
 
 test("removes the current recalled entry and persists the deletion", () => {
-    let stored = null;
-    const storage = {
-        getItem() {
-            return stored;
-        },
-        setItem(_key, value) {
-            stored = value;
-        },
-    };
+    const storage = createMemoryStorage();
     const history = createHistory({storage});
     history.record("A");
     history.record("B", "cancelled");
@@ -555,7 +583,8 @@ test("removes the current recalled entry and persists the deletion", () => {
     assert.equal(removedB.index, 1);
     assert.equal(removedB.nextSource, "C");
     assert.deepEqual([...history.values()], ["A", "C"]);
-    assert.deepEqual(JSON.parse(stored).entries, [
+    assert.deepEqual(storedHistoryEntries(storage).map(
+        ({source, outcome}) => ({source, outcome})), [
         {source: "A", outcome: ""},
         {source: "C", outcome: ""},
     ]);
@@ -577,30 +606,24 @@ test("removes the current recalled entry and persists the deletion", () => {
 });
 
 test("removes loaded history entries by their visible index", () => {
-    let stored = JSON.stringify({
+    const storage = createMemoryStorage({
+        [historyStorageKey]: JSON.stringify({
         version: 1,
         entries: [
             {source: "A", outcome: ""},
             {source: "B", outcome: "timed out"},
         ],
+        }),
     });
-    const history = createHistory({
-        storage: {
-            getItem() {
-                return stored;
-            },
-            setItem(_key, value) {
-                stored = value;
-            },
-        },
-    });
+    const history = createHistory({storage});
 
     assert.equal(history.previous(""), "B");
     const removed = history.removeCurrent();
     assert.equal(removed.index, 1);
     assert.equal(removed.nextSource, "");
     assert.deepEqual([...history.values()], ["A"]);
-    assert.deepEqual(JSON.parse(stored).entries, [
+    assert.deepEqual(storedHistoryEntries(storage).map(
+        ({source, outcome}) => ({source, outcome})), [
         {source: "A", outcome: ""},
     ]);
 });
@@ -648,12 +671,9 @@ test("operate and get next recalls an unannotated source", () => {
 
 test("ignores malformed or unsupported stored history", () => {
     const from = value => createHistory({
-        storage: {
-            getItem() {
-                return value;
-            },
-            setItem() {},
-        },
+        storage: createMemoryStorage({
+            [historyStorageKey]: value,
+        }),
     });
 
     assert.deepEqual([...from("not json").values()], []);
@@ -674,15 +694,9 @@ test("ignores malformed or unsupported stored history", () => {
 });
 
 test("repairs malformed stored history on the next record", () => {
-    let stored = "not json";
-    const storage = {
-        getItem() {
-            return stored;
-        },
-        setItem(_key, value) {
-            stored = value;
-        },
-    };
+    const storage = createMemoryStorage({
+        [historyStorageKey]: "not json",
+    });
     const history = createHistory({storage});
     history.record("Ix");
 
@@ -692,14 +706,336 @@ test("repairs malformed stored history on the next record", () => {
     );
 });
 
+test("merges additions from independent tabs without overwriting", () => {
+    const storage = createMemoryStorage();
+    const first = createHistory({
+        storage,
+        now: () => 1000,
+        writerId: "first",
+    });
+    const second = createHistory({
+        storage,
+        now: () => 1000,
+        writerId: "second",
+    });
+
+    first.record("A");
+    second.record("B", "cancelled");
+    assert.deepEqual([...second.values()], ["A", "B [cancelled]"]);
+
+    const secondKey = storage.entries().find(([key, value]) =>
+        key.startsWith(historyEntryPrefix) &&
+        JSON.parse(value).source === "B")[0];
+    const update = first.applyStorageEvent(secondKey, "ignored");
+    assert.equal(Object.isFrozen(update), true);
+    assert.equal(update.changed, true);
+    assert.equal(update.currentRemoved, false);
+    assert.deepEqual([...first.values()], ["A", "B [cancelled]"]);
+    assert.equal(storedHistoryEntries(storage).length, 2);
+
+    assert.equal(first.handlesStorageKey(null), true);
+    assert.equal(first.handlesStorageKey(historyStorageKey), true);
+    assert.equal(first.handlesStorageKey(secondKey), true);
+    assert.equal(first.handlesStorageKey("unrelated"), false);
+    assert.equal(
+        first.applyStorageEvent("unrelated", null), undefined);
+});
+
+test("propagates deletions without stale-tab resurrection", () => {
+    const storage = createMemoryStorage();
+    const first = createHistory({
+        storage,
+        now: () => 2000,
+        writerId: "first",
+    });
+    first.record("A");
+    first.record("B");
+    const second = createHistory({
+        storage,
+        now: () => 2000,
+        writerId: "second",
+    });
+    const removedEntry = storedHistoryEntries(storage)
+        .find(entry => entry.source === "B");
+    const removedKey = historyEntryPrefix +
+        encodeURIComponent(removedEntry.id);
+    const removedValue = storage.getItem(removedKey);
+
+    assert.equal(first.previous("first draft"), "B");
+    first.removeCurrent();
+    assert.deepEqual([...second.values()], ["A", "B"]);
+
+    second.record("C");
+    assert.deepEqual([...second.values()], ["A", "C"]);
+    assert.equal(storage.getItem(removedKey), null);
+    const lateOldEvent = second.applyStorageEvent(
+        removedKey, removedValue);
+    assert.equal(lateOldEvent.changed, false);
+    assert.deepEqual([...second.values()], ["A", "C"]);
+
+    first.synchronizeStorage();
+    assert.deepEqual([...first.values()], ["A", "C"]);
+    assert.deepEqual([...createHistory({storage}).values()], ["A", "C"]);
+});
+
+test("tombstones deleted migrated entries before removing them", () => {
+    const legacyText = JSON.stringify({
+        version: 1,
+        entries: [
+            {source: "A", outcome: ""},
+            {source: "B", outcome: "timed out"},
+        ],
+    });
+    const storage = createMemoryStorage({
+        [historyStorageKey]: legacyText,
+    });
+    const history = createHistory({storage});
+    const migratedB = storedHistoryEntries(storage)
+        .find(entry => entry.source === "B");
+    const entryKey = historyEntryPrefix +
+        encodeURIComponent(migratedB.id);
+    const staleEntryValue = storage.getItem(entryKey);
+
+    assert.equal(history.previous("draft"), "B");
+    const operationStart = storage.operations.length;
+    history.removeCurrent();
+    const deletionOperations = storage.operations.slice(operationStart);
+    const tombstoneIndex = deletionOperations.findIndex(
+        ([operation, key]) => operation === "set" &&
+            key.startsWith(historyLegacyDeletionPrefix));
+    const removalIndex = deletionOperations.findIndex(
+        ([operation, key]) => operation === "remove" &&
+            key === entryKey);
+    assert.ok(tombstoneIndex >= 0);
+    assert.ok(removalIndex > tombstoneIndex);
+
+    storage.setItem(entryKey, staleEntryValue);
+    storage.setItem(historyStorageKey, legacyText);
+    const afterStaleMigration = createHistory({storage});
+    assert.deepEqual([...afterStaleMigration.values()], ["A"]);
+    assert.equal(storage.getItem(entryKey), null);
+    assert.equal(storage.entries().some(([key]) =>
+        key === historyLegacyDeletionPrefix +
+            encodeURIComponent(migratedB.id)), true);
+});
+
+test("keeps a remotely removed selection as a detached anchor", () => {
+    const storage = createMemoryStorage();
+    const owner = createHistory({
+        storage,
+        now: () => 3000,
+        writerId: "owner",
+    });
+    owner.record("A");
+    owner.record("B");
+    owner.record("C");
+    const upward = createHistory({storage});
+    const downward = createHistory({storage});
+
+    assert.equal(upward.previous("up draft"), "C");
+    assert.equal(upward.previous("ignored"), "B");
+    assert.equal(downward.previous("down draft"), "C");
+    assert.equal(downward.previous("ignored"), "B");
+    assert.equal(owner.previous("owner draft"), "C");
+    assert.equal(owner.previous("ignored"), "B");
+    owner.removeCurrent();
+
+    const upwardUpdate = upward.synchronizeStorage();
+    assert.equal(upwardUpdate.changed, true);
+    assert.equal(upwardUpdate.currentRemoved, true);
+    assert.equal(upward.hasCurrent(), false);
+    assert.equal(upward.previous("stale editor text"), "A");
+    assert.equal(upward.next(), "C");
+    assert.equal(upward.next(), "up draft");
+
+    const downwardUpdate = downward.synchronizeStorage();
+    assert.equal(downwardUpdate.currentRemoved, true);
+    assert.equal(downward.next(), "C");
+    assert.equal(downward.next(), "down draft");
+});
+
+test("converges adjacent duplicate entries deterministically", () => {
+    const storage = createMemoryStorage({
+        [historyStorageKey]: JSON.stringify({
+            version: 2,
+            format: "entry-keys",
+        }),
+    });
+    setStoredHistoryEntry(storage, {
+        id: "r0000000000004000-00000000-first",
+        source: "same",
+        outcome: "cancelled",
+    });
+    setStoredHistoryEntry(storage, {
+        id: "r0000000000004000-00000000-second",
+        source: "same",
+        outcome: "timed out",
+    });
+
+    const first = createHistory({storage});
+    const second = createHistory({storage});
+    assert.deepEqual([...first.values()], ["same [cancelled]"]);
+    assert.deepEqual([...second.values()], ["same [cancelled]"]);
+    assert.equal(storedHistoryEntries(storage).length, 1);
+});
+
+test("retains the same newest entries across tabs", () => {
+    const storage = createMemoryStorage();
+    const first = createHistory({
+        storage,
+        maximumStoredEntries: 3,
+        now: () => 5000,
+        writerId: "first",
+    });
+    const second = createHistory({
+        storage,
+        maximumStoredEntries: 3,
+        now: () => 5000,
+        writerId: "second",
+    });
+
+    first.record("A");
+    second.record("B");
+    first.record("C");
+    second.record("D");
+    first.record("E");
+    second.synchronizeStorage();
+
+    assert.deepEqual([...first.values()], ["C", "D", "E"]);
+    assert.deepEqual([...second.values()], ["C", "D", "E"]);
+    assert.equal(storedHistoryEntries(storage).length, 3);
+    assert.deepEqual([
+        ...createHistory({
+            storage,
+            maximumStoredEntries: 3,
+        }).values(),
+    ], ["C", "D", "E"]);
+});
+
+test("clear and late storage events cannot restore old entries", () => {
+    const storage = createMemoryStorage();
+    const first = createHistory({storage, writerId: "first"});
+    first.record("A");
+    first.record("B");
+    const second = createHistory({storage, writerId: "second"});
+    const oldB = storedHistoryEntries(storage)
+        .find(entry => entry.source === "B");
+    const oldBKey = historyEntryPrefix + encodeURIComponent(oldB.id);
+    const oldBValue = storage.getItem(oldBKey);
+    assert.equal(second.previous("saved draft"), "B");
+
+    storage.clear();
+    const clearUpdate = second.applyStorageEvent(null, null);
+    assert.equal(clearUpdate.changed, true);
+    assert.equal(clearUpdate.currentRemoved, true);
+    assert.deepEqual([...second.values()], []);
+    assert.equal(second.next(), "saved draft");
+
+    const lateUpdate = second.applyStorageEvent(oldBKey, oldBValue);
+    assert.equal(lateUpdate.changed, false);
+    assert.equal(lateUpdate.currentRemoved, false);
+    assert.deepEqual([...second.values()], []);
+    first.synchronizeStorage();
+    assert.deepEqual([...first.values()], []);
+});
+
+test("orders new entries after the newest observed entry when the clock rolls back", () => {
+    const storage = createMemoryStorage({
+        [historyStorageKey]: JSON.stringify({
+            version: 2,
+            format: "entry-keys",
+        }),
+    });
+    const existing = {
+        id: "r0000000000010000-00000000-first",
+        source: "A",
+        outcome: "",
+    };
+    setStoredHistoryEntry(storage, existing);
+
+    const history = createHistory({
+        storage,
+        now: () => 1,
+        writerId: "rollback",
+    });
+    history.record("B");
+
+    const stored = storedHistoryEntries(storage);
+    assert.deepEqual(stored.map(entry => entry.source), ["A", "B"]);
+    assert.ok(stored[1].id > existing.id);
+});
+
+test("does not replace history from an unstable storage enumeration", () => {
+    const storage = createMemoryStorage();
+    const seed = createHistory({
+        storage,
+        now: () => 6000,
+        writerId: "seed",
+    });
+    seed.record("A");
+    seed.record("B");
+    const history = createHistory({storage});
+    assert.equal(history.previous("draft"), "B");
+
+    const ordinaryKey = storage.key.bind(storage);
+    let scan = 0;
+    storage.key = index => {
+        if (index === 0) {
+            ++scan;
+        }
+        const keys = storage.entries().map(([key]) => key);
+        const visible = scan % 2 === 0
+            ? keys.filter(key => !key.startsWith(historyEntryPrefix) ||
+                JSON.parse(storage.getItem(key)).source !== "B")
+            : keys;
+        return visible[index] ?? null;
+    };
+
+    const update = history.synchronizeStorage();
+    assert.equal(update.changed, false);
+    assert.equal(update.currentRemoved, false);
+    assert.equal(history.hasCurrent(), true);
+    assert.deepEqual([...history.values()], ["A", "B"]);
+
+    storage.key = ordinaryKey;
+    assert.equal(history.synchronizeStorage().changed, false);
+});
+
+test("ignores malformed legacy tombstones", () => {
+    const storage = createMemoryStorage({
+        [historyStorageKey]: JSON.stringify({
+            version: 1,
+            entries: [{source: "A", outcome: ""}],
+        }),
+    });
+    const migrated = createHistory({storage});
+    const [entry] = storedHistoryEntries(storage);
+    assert.deepEqual([...migrated.values()], ["A"]);
+
+    storage.setItem(
+        historyLegacyDeletionPrefix + encodeURIComponent(entry.id),
+        "not a valid tombstone",
+    );
+    assert.deepEqual([...createHistory({storage}).values()], ["A"]);
+});
+
 test("continues in memory when browser storage throws", () => {
     const blockedRead = createHistory({
         storage: {
+            get length() {
+                throw new Error("blocked");
+            },
+            key() {
+                throw new Error("blocked");
+            },
             getItem() {
                 throw new Error("blocked");
             },
             setItem() {
                 throw new Error("unexpected write");
+            },
+            removeItem() {
+                throw new Error("unexpected remove");
             },
         },
     });
@@ -708,11 +1044,20 @@ test("continues in memory when browser storage throws", () => {
 
     const fullStorage = createHistory({
         storage: {
+            get length() {
+                return 0;
+            },
+            key() {
+                return null;
+            },
             getItem() {
                 return null;
             },
             setItem() {
                 throw new Error("quota exceeded");
+            },
+            removeItem() {
+                throw new Error("unexpected remove");
             },
         },
     });
