@@ -35,6 +35,7 @@ const createCommandCompleter =
 test("completes unique Studio command prefixes", () => {
     const complete = createCommandCompleter([
         "abstract",
+        "compare",
         "define",
         "depends on",
         "depends-on",
@@ -53,6 +54,7 @@ test("completes unique Studio command prefixes", () => {
     ]);
 
     assert.equal(complete("abs"), "abstract");
+    assert.equal(complete("com"), "compare");
     assert.equal(complete("def"), "define");
     assert.equal(complete("depends o"), "depends on");
     assert.equal(complete("depends-"), "depends-on");
@@ -306,6 +308,18 @@ test("keeps inspect as a typed command without a UI button", () => {
     assert.doesNotMatch(
         html,
         /<button\b[^>]*\bid=["']inspect["']/i);
+});
+
+test("keeps compare as a typed command without a UI button", () => {
+    const html = readFileSync(
+        new URL("../web/index.html", import.meta.url), "utf8");
+
+    assert.match(
+        html,
+        /<code>compare \?symbol_list left_expression =\s+right_expression<\/code>/);
+    assert.doesNotMatch(
+        html,
+        /<button\b[^>]*\bid=["']compare["']/i);
 });
 
 test("completes unambiguous abstract command forms", () => {

@@ -124,9 +124,23 @@ The report displays its canonical spelling only when it differs from the
 submitted expression, then its sorted free symbols (or none) and direct named
 references in first-use order. Fundamental, pre-defined, captured, and live
 references are labeled; captured references include their immutable name@N
-revision. The final line identifies the next reducible subexpression, its head,
-and its function/argument location, or reports normal form when no reduction is
-available. The report contains no tree-size or depth statistics.
+revision. The final line identifies the minimal head prefix consumed by the next
+reduction, its head, and the evaluator-selected function/argument location, or
+reports normal form when no reduction is available. Trailing arguments not
+consumed by that reduction are omitted. The report contains no tree-size or
+depth statistics.
+
+Comparing Expressions
+
+compare ?<symbol_list> <left_expression> = <right_expression>
+Applies the listed lowercase symbols to both expressions, then normalizes each
+resulting expression with its own 0.5-second time limit. A question mark must
+immediately precede one or more symbols. If both sides finish with the same
+normal form, the command prints "both reduce to: <normal-form>". If both finish
+with different normal forms, it prints "left reduces to: <left-normal-form>" and
+then "right reduces to: <right-normal-form>" on the next line. If either side
+does not reach normal form within its own time limit, it prints "inconclusive".
+Compare ignores the stepping, colorize, and configured step-limit modes.
 
 Inspecting Dependencies
 

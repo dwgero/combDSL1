@@ -60,7 +60,7 @@
 
 namespace {
 
-constexpr std::string_view crepl_version = "2.10.0";
+constexpr std::string_view crepl_version = "2.10.2";
 
 [[nodiscard]] bool stream_is_terminal(std::FILE* stream) noexcept {
 #if defined(_WIN32)
@@ -185,9 +185,9 @@ struct completion_candidates {
     std::size_t size = 0;
 };
 
-constexpr std::array<std::string_view, 27> command_completion_candidates = {
-    "about", "abstract", "basis", "birds", "colorize", "define",
-    "depends", "depends-on", "dependson", "exit", "find", "help",
+constexpr std::array<std::string_view, 28> command_completion_candidates = {
+    "about", "abstract", "basis", "birds", "colorize", "compare",
+    "define", "depends", "depends-on", "dependson", "exit", "find", "help",
     "inspect", "key", "load", "quit", "references", "remove",
     "revisions", "save", "set", "show", "single", "step", "used",
     "used-by", "usedby"};
@@ -437,6 +437,10 @@ template<std::size_t Size>
                     abstract_question_completion_candidates)
                 : make_completion_candidates(
                     abstract_trace_completion_candidates);
+        }
+        if (words[0] == "compare") {
+            return make_completion_candidates(
+                abstract_question_completion_candidates);
         }
         if (words[0] == "define" || words[0] == "set") {
             return make_completion_candidates(
@@ -859,6 +863,7 @@ void print_help_brief(std::ostream& output) {
         "basis step [on | off]                 | names are converted to their stored expressions as a step\n"
         "birds                                 | display the pre-defined bird combinators\n"
         "colorize [on | off]                   | add colors to arguments while stepping\n"
+        "compare ?<symbols> <left> = <right>   | compare applied normal forms within time limits\n"
         "define [captured | live] <name> [<xyz...>] = <expression>\n"
         "                                      | compute and store combinators such that\n"
         "                                      | <name> [<xyz...>] reduces to <expression>\n"
@@ -1076,10 +1081,26 @@ void print_help_full(std::ostream& output) {
         "(or none) and direct named references in first-use order. Fundamental, "
         "pre-defined, captured, and live references are "
         "labeled; captured references include their immutable name@N revision. "
-        "The final line identifies the next reducible subexpression, its head, "
-        "and its function/argument location, or reports normal form when no "
-        "reduction is available. The report contains no tree-size or depth "
-        "statistics.");
+        "The final line identifies the minimal head prefix consumed by the "
+        "next reduction, its head, and the evaluator-selected "
+        "function/argument location, or reports normal form when no reduction "
+        "is available. Trailing arguments not consumed by that reduction are "
+        "omitted. The report contains no tree-size or depth statistics.");
+
+    output << "\nComparing Expressions\n\n"
+           << "compare ?<symbol_list> <left_expression> = <right_expression>\n";
+    write_wrapped_paragraph(
+        output,
+        "Applies the listed lowercase symbols to both expressions, then "
+        "normalizes each resulting expression with its own 0.5-second time "
+        "limit. A question mark must immediately precede one or more symbols. "
+        "If both sides finish with the same normal form, the command prints "
+        "\"both reduce to: <normal-form>\". If both finish with different "
+        "normal forms, it prints \"left reduces to: <left-normal-form>\" and "
+        "then \"right reduces to: <right-normal-form>\" on the next line. If "
+        "either side does not reach normal form within its own time limit, it "
+        "prints \"inconclusive\". Compare ignores the stepping, colorize, and "
+        "configured step-limit modes.");
 
     output << "\nInspecting Dependencies\n\n"
            << "dependson [all] <name>\n"

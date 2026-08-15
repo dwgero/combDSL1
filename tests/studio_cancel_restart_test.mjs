@@ -381,6 +381,8 @@ const createHarness = ({
 } = {}) => {
     FakeWorker.instances = [];
     const animationFrames = [];
+    const scheduledTimeouts = [];
+    const clearedTimeouts = [];
     const elements = new Map();
     const buttons = new Set([
         "single-step",
@@ -540,7 +542,9 @@ const createHarness = ({
 
     const context = vm.createContext({
         Blob,
-        clearTimeout: () => {},
+        clearTimeout: id => {
+            clearedTimeouts.push(id);
+        },
         console,
         document,
         encodeURIComponent,
@@ -553,7 +557,11 @@ const createHarness = ({
             animationFrames.push(callback);
             return animationFrames.length;
         },
-        setTimeout: () => 1,
+        setTimeout: (callback, delay) => {
+            const id = scheduledTimeouts.length + 1;
+            scheduledTimeouts.push({callback, delay, id});
+            return id;
+        },
         URL: HarnessURL,
         window,
         Worker: FakeWorker,
@@ -579,6 +587,7 @@ const createHarness = ({
     });
 
     return {
+        clearedTimeouts,
         dialogParts: id => informationalDialogParts.get(id),
         document,
         element: id => elements.get(id),
@@ -588,6 +597,7 @@ const createHarness = ({
                 frame();
             }
         },
+        scheduledTimeouts,
         pressEnter() {
             elements.get("source").dispatch("keydown", {
                 key: "Enter",
@@ -1154,6 +1164,33 @@ test("completes inspect as a typed Studio command", () => {
     assert.deepEqual(
         [source.selectionStart, source.selectionEnd],
         [8, 8],
+    );
+});
+
+test("completes compare and its required question mark in Studio", () => {
+    const harness = createHarness({
+        inputHistoryTools: createPopulatedHistoryTools([]),
+    });
+    const source = harness.element("source");
+    source.value = "com";
+    source.setSelectionRange(3, 3);
+
+    const commandEvent = dispatchSourceKey(source, "Tab");
+
+    assert.equal(commandEvent.defaultPrevented, true);
+    assert.equal(source.value, "compare ");
+    assert.deepEqual(
+        [source.selectionStart, source.selectionEnd],
+        [8, 8],
+    );
+
+    const questionEvent = dispatchSourceKey(source, "Tab");
+
+    assert.equal(questionEvent.defaultPrevented, true);
+    assert.equal(source.value, "compare ?");
+    assert.deepEqual(
+        [source.selectionStart, source.selectionEnd],
+        [9, 9],
     );
 });
 
@@ -2251,6 +2288,127 @@ test("routes inspect as compact display-only output", () => {
     assert.equal(outputEntry.textContent.includes("tree:"), false);
     assert.equal(outputEntry.textContent.includes("[show end]"), false);
     assert.equal(harness.element("source-history").textContent, command);
+});
+
+test("routes compare result forms as compact display-only output", () => {
+    const cases = [
+        ["compare ?x I = SKK", "both reduce to: x\n"],
+        [
+            "compare ?xy K = KI",
+            "left reduces to: x\nright reduces to: y\n",
+        ],
+        ["compare ?x YI = I", "inconclusive\n"],
+    ];
+
+    for (const [command, report] of cases) {
+        const harness = createHarness();
+        const source = harness.element("source");
+        const worker = harness.workers[0];
+
+        worker.send({type: "ready", setList: ""});
+        harness.flushAnimationFrames();
+        harness.element("single-step").click();
+        harness.element("basis-step").click();
+        harness.element("key-step").click();
+        harness.element("colorize").click();
+
+        source.value = command;
+        harness.pressEnter();
+        harness.flushAnimationFrames();
+        const inspection = worker.messages.find(
+            message => message.type === "inspect-definition");
+        assert.equal(inspection.source, command);
+        worker.send({
+            type: "definition-inspection-result",
+            id: inspection.id,
+            result: {
+                success: true,
+                definition: false,
+                displayOnly: true,
+                showAll: false,
+                find: false,
+                replacement: "",
+            },
+        });
+        harness.flushAnimationFrames();
+
+        const evaluation = worker.messages.find(
+            message => message.type === "evaluate");
+        assert.equal(evaluation.source, command);
+        assert.equal(evaluation.singleStep, false);
+        assert.equal(evaluation.keyStep, false);
+        assert.equal(evaluation.basisStep, false);
+        assert.equal(evaluation.colorize, false);
+
+        worker.send({
+            type: "result",
+            id: inspection.id,
+            result: {
+                success: true,
+                definition: false,
+                recoverWorker: false,
+                output: report,
+                error: "",
+                reductions: 0,
+            },
+        });
+
+        const outputEntry = harness.element("output").lastElementChild;
+        assert.equal(
+            outputEntry.textContent,
+            `${command}\n${report.trimEnd()}`,
+        );
+        assert.equal(outputEntry.dataset.compactAfter, "true");
+        assert.equal(
+            outputEntry.textContent.includes("[show end]"), false);
+        assert.equal(
+            harness.element("source-history").textContent, command);
+    }
+});
+
+test("gives compare a longer watchdog window on start and rearm", () => {
+    for (const [command, displayOnly, expectedDelay] of [
+        ["Ix", false, 1000],
+        ["compare ?x I = SKK", true, 1500],
+    ]) {
+        const harness = createHarness({
+            watchdog: realEvaluationWatchdog,
+        });
+        const source = harness.element("source");
+        const worker = harness.workers[0];
+
+        worker.send({type: "ready", setList: ""});
+        harness.flushAnimationFrames();
+        source.value = command;
+        harness.pressEnter();
+        harness.flushAnimationFrames();
+
+        const inspection = worker.messages.find(
+            message => message.type === "inspect-definition");
+        worker.send({
+            type: "definition-inspection-result",
+            id: inspection.id,
+            result: {
+                success: true,
+                definition: false,
+                displayOnly,
+                showAll: false,
+                find: false,
+                replacement: "",
+            },
+        });
+        harness.flushAnimationFrames();
+
+        const initialTimer = harness.scheduledTimeouts.at(-1);
+        assert.equal(initialTimer.delay, expectedDelay);
+
+        worker.send({type: "eval-started", id: inspection.id});
+        const rearmedTimer = harness.scheduledTimeouts.at(-1);
+        assert.notEqual(rearmedTimer.id, initialTimer.id);
+        assert.equal(rearmedTimer.delay, expectedDelay);
+        assert.equal(
+            harness.clearedTimeouts.includes(initialTimer.id), true);
+    }
 });
 
 test("routes literal-backslash inspect without escape-only canonical output",

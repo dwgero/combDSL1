@@ -521,7 +521,8 @@ then printed on a new line beginning with `= `. Thus,
 passes are omitted.
 
 The names `abstract`, `all`, `captured`, `live`, `step`, `steps`, `ministeps`,
-`limit`, `set`, `define`, `show`, `remove`, `revisions`, `inspect`, `references`,
+`limit`, `set`, `define`, `show`, `remove`, `revisions`, `inspect`, `compare`,
+`references`,
 `snapshot`, `dependson`, `depends-on`, `depends`, `on`, `usedby`, `used-by`,
 `used`, `by`, `path`, `between`, `and`, `single`, `key`, `basis`, `colorize`,
 `about`, `birds`, `find`, `help`, `load`, `save`, `quit`, and `exit` are
@@ -755,8 +756,9 @@ It displays, in order:
 - `free symbols: symbols`, sorted and deduplicated, or `free symbols: none`;
 - direct named `references` in first-use order, labeled `[fundamental]`,
   `[pre-defined]`, `[captured]`, or `[live]`; and
-- the next reducible subexpression, its head, and its
-  `function`/`argument` location, or `next reduction: none [normal form]`.
+- the minimal head prefix consumed by the next reduction, its head, and the
+  evaluator-selected `function`/`argument` location, or
+  `next reduction: none [normal form]`.
 
 Captured references use their explicit immutable `name@N` spelling, including
 retained removed revisions, while live references keep the unversioned name.
@@ -764,10 +766,36 @@ The command does not list references found only inside a named basis's stored
 definition. Canonical spelling can differ from the submitted text by removing
 redundant whitespace and parentheses, inserting required separators and
 parentheses, displaying captured revisions explicitly, and normalizing integer
-spelling. For example, `inspect S(Kx)(Iy)z` omits the unchanged canonical line
-and ends with `next reduction: S(Kx)(Iy)z [S at root]`; redundant parentheses
-in `inspect ((S(Kx))(Iy))z` cause it to include
+spelling. For example, `inspect S(Kx)(Iy)zwv` ends with
+`next reduction: S(Kx)(Iy)z [S at root]`: the trailing `w` and `v` are not
+consumed by that reduction and are omitted from its displayed prefix.
+Redundant parentheses in `inspect ((S(Kx))(Iy))z` cause it to include
 `canonical: S(Kx)(Iy)z`.
+
+At the start of a line, optionally preceded by whitespace,
+`compare ?symbol_list left_expression = right_expression` applies the listed
+lowercase symbols to both expressions and attempts to normalize each result.
+The required `?` immediately precedes one or more symbols. Each side receives
+its own 0.5-second normalization window. When both sides finish with the same
+normal form, the command prints:
+
+```text
+both reduce to: normal-form
+```
+
+When both finish with different normal forms, it prints:
+
+```text
+left reduces to: left-normal-form
+right reduces to: right-normal-form
+```
+
+If either side does not reach normal form within its own window, the result is
+`inconclusive`; a completed normal form on the other side does not prove that
+the expressions differ. For example, `compare ?x I = SKK` prints
+`both reduce to: x`, while `compare ?xy K = KI` prints `x` and `y` on the
+respective left and right result lines. Compare ignores the stepping,
+colorize, and configured step-limit modes.
 
 The display-only commands `dependson [all] name`, `depends-on [all] name`, and
 `depends on [all] name` list the named bases whose current stored definitions
@@ -892,7 +920,7 @@ expression produces no output, while malformed or empty lines throw
 The `crepl` executable applies `input_escape` to each line before passing it to
 `parse_eval`, so ordinary quoted words and backslashes can be entered directly.
 When standard output is a terminal, it first prints
-`Combinator Read-Eval-Print Loop, version 2.10.0`. Long evaluations display
+`Combinator Read-Eval-Print Loop, version 2.10.2`. Long evaluations display
 the accumulated step count every 1,000 reductions by overwriting one status
 line; the line is cleared before evaluation output is printed. Its interactive
 prompt is `>`. Interactive input uses GNU Readline, so previous nonempty
@@ -900,7 +928,8 @@ commands other than `exit` and `quit` can be recalled with Up Arrow or
 Ctrl-P, including commands from earlier interactive sessions. Press Tab to
 complete command words and supported
 options, including `captured` and `live` after `set` or `define`,
-`references captured`, `references live`, `inspect`, and `revisions`; whitespace already
+`references captured`, `references live`, `compare ?`, `inspect`, and
+`revisions`; whitespace already
 entered between words is preserved. Save and load each remember their own most
 recently successful filename across interactive sessions, initially
 `set_list.cmb`; Tab at either filename position restores
@@ -973,6 +1002,13 @@ using the format described above. Enter `inspect <expression>` to display its
 canonical spelling when it differs from the submitted expression, followed by
 free symbols, direct labeled references, and the next reduction, without
 evaluating it or expanding named bases.
+Enter `compare ?<symbol_list> <left_expression> = <right_expression>` to apply
+the symbols to both expressions and compare their normal forms. Each side has
+its own 0.5-second normalization window. Equal completed results are displayed
+as `both reduce to: <normal-form>`; different completed results are displayed
+on `left reduces to:` and `right reduces to:` lines. If either side does not
+finish within its window, the result is `inconclusive`. Compare ignores the
+stepping, colorize, and configured step-limit modes.
 Enter `dependson [all] <name>`, `depends-on [all] <name>`, or
 `depends on [all] <name>` to list the named bases whose definitions directly
 contain that name. Enter `usedby [all] <name>`, `used-by [all] <name>`, or
@@ -1262,19 +1298,21 @@ are displayed in red and do not themselves add a blank line after them. A
 successfully registered `set`, `define`, `remove`, or `references` command
 leaves only that submitted command line, with no output beneath it.
 The following result begins on the next line without an intervening blank line.
-A successful `show`, `revisions`, or `inspect` command is also followed
-without an intervening blank line.
+A successful `show`, `revisions`, `inspect`, or `compare` command is also
+followed without an intervening blank line.
 In Combinator Studio, a nonempty `show all` ends with a red `[show end]` line.
 A submitted combinator expression nevertheless always begins after a blank line
 when the Results area already contains output.
 Press Tab to complete a unique prefix for the `abstract`, `set`, `define`,
-`dependson`, `depends-on`, `depends on`, `find`, `inspect`, `references`,
+`compare`, `dependson`, `depends-on`, `depends on`, `find`, `inspect`,
+`references`,
 `remove`, `revisions`, `show`, `step limit`, `usedby`, `used-by`, or `used by`
 command,
 the dependency-query `all`, `path`, `between`, and `and` words, the `captured`
 or `live` definition modifier, and the `captured` or `live` references option;
 when no completion is available, Tab keeps its normal browser focus behavior.
 Studio accepts the same `abstract [steps | ministeps] ?...`,
+`compare ?... left = right`,
 `define [captured | live] name [symbols] = ...`,
 `set [captured | live] name = ...`, and
 `find [all] [num] ?...` forms as `crepl`. Find has a default limit of three.

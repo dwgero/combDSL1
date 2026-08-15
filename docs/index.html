@@ -388,9 +388,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             color: #c33;
         }
     </style>
-    <script src="./evaluation_watchdog.js?v=2.10.0" defer></script>
-    <script src="./input_history.js?v=2.10.0" defer></script>
-    <script src="./app.js?v=2.10.0" defer></script>
+    <script src="./evaluation_watchdog.js?v=2.10.2" defer></script>
+    <script src="./input_history.js?v=2.10.2" defer></script>
+    <script src="./app.js?v=2.10.2" defer></script>
 </head>
 <body>
     <main aria-labelledby="studio-title">
@@ -568,7 +568,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
         <h2 class="help-subheading">Adding Combinators</h2>
         <div class="help-section">
             Press <kbd>Tab</kbd> to complete a unique prefix for
-            <code>abstract</code>, <code>set</code>, <code>define</code>,
+            <code>abstract</code>, <code>compare</code>, <code>set</code>,
+            <code>define</code>,
             the dependency commands described below, <code>find</code>,
             <code>inspect</code>, <code>references</code>, <code>remove</code>,
             <code>revisions</code>, <code>show</code>, or
@@ -669,11 +670,30 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             symbols (or <code>none</code>) and direct named references in
             first-use order. Fundamental, pre-defined, captured, and live
             references are labeled; captured references include their immutable
-            <code>name@N</code> revision. The final line identifies the next
-            reducible subexpression, its head, and its
-            <code>function</code>/<code>argument</code> location, or reports
-            normal form when no reduction is available. The report contains no
-            tree-size or depth statistics.
+            <code>name@N</code> revision. The final line identifies the minimal
+            head prefix consumed by the next reduction, its head, and the
+            evaluator-selected <code>function</code>/<code>argument</code>
+            location, or reports normal form when no reduction is available.
+            Trailing arguments not consumed by that reduction are omitted. The
+            report contains no tree-size or depth statistics.
+        </div>
+        <h2 class="help-subheading">Comparing Expressions</h2>
+        <div class="help-section">
+            <code>compare ?symbol_list left_expression =
+                right_expression</code><br>
+            Applies the listed lowercase symbols to both expressions, then
+            attempts to normalize each resulting expression with its own
+            0.5-second time limit. The required <code>?</code> immediately
+            precedes one or more symbols. If both sides finish with the same
+            normal form, the result is
+            <code>both reduce to: normal-form</code>. If both finish with
+            different normal forms, the result is
+            <code>left reduces to: left-normal-form</code>, followed on the
+            next line by
+            <code>right reduces to: right-normal-form</code>. If either side
+            does not reach normal form within its own time limit, the result is
+            <code>inconclusive</code>. Compare ignores Single Step, Key Step,
+            Basis Step, Colorize, and the configured step limit.
         </div>
         <h2 class="help-subheading">Reference Mode</h2>
         <div class="help-section">
@@ -933,7 +953,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             data-dialog-initial-focus>About</h2>
         <div class="license-text">
             <!-- Keep this version and the app.js cache key in sync. -->
-            <p>Combinator Studio, version 2.10.0<br>
+            <p>Combinator Studio, version 2.10.2<br>
                 Part of the C++ Combinator DSL<br>
                 Copyright (C) 2026  David W. Gero</p>
             <p>This program is free software: you can redistribute it and/or modify

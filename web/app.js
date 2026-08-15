@@ -22,6 +22,15 @@
 (() => {
     const evaluationWatchdog =
         globalThis.combdslEvaluationWatchdog;
+    const compareWatchdogTimeoutMs =
+        evaluationWatchdog.timeoutMs + 500;
+    const isCompareCommand = value =>
+        /^[ \t\n\r\f\v]*compare(?:[ \t\n\r\f\v]|$)/.test(
+            String(value));
+    const evaluationWatchdogTimeoutFor = request =>
+        request?.compareCommand
+            ? compareWatchdogTimeoutMs
+            : evaluationWatchdog.timeoutMs;
     const inputHistoryTools = globalThis.combdslInputHistory;
     const inputHistoryStorage = (() => {
         try {
@@ -36,6 +45,7 @@
     const completeTopLevelCommand =
         inputHistoryTools.createCommandCompleter([
         "abstract",
+        "compare",
         "define",
         "depends on",
         "depends-on",
@@ -159,6 +169,8 @@
         }
         return undefined;
     };
+    const completeCompareCommand =
+        inputHistoryTools.createCommandCompleter(["compare ?"]);
     const findCommandCompleters = [
         "find ?",
         "find all ?",
@@ -189,6 +201,7 @@
             completeDependencyPathAnd(source) ??
             completeDefinitionReferenceMode(source) ??
             completeAbstractCommand(source) ??
+            completeCompareCommand(source) ??
             completeShowAll(source) ??
             completeReferencesCommand(source) ??
             completeStepLimitCommand(source) ??
@@ -486,7 +499,7 @@
             return;
         }
         armEvaluationWatchdog(
-            request, evaluationWatchdog.timeoutMs);
+            request, evaluationWatchdogTimeoutFor(request));
     };
 
     window.addEventListener("pageshow", () => {
@@ -730,7 +743,7 @@
                 request.evaluationProgress =
                     evaluationWatchdog.createProgressState();
                 armEvaluationWatchdog(
-                    request, evaluationWatchdog.timeoutMs);
+                    request, evaluationWatchdogTimeoutFor(request));
             }
             evaluationWorker.postMessage({
                 type: "evaluate",
@@ -938,7 +951,7 @@
                 request.evaluationProgress ??=
                     evaluationWatchdog.createProgressState();
                 armEvaluationWatchdog(
-                    request, evaluationWatchdog.timeoutMs);
+                    request, evaluationWatchdogTimeoutFor(request));
                 return;
             }
 
@@ -950,7 +963,7 @@
                 if (evaluationWatchdog.acceptProgress(
                     request.evaluationProgress, message)) {
                     armEvaluationWatchdog(
-                        request, evaluationWatchdog.timeoutMs);
+                        request, evaluationWatchdogTimeoutFor(request));
                     if (!request.singleStep &&
                         !request.keyStep) {
                         updateEvaluationProgress(
@@ -1346,6 +1359,7 @@
         activeRequest = {
             id: ++nextRequestId,
             source: startingExpression,
+            compareCommand: isCompareCommand(startingExpression),
             singleStep: singleStepEnabled,
             basisStep: basisStepEnabled,
             keyStep: keyStepEnabled,

@@ -528,6 +528,12 @@ private:
 
 volatile std::sig_atomic_t test_sigint_received = 0;
 
+struct compare_clock_override_reset {
+    ~compare_clock_override_reset() {
+        combdsl::detail::compare_clock_now_override = {};
+    }
+};
+
 void test_sigint_handler(int) {
     test_sigint_received = 1;
 }
@@ -2428,6 +2434,49 @@ int main() {
          "  K [fundamental]\n"
          "  I [fundamental]\n"
          "next reduction: S(Kx)(Iy)z [S at root]");
+    test("inspect limits a root S reduction to its saturated prefix",
+         parse("inspect S(Kx)(Iy)zwv"),
+         "free symbols: v w x y z\n"
+         "references:\n"
+         "  S [fundamental]\n"
+         "  K [fundamental]\n"
+         "  I [fundamental]\n"
+         "next reduction: S(Kx)(Iy)z [S at root]");
+    test("inspect limits a root K reduction to its saturated prefix",
+         parse("inspect Kxyzw"),
+         "free symbols: w x y z\n"
+         "references:\n"
+         "  K [fundamental]\n"
+         "next reduction: Kxy [K at root]");
+    test("inspect limits a root I reduction to its saturated prefix",
+         parse("inspect Ixy"),
+         "free symbols: x y\n"
+         "references:\n"
+         "  I [fundamental]\n"
+         "next reduction: Ix [I at root]");
+    test("inspect limits a root Y reduction to its saturated prefix",
+         parse("inspect Yxy"),
+         "free symbols: x y\n"
+         "references:\n"
+         "  Y [fundamental]\n"
+         "next reduction: Yx [Y at root]");
+    test("inspect includes an SK argument consumed by the shortcut",
+         parse("inspect SKx(SKy)z"),
+         "free symbols: x y z\n"
+         "references:\n"
+         "  S [fundamental]\n"
+         "  K [fundamental]\n"
+         "next reduction: SKx(SKy) [S at root]");
+    test("inspect leaves an unconsumed argument after an SK shortcut",
+         parse("inspect SKxyz"),
+         "free symbols: x y z\n"
+         "references:\n"
+         "  S [fundamental]\n"
+         "  K [fundamental]\n"
+         "next reduction: SKx [S at root]");
+    test("ordinary single step contracts the saturated S prefix",
+         single_step(parse("S(Kx)(Iy)zwv")),
+         "Kxz(Iyz)wv");
     test("inspect ignores leading command and delimiter whitespace",
          parse(" \tinspect   Ix"),
          "free symbols: x\n"
@@ -2508,6 +2557,10 @@ int main() {
                  "set InspectLive = 1 I"));
              static_cast<void>(parse(
                  "set InspectRemoved = 1 I"));
+             static_cast<void>(parse(
+                 "set InspectRedex = 2 K"));
+             static_cast<void>(parse(
+                 "set InspectZero = 0 I"));
              static_cast<void>(parse("remove InspectRemoved"));
              std::cout << "ready";
          },
@@ -2541,6 +2594,30 @@ int main() {
          "references:\n"
          "  InspectLive [live]\n"
          "next reduction: none [normal form]");
+    test("inspect limits a captured basis to its declared arity",
+         parse("inspect InspectRedex@1xyzw"),
+         "free symbols: w x y z\n"
+         "references:\n"
+         "  InspectRedex@1 [captured]\n"
+         "next reduction: InspectRedex@1xy "
+         "[InspectRedex@1 at root]");
+    test("inspect reports only a saturated arity-zero basis",
+         parse("inspect InspectZero@1xy"),
+         "free symbols: x y\n"
+         "references:\n"
+         "  InspectZero@1 [captured]\n"
+         "next reduction: InspectZero@1 "
+         "[InspectZero@1 at root]");
+    test("inspect uses current arity for a live basis",
+         [] {
+             static_cast<void>(parse("references live"));
+             parse("inspect InspectRedex xyzw").print_to(std::cout);
+             static_cast<void>(parse("references captured"));
+         },
+         "free symbols: w x y z\n"
+         "references:\n"
+         "  InspectRedex [live]\n"
+         "next reduction: InspectRedex xy [InspectRedex at root]");
     test("inspect selects a nested ordinary next reduction",
          parse("inspect x(Iy)"),
          "free symbols: x y\n"
@@ -2554,6 +2631,15 @@ int main() {
          "references:\n"
          "  I [fundamental]\n"
          "next reduction: Iy [I at function.argument]");
+    test("inspect limits a nested reduction without changing its path",
+         parse("inspect p(S(Kx)(Iy)zwv)q"),
+         "free symbols: p q v w x y z\n"
+         "references:\n"
+         "  S [fundamental]\n"
+         "  K [fundamental]\n"
+         "  I [fundamental]\n"
+         "next reduction: S(Kx)(Iy)z "
+         "[S at function.argument]");
     test("ordinary single step chooses inspect's nested redex",
          single_step(parse("x(Iy)")), "xy");
     test("inspect parser metadata is display only",
@@ -2585,6 +2671,175 @@ int main() {
          parse("inspectx"), "inspectx");
     test("inspect requires a command boundary",
          parse("inspect(Ix)"), "inspect(Ix)");
+
+    test("compare reports a shared normal form",
+         parse("compare ?x I = SKK"),
+         "both reduce to: x");
+    test("compare reports different normal forms without a heading",
+         parse("compare ?xy K = KI"),
+         "left reduces to: x\nright reduces to: y");
+    test("compare applies all symbols in their written order",
+         parse("compare ?xyz BCB = Q1"),
+         "both reduce to: x(zy)");
+    test("compare accepts grouped expressions and numeric values",
+         parse(" \tcompare ?x (K 00042) = K(42)\n"),
+         "both reduce to: 42");
+    test("compare follows captured and live named references",
+         [] {
+             static_cast<void>(parse("references captured"));
+             static_cast<void>(parse(
+                 "set CmpTarget = 1 I"));
+             static_cast<void>(parse(
+                 "set CmpCaptured = 1 CmpTarget"));
+             static_cast<void>(parse("references live"));
+             static_cast<void>(parse(
+                 "set CmpLive = 1 CmpTarget"));
+             static_cast<void>(parse(
+                 "set CmpTarget = 1 K"));
+             parse("compare ?xy CmpCaptured = I")
+                 .print_to(std::cout);
+             std::cout << '\n';
+             parse("compare ?xy CmpLive = K")
+                 .print_to(std::cout);
+             static_cast<void>(parse("references captured"));
+         },
+         "both reduce to: xy\nboth reduce to: x");
+    test("compare is display only and not a find or definition",
+         [] {
+             auto const parsed = combdsl::detail::parse_input(
+                 "compare ?x I = SKK");
+             std::cout << parsed.is_display_only
+                       << parsed.is_definition
+                       << parsed.is_show_all
+                       << parsed.is_find << ' ';
+             parsed.expression.print_to(std::cout);
+         },
+         "1000 both reduce to: x");
+    test("compare inspection parses but never normalizes",
+         [] {
+             std::size_t clock_calls = 0;
+             compare_clock_override_reset reset;
+             combdsl::detail::compare_clock_now_override = [&] {
+                 ++clock_calls;
+                 return combdsl::detail::compare_clock::time_point{};
+             };
+             auto const parsed = combdsl::detail::parse_input(
+                 "compare ?x I = SKK",
+                 combdsl::detail::parser_definition_mode::
+                     inspect_definitions);
+             std::cout << clock_calls << ' '
+                       << parsed.is_display_only << ' ';
+             parsed.expression.print_to(std::cout);
+         },
+         "0 1 SKK");
+    test("compare gives each completed side an independent window",
+         [] {
+             std::size_t clock_calls = 0;
+             compare_clock_override_reset reset;
+             auto const epoch =
+                 combdsl::detail::compare_clock::time_point{};
+             combdsl::detail::compare_clock_now_override = [&] {
+                 auto const value = epoch + std::chrono::milliseconds{
+                     static_cast<long long>(clock_calls * 100)};
+                 ++clock_calls;
+                 return value;
+             };
+             parse("compare ?x I = I").print_to(std::cout);
+             std::cout << ' ' << clock_calls;
+         },
+         "both reduce to: x 10");
+    test("compare accepts a normal form reached before its deadline",
+         [] {
+             std::size_t clock_calls = 0;
+             compare_clock_override_reset reset;
+             auto const epoch =
+                 combdsl::detail::compare_clock::time_point{};
+             combdsl::detail::compare_clock_now_override = [&] {
+                 ++clock_calls;
+                 return epoch + std::chrono::milliseconds{499};
+             };
+             auto result = combdsl::detail::normalize_for_compare_until(
+                 parse("Ix"),
+                 epoch + std::chrono::milliseconds{500});
+             if (result) {
+                 result->print_to(std::cout);
+             }
+             std::cout << ' ' << clock_calls;
+         },
+         "x 4");
+    test("compare times out with the exact inconclusive result",
+         [] {
+             std::size_t clock_calls = 0;
+             compare_clock_override_reset reset;
+             auto const epoch =
+                 combdsl::detail::compare_clock::time_point{};
+             combdsl::detail::compare_clock_now_override = [&] {
+                 auto const value = clock_calls == 0
+                     ? epoch
+                     : epoch + std::chrono::seconds{1};
+                 ++clock_calls;
+                 return value;
+             };
+             parse("compare ?x I = I").print_to(std::cout);
+             std::cout << ' ' << clock_calls;
+         },
+         "inconclusive 2");
+    test("compare counts named-basis expansion within its window",
+         [] {
+             static_cast<void>(parse(
+                 "set CmpClock = 1 I"));
+             std::size_t clock_calls = 0;
+             compare_clock_override_reset reset;
+             auto const epoch =
+                 combdsl::detail::compare_clock::time_point{};
+             combdsl::detail::compare_clock_now_override = [&] {
+                 ++clock_calls;
+                 return clock_calls < 5
+                     ? epoch
+                     : epoch + std::chrono::milliseconds{500};
+             };
+             auto result = combdsl::detail::normalize_for_compare_until(
+                 parse("CmpClock x"),
+                 epoch + std::chrono::milliseconds{500});
+             std::cout << (result ? "completed" : "timed out")
+                       << ' ' << clock_calls;
+         },
+         "timed out 5");
+    test("parse eval prints compare output exactly once",
+         [] { parse_eval("compare ?xy K = KI"); },
+         "left reduces to: x\nright reduces to: y\n");
+    test_parse_failure(
+        "compare requires a question mark", "compare", 7,
+        "expected '?'");
+    test_parse_failure(
+        "compare rejects a missing question mark",
+        "compare x I = I", 8, "expected '?'");
+    test_parse_failure(
+        "compare requires at least one symbol",
+        "compare ? I = I", 9, "expected at least one symbol");
+    test_parse_failure(
+        "compare rejects an uppercase symbol list",
+        "compare ?X I = I", 9, "expected at least one symbol");
+    test_parse_failure(
+        "compare requires whitespace after its symbol list",
+        "compare ?x=I", 10,
+        "expected whitespace after symbol list");
+    test_parse_failure(
+        "compare requires a left expression",
+        "compare ?x = I", 11, "expected a left expression");
+    test_parse_failure(
+        "compare requires an equals sign",
+        "compare ?x I", 12, "expected '='");
+    test_parse_failure(
+        "compare requires a right expression",
+        "compare ?x I =", 14, "expected a right expression");
+    test_parse_failure(
+        "compare rejects trailing unmatched input",
+        "compare ?x I = K)", 16, "unexpected ')'");
+    test("compare command prefixes remain ordinary input",
+         parse("comparex"), "comparex");
+    test("compare requires a command boundary",
+         parse("compare(I)"), "compareI");
 
     test_parse_failure(
         "remove requires a name", "remove ", 7,
@@ -4026,7 +4281,7 @@ int main() {
         "steps", "ministeps", "path", "between", "and", "set",
         "define", "show", "single", "key", "basis", "colorize",
         "about", "birds", "find", "help", "load", "remove", "save",
-        "inspect", "revisions",
+        "compare", "inspect", "revisions",
         "dependson", "depends-on", "depends", "on", "usedby",
         "used-by", "used", "by", "quit", "exit"};
     for (auto const name : reserved_definition_names) {

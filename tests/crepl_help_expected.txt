@@ -5,6 +5,7 @@ abstract [steps | ministeps] ?<symbols> = <expression>
 basis step [on | off]                 | names are converted to their stored expressions as a step
 birds                                 | display the pre-defined bird combinators
 colorize [on | off]                   | add colors to arguments while stepping
+compare ?<symbols> <left> = <right>   | compare applied normal forms within time limits
 define [captured | live] <name> [<xyz...>] = <expression>
                                       | compute and store combinators such that
                                       | <name> [<xyz...>] reduces to <expression>
@@ -39,6 +40,7 @@ abstract [steps | ministeps] ?<symbols> = <expression>
 basis step [on | off]                 | names are converted to their stored expressions as a step
 birds                                 | display the pre-defined bird combinators
 colorize [on | off]                   | add colors to arguments while stepping
+compare ?<symbols> <left> = <right>   | compare applied normal forms within time limits
 define [captured | live] <name> [<xyz...>] = <expression>
                                       | compute and store combinators such that
                                       | <name> [<xyz...>] reduces to <expression>

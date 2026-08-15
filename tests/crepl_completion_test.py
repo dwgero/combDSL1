@@ -256,6 +256,26 @@ def main():
             raise AssertionError(
                 f"inspect must not show tree statistics; received {output!r}")
 
+        write_all(master, b"com\t\tx I = SKK\n")
+        output = reader.read_until(b">")
+        require_completed_line(output, b"compare ?x I = SKK\n")
+        normalized_output = normalized(output)
+        if b"both reduce to: x\n" not in normalized_output:
+            raise AssertionError(
+                f"expected matching compare result; received {output!r}")
+
+        write_all(master, b"compare ?xy K = KI\n")
+        output = reader.read_until(b">")
+        require_completed_line(output, b"compare ?xy K = KI\n")
+        normalized_output = normalized(output)
+        expected_difference = (
+            b"left reduces to: x\n"
+            b"right reduces to: y\n"
+        )
+        if expected_difference not in normalized_output:
+            raise AssertionError(
+                f"expected different compare results; received {output!r}")
+
         write_all(master, b"inspect \\\n")
         output = reader.read_until(b">")
         require_completed_line(output, b"inspect \\\n")

@@ -23,6 +23,7 @@
 #include <atomic>
 #include <bit>
 #include <charconv>
+#include <chrono>
 #include <cmath>
 #include <concepts>
 #include <csignal>
@@ -2899,6 +2900,7 @@ struct redex_path_frame {
 struct located_redex {
     quoted_expression expression;
     std::vector<redex_path_frame> path;
+    std::size_t consumed_argument_count = 0;
 };
 
 [[nodiscard]] inline std::optional<quoted_expression>
@@ -2913,6 +2915,11 @@ has_next_redex(quoted_expression const& expression,
 [[nodiscard]] inline bool
 has_redex_at_head(quoted_expression const& expression,
                   reduction_options options);
+
+[[nodiscard]] inline std::optional<std::size_t>
+head_redex_consumed_argument_count(
+    quoted_expression const& expression,
+    reduction_options options);
 
 [[nodiscard]] inline quoted_expression
 restore_basis_arguments(quoted_expression const& expression) {
@@ -3397,8 +3404,14 @@ locate_next_head_redex(quoted_expression const& expression,
     auto current = expression;
 
     for (;;) {
-        if (has_redex_at_head(current, options)) {
-            return located_redex{current, std::move(path)};
+        if (auto const consumed_argument_count =
+                head_redex_consumed_argument_count(
+                    current, options)) {
+            return located_redex{
+                current,
+                std::move(path),
+                *consumed_argument_count,
+            };
         }
 
         auto const& root = quoted_access::root(current);
@@ -3779,14 +3792,26 @@ has_pending_sk_redex(
 has_redex_at_head(
     quoted_expression const& expression,
     reduction_options options) {
+    return head_redex_consumed_argument_count(
+               expression, options).has_value();
+}
+
+[[nodiscard]] inline std::optional<std::size_t>
+head_redex_consumed_argument_count(
+    quoted_expression const& expression,
+    reduction_options options) {
     auto head = expression;
     auto first_argument = expression;
+    auto second_argument = expression;
+    auto third_argument = expression;
     std::size_t argument_count = 0;
     while (quoted_access::root(head)->kind() ==
            quoted_node_kind::application) {
         auto const& application =
             static_cast<quoted_application_node const&>(
                 *quoted_access::root(head));
+        third_argument = std::move(second_argument);
+        second_argument = std::move(first_argument);
         first_argument = application.argument();
         ++argument_count;
         head = application.function();
@@ -3794,25 +3819,54 @@ has_redex_at_head(
 
     switch (quoted_access::root(head)->kind()) {
     case quoted_node_kind::identity:
-        return argument_count >= 1;
+        if (argument_count >= 1) {
+            return 1;
+        }
+        break;
     case quoted_node_kind::constant:
-        return argument_count >= 2;
-    case quoted_node_kind::substitution:
-        return argument_count >= 3 ||
-               (argument_count >= 2 &&
-                quoted_access::root(first_argument)->kind() ==
-                    quoted_node_kind::constant);
+        if (argument_count >= 2) {
+            return 2;
+        }
+        break;
+    case quoted_node_kind::substitution: {
+        auto const reduces_partial_sk =
+            argument_count >= 2 &&
+            quoted_access::root(first_argument)->kind() ==
+                quoted_node_kind::constant;
+        if (reduces_partial_sk) {
+            return argument_count >= 3 &&
+                    is_quoted_sk_application(third_argument)
+                ? std::size_t{3}
+                : std::size_t{2};
+        }
+        if (argument_count >= 3) {
+            return 3;
+        }
+        break;
+    }
     case quoted_node_kind::fixed_point:
-        return options.reduce_fixed_point && argument_count >= 1;
+        if (options.reduce_fixed_point && argument_count >= 1) {
+            return 1;
+        }
+        break;
     case quoted_node_kind::recursive_y:
-        return options.reduce_recursive_y;
-    case quoted_node_kind::basis:
-        return argument_count >=
+        if (options.reduce_recursive_y) {
+            return 0;
+        }
+        break;
+    case quoted_node_kind::basis: {
+        auto const arity =
             static_cast<quoted_basis_node_base const&>(
                 *quoted_access::root(head)).arity();
-    default:
-        return false;
+        if (argument_count >= arity) {
+            return arity;
+        }
+        break;
     }
+    default:
+        break;
+    }
+    return std::nullopt;
 }
 
 [[nodiscard]] inline bool
@@ -3838,7 +3892,30 @@ locate_next_parsed_redex(quoted_expression const& expression,
     if (quoted_access::root(expression)->contains_live_binding()) {
         transaction_lock.lock();
     }
-    return locate_next_head_redex(expression, options);
+    auto selected = locate_next_head_redex(expression, options);
+    if (!selected) {
+        return std::nullopt;
+    }
+
+    std::size_t argument_count = 0;
+    auto head = selected->expression;
+    while (quoted_access::root(head)->kind() ==
+           quoted_node_kind::application) {
+        auto const& application =
+            static_cast<quoted_application_node const&>(
+                *quoted_access::root(head));
+        ++argument_count;
+        head = application.function();
+    }
+
+    while (argument_count > selected->consumed_argument_count) {
+        auto const& application =
+            static_cast<quoted_application_node const&>(
+                *quoted_access::root(selected->expression));
+        selected->expression = application.function();
+        --argument_count;
+    }
+    return selected;
 }
 
 [[nodiscard]] inline quoted_expression
@@ -6266,6 +6343,50 @@ find_combinator_matches(
 
 namespace detail {
 
+using compare_clock = std::chrono::steady_clock;
+
+inline thread_local std::function<compare_clock::time_point()>
+    compare_clock_now_override;
+
+[[nodiscard]] inline compare_clock::time_point
+compare_clock_now() {
+    if (compare_clock_now_override) {
+        return compare_clock_now_override();
+    }
+    return compare_clock::now();
+}
+
+inline constexpr auto compare_normalization_window =
+    std::chrono::milliseconds{500};
+
+[[nodiscard]] inline std::optional<quoted_expression>
+normalize_for_compare_until(
+    quoted_expression expression,
+    compare_clock::time_point deadline) {
+    reduction_options const options{.basis_step = true};
+    for (;;) {
+        if (compare_clock_now() >= deadline) {
+            return std::nullopt;
+        }
+        auto reduced = reduce_next_redex(expression, options);
+        if (compare_clock_now() >= deadline) {
+            return std::nullopt;
+        }
+        if (!reduced) {
+            return expression;
+        }
+        expression = std::move(*reduced);
+    }
+}
+
+[[nodiscard]] inline std::optional<quoted_expression>
+normalize_for_compare(quoted_expression expression) {
+    auto const deadline =
+        compare_clock_now() + compare_normalization_window;
+    return normalize_for_compare_until(
+        std::move(expression), deadline);
+}
+
 enum class parser_definition_mode {
     register_definitions,
     inspect_definitions
@@ -6325,6 +6446,8 @@ public:
             begins_command("revisions");
         auto const is_inspect_command =
             begins_command("inspect");
+        auto const is_compare_command =
+            begins_command("compare");
         auto const is_find_command =
             begins_command("find");
         auto const is_abstract_command =
@@ -6357,19 +6480,21 @@ public:
                                     ? parse_revisions_command()
                                     : is_inspect_command
                                         ? parse_inspect_command()
-                                        : is_find_command
-                                            ? parse_find_command()
-                                            : is_abstract_command
-                                                ? parse_abstract_command()
-                                                : is_depended_on_by_command
-                                                    ? parse_dependency_command(
-                                                          parser_dependency_direction::
-                                                              depended_on_by)
-                                                    : is_uses_command
+                                        : is_compare_command
+                                            ? parse_compare_command()
+                                            : is_find_command
+                                                ? parse_find_command()
+                                                : is_abstract_command
+                                                    ? parse_abstract_command()
+                                                    : is_depended_on_by_command
                                                         ? parse_dependency_command(
                                                               parser_dependency_direction::
-                                                                  uses)
-                                                        : parse_expression();
+                                                                  depended_on_by)
+                                                        : is_uses_command
+                                                            ? parse_dependency_command(
+                                                                  parser_dependency_direction::
+                                                                      uses)
+                                                            : parse_expression();
         skip_whitespace();
         if (!at_end()) {
             fail("unexpected ')'");
@@ -6378,7 +6503,7 @@ public:
             std::move(result),
             is_definition,
             is_show_command || is_revisions_command ||
-                is_inspect_command ||
+                is_inspect_command || is_compare_command ||
                 is_find_command ||
                 is_abstract_command ||
                 is_depended_on_by_command || is_uses_command,
@@ -6612,6 +6737,85 @@ private:
                    << " at "
                    << inspect_redex_location(selected->path)
                    << ']';
+        }
+        return quote(std::move(output).str());
+    }
+
+    [[nodiscard]] quoted_expression parse_compare_command() {
+        std::lock_guard transaction_lock(
+            parser_definition_transaction_mutex());
+
+        constexpr std::size_t keyword_size = 7;
+        position_ += keyword_size;
+        skip_whitespace();
+
+        if (at_end() || current() != '?') {
+            fail("expected '?'");
+        }
+        ++position_;
+
+        std::string symbols;
+        while (!at_end() &&
+               current() >= 'a' && current() <= 'z') {
+            symbols.push_back(current());
+            ++position_;
+        }
+        if (symbols.empty()) {
+            fail("expected at least one symbol");
+        }
+        if (at_end()) {
+            fail("expected a left expression");
+        }
+        if (!is_whitespace(current())) {
+            fail("expected whitespace after symbol list");
+        }
+        skip_whitespace();
+        if (at_end() || current() == '=') {
+            fail("expected a left expression");
+        }
+
+        auto left = parse_expression(true);
+        skip_whitespace();
+        if (at_end() || current() != '=') {
+            fail("expected '='");
+        }
+        ++position_;
+        skip_whitespace();
+        if (at_end()) {
+            fail("expected a right expression");
+        }
+        auto right = parse_expression();
+
+        if (definition_mode_ ==
+            parser_definition_mode::inspect_definitions) {
+            return right;
+        }
+
+        for (auto const symbol_name : symbols) {
+            auto argument = quote(symbol(symbol_name));
+            left = left(argument);
+            right = right(std::move(argument));
+        }
+
+        auto left_normal = normalize_for_compare(std::move(left));
+        if (!left_normal) {
+            return quote(std::string("inconclusive"));
+        }
+        auto right_normal = normalize_for_compare(std::move(right));
+        if (!right_normal) {
+            return quote(std::string("inconclusive"));
+        }
+
+        std::ostringstream output;
+        if (same_parser_definition_expression(
+                *left_normal, *right_normal)) {
+            output << "both reduce to: ";
+            left_normal->print_to(output);
+        } else {
+            output << "left reduces to: ";
+            left_normal->print_to(output);
+            output << "\nright reduces to: ";
+            right_normal->print_to(output);
         }
         return quote(std::move(output).str());
     }
@@ -8220,6 +8424,7 @@ private:
             name == "references" ||
             name == "revisions" ||
             name == "inspect" ||
+            name == "compare" ||
             name == "snapshot" ||
             name == "set" ||
             name == "define" ||
@@ -8303,12 +8508,14 @@ private:
         return arity;
     }
 
-    [[nodiscard]] quoted_expression parse_expression() {
+    [[nodiscard]] quoted_expression parse_expression(
+        bool stop_at_equals = false) {
         std::optional<quoted_expression> result;
         bool previous_atom_requires_token_separator = false;
         skip_whitespace();
 
-        while (!at_end() && current() != ')') {
+        while (!at_end() && current() != ')' &&
+               (!stop_at_equals || current() != '=')) {
             reject_spaced_unregistered_lowercase_name(
                 result.has_value(),
                 previous_atom_requires_token_separator);
@@ -8998,8 +9205,10 @@ private:
         begins_command("set") || begins_command("define") ||
         begins_command("remove") || begins_command("references") ||
         begins_command("snapshot");
+    auto const requires_registry_transaction =
+        is_definition || begins_command("compare");
 
-    if (is_definition) {
+    if (requires_registry_transaction) {
         std::lock_guard transaction_lock(
             parser_definition_transaction_mutex());
         return quoted_expression_parser(
