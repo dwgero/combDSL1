@@ -2314,6 +2314,169 @@ int main() {
          parse("show C@1"), "arity:3 S(S(KB)S)(KK)");
     test("ordinary pre-defined bird printing remains unqualified",
          parse("C"), "C");
+    test("set registers a Cardinal-star alias for direct printing",
+         parse("set PrintCstar = 4 C*"), "PrintCstar");
+    test("a current captured user name evaluates unversioned with its boundary",
+         [] { parse_eval("PrintCstar xy"); }, "PrintCstar xy\n");
+    test("a current captured user name output round trips",
+         [] {
+             auto const expression = parse("PrintCstar xy");
+             std::ostringstream rendered;
+             expression.print_to(rendered);
+             auto const reparsed = parse(rendered.str());
+             std::cout
+                 << combdsl::detail::same_parser_definition_expression(
+                        expression, reparsed)
+                 << ' ' << rendered.str();
+         },
+         "1 PrintCstar xy");
+    test("set registers a punctuation-ending captured name",
+         parse("set PrintTail+ = 1 I"), "PrintTail+");
+    test("a current captured punctuation name stays compact and unversioned",
+         [] {
+             auto const expression = parse("Cstar PrintTail+ Vstar");
+             std::ostringstream rendered;
+             expression.print_to(rendered);
+             auto const reparsed = parse(rendered.str());
+             std::cout
+                 << combdsl::detail::same_parser_definition_expression(
+                        expression, reparsed)
+                 << ' ' << rendered.str();
+         },
+         "1 CstarPrintTail+Vstar");
+    test("set registers a digit-ending captured name",
+         parse("set PrintDigit1 = 1 I"), "PrintDigit1");
+    test("a current captured digit name keeps its asymmetric boundaries",
+         [] {
+             auto const expression = parse(
+                 "Cstar PrintDigit1 x Vstar");
+             std::ostringstream rendered;
+             expression.print_to(rendered);
+             auto const reparsed = parse(rendered.str());
+             std::cout
+                 << combdsl::detail::same_parser_definition_expression(
+                        expression, reparsed)
+                 << ' ' << rendered.str();
+         },
+         "1 CstarPrintDigit1x Vstar");
+    test("inspect still exposes a captured current revision",
+         parse("inspect PrintCstar xy"),
+         "canonical: PrintCstar@1xy\n"
+         "free symbols: x y\n"
+         "references:\n"
+         "  PrintCstar@1 [captured]\n"
+         "next reduction: none [normal form]");
+    test("an explicit user revision remains qualified and compact",
+         parse("PrintCstar@1xy"), "PrintCstar@1xy");
+    test("an explicit user revision output round trips",
+         [] {
+             auto const expression = parse("PrintCstar@1xy");
+             std::ostringstream rendered;
+             expression.print_to(rendered);
+             auto const reparsed = parse(rendered.str());
+             std::cout
+                 << combdsl::detail::same_parser_definition_expression(
+                        expression, reparsed)
+                 << ' ' << rendered.str();
+         },
+         "1 PrintCstar@1xy");
+    test("a stored captured reference remains revision-qualified",
+         parse("set captured PrintCap = 2 PrintCstar"),
+         "PrintCap");
+    test("show keeps the stored captured revision",
+         parse("show PrintCap"),
+         "arity:2 PrintCstar@1");
+    test("a stored live reference remains unversioned",
+         parse("set live PrintLive = 2 PrintCstar"),
+         "PrintLive");
+    test("show keeps the stored live name",
+         parse("show PrintLive"),
+         "arity:2 PrintCstar");
+    test("live mode is enabled for direct-print coverage",
+         parse("references live"), "references live");
+    test("a current live user name evaluates unversioned with its boundary",
+         [] { parse_eval("PrintCstar xy"); }, "PrintCstar xy\n");
+    test("a current live user name output round trips",
+         [] {
+             auto const expression = parse("PrintCstar xy");
+             std::ostringstream rendered;
+             expression.print_to(rendered);
+             auto const reparsed = parse(rendered.str());
+             std::cout
+                 << combdsl::detail::same_parser_definition_expression(
+                        expression, reparsed)
+                 << ' ' << rendered.str();
+         },
+         "1 PrintCstar xy");
+    test("captured mode is restored after direct-print coverage",
+         parse("references captured"), "references captured");
+    test("redefining the Cardinal-star alias creates a current revision",
+         parse("set PrintCstar = 4 C**"), "PrintCstar");
+    test("the redefined current name evaluates unversioned and spaced",
+         [] { parse_eval("PrintCstar xy"); }, "PrintCstar xy\n");
+    test("the old explicit revision remains qualified after redefinition",
+         parse("PrintCstar@1xy"), "PrintCstar@1xy");
+    test("the explicit current revision remains qualified after redefinition",
+         parse("PrintCstar@2xy"), "PrintCstar@2xy");
+    test("expanding a captured holder exposes its old exact revision",
+         single_step(parse("PrintCap x y"), true),
+         "PrintCstar@1xy");
+    test("expanding a live holder exposes the current unversioned name",
+         single_step(parse("PrintLive x y"), true),
+         "PrintCstar xy");
+    test("the Cardinal-star alias can be removed after redefinition",
+         parse("remove PrintCstar"), "PrintCstar");
+    test("the first removed revision still prints and round trips",
+         [] {
+             auto const expression = parse("PrintCstar@1xy");
+             std::ostringstream rendered;
+             expression.print_to(rendered);
+             auto const reparsed = parse(rendered.str());
+             std::cout
+                 << combdsl::detail::same_parser_definition_expression(
+                        expression, reparsed)
+                 << ' ' << rendered.str();
+         },
+         "1 PrintCstar@1xy");
+    test("the latest removed revision still prints and round trips",
+         [] {
+             auto const expression = parse("PrintCstar@2xy");
+             std::ostringstream rendered;
+             expression.print_to(rendered);
+             auto const reparsed = parse(rendered.str());
+             std::cout
+                 << combdsl::detail::same_parser_definition_expression(
+                        expression, reparsed)
+                 << ' ' << rendered.str();
+         },
+         "1 PrintCstar@2xy");
+    test("a retained plain expression qualifies a stale or removed target",
+         [] {
+             static_cast<void>(parse("set PrintStale = 2 K"));
+             auto const first = parse("PrintStale x");
+             std::ostringstream current;
+             first.print_to(current);
+
+             static_cast<void>(parse("set PrintStale = 2 S"));
+             std::ostringstream stale;
+             first.print_to(stale);
+             auto const reparsed_stale = parse(stale.str());
+
+             auto const second = parse("PrintStale x");
+             static_cast<void>(parse("remove PrintStale"));
+             std::ostringstream removed;
+             second.print_to(removed);
+             auto const reparsed_removed = parse(removed.str());
+
+             std::cout << current.str() << ' '
+                       << combdsl::detail::same_parser_definition_expression(
+                              first, reparsed_stale)
+                       << ' ' << stale.str() << ' '
+                       << combdsl::detail::same_parser_definition_expression(
+                              second, reparsed_removed)
+                       << ' ' << removed.str();
+         },
+         "PrintStale x 1 PrintStale@1x 1 PrintStale@2x");
     test_parse_failure(
         "fundamental names do not have versions",
         "show S@1", 5,
@@ -3144,7 +3307,7 @@ int main() {
     test("define infers arity from its symbols",
          parse("define Def3 xyz = xyz"), "Def3");
     test("define basis remains named while undersaturated",
-         single_step(parse("Def3 a b")), "Def3@1ab");
+         single_step(parse("Def3 a b")), "Def3ab");
     test("basis step exposes a define basis body",
          single_step(parse("Def3 a b c"), true), "Iabc");
     test("define basis contracts when saturated",
@@ -3818,7 +3981,7 @@ int main() {
     test("set accepts a unary arity",
          parse("set SetI1 = 1 I"), "SetI1");
     test("unary set basis remains named while undersaturated",
-         single_step(parse("SetI1")), "SetI1@1");
+         single_step(parse("SetI1")), "SetI1");
     test("unary set basis contracts when saturated",
          single_step(parse("SetI1 x")), "x");
     test("basis step exposes a unary set basis definition",
@@ -3826,7 +3989,7 @@ int main() {
     test("set accepts a binary arity",
          parse("set SetK2 = 2 K"), "SetK2");
     test("binary set basis remains named while undersaturated",
-         single_step(parse("SetK2 x")), "SetK2@1x");
+         single_step(parse("SetK2 x")), "SetK2x");
     test("binary set basis contracts when saturated",
          single_step(parse("SetK2 x y")), "x");
     test("binary set basis preserves trailing arguments",
@@ -8699,9 +8862,9 @@ int main() {
              static_cast<void>(parse("references captured"));
          },
          "1 CstarUserTail+Vstar");
-    test("a captured punctuation-ending basis round trips on both sides",
+    test("an explicit punctuation-ending revision round trips on both sides",
          [] {
-             auto const spaced = parse("Cstar UserTail+ Vstar");
+             auto const spaced = parse("Cstar UserTail+@1 Vstar");
              std::ostringstream rendered;
              spaced.print_to(rendered);
              auto const reparsed = parse(rendered.str());
@@ -8769,11 +8932,11 @@ int main() {
     static_cast<void>(basis("xLeftDigit1", 0, I));
     test("exact longer digit-ending basis wins compact parsing",
          single_step(parse("xLeftDigit1")), "I");
-    test("ordinary captured revision suffix keeps its leading separator",
+    test("ordinary explicit revision suffix keeps its leading separator",
          [] {
              static_cast<void>(parse("references captured"));
              static_cast<void>(parse("set PlainCaptured = 1 I"));
-             auto const spaced = parse("K PlainCaptured");
+             auto const spaced = parse("K PlainCaptured@1");
              std::ostringstream rendered;
              spaced.print_to(rendered);
              auto const reparsed = parse(rendered.str());
@@ -8812,9 +8975,9 @@ int main() {
              static_cast<void>(parse("references captured"));
          },
          "1 CstarUserDigit1 Vstar");
-    test("a captured digit-ending basis round trips without a space before",
+    test("an explicit digit-ending revision round trips without a space before",
          [] {
-             auto const spaced = parse("Cstar UserDigit1 x Vstar");
+             auto const spaced = parse("Cstar UserDigit1@1 x Vstar");
              std::ostringstream rendered;
              spaced.print_to(rendered);
              auto const reparsed = parse(rendered.str());
@@ -8824,9 +8987,9 @@ int main() {
                  << ' ' << rendered.str();
          },
          "1 CstarUserDigit1@1x Vstar");
-    test("a captured digit-ending basis keeps a space after it",
+    test("an explicit digit-ending revision keeps a space after it",
          [] {
-             auto const spaced = parse("Cstar UserDigit1 Vstar");
+             auto const spaced = parse("Cstar UserDigit1@1 Vstar");
              std::ostringstream rendered;
              spaced.print_to(rendered);
              auto const reparsed = parse(rendered.str());

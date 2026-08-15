@@ -703,14 +703,17 @@ Removing and later adding a name again continues its existing version sequence;
 the earlier revisions remain available.
 
 The typed command `references <captured | live>` controls how subsequent
-unqualified name references are parsed when a `set` or `define` command has no
-`captured` or `live` modifier. References start captured. In captured mode, an
-unqualified reference such as `foo` captures the current immutable revision of
-`foo`. In live mode, an
-unqualified `foo` is a live reference that follows later redefinitions of
-`foo`. An explicit reference such as `foo@2` is always frozen to that exact
-revision, regardless of the current mode. Changing the mode does not alter
-references that were parsed earlier. The command is silent under the
+unqualified name references are bound. A `captured` or `live` modifier on
+`set` or `define` overrides that mode for its command. References start
+captured. In captured mode, an unqualified current user name in a plain
+expression captures the current immutable revision but retains its unversioned
+spelling when printed while that revision remains current. If a parsed
+expression is retained after the name is redefined or removed, it prints its
+exact `name@N` revision instead. Captured references stored by `set` or
+`define`, shown by `inspect`, or explicitly written as `name@N` also print with
+the immutable `name@N` spelling. In live mode, an unqualified name remains
+live, prints without a revision, and follows later redefinitions. Changing the
+mode does not alter references that were parsed earlier. The command is silent under the
 evaluation and stepping entry points, but it is a state-changing command and
 is recorded in `set_list()` according to the journal compaction rules below.
 For compatibility with older saved journals, the legacy `snapshot on` and
@@ -949,7 +952,7 @@ expression produces no output, while malformed or empty lines throw
 The `crepl` executable applies `input_escape` to each line before passing it to
 `parse_eval`, so ordinary quoted words and backslashes can be entered directly.
 When standard output is a terminal, it first prints
-`Combinator Read-Eval-Print Loop, version 2.10.5`. Long evaluations display
+`Combinator Read-Eval-Print Loop, version 2.10.6`. Long evaluations display
 the accumulated step count every 1,000 reductions by overwriting one status
 line; the line is cleared before evaluation output is printed. Its interactive
 prompt is `>`. Interactive input uses GNU Readline, so previous nonempty

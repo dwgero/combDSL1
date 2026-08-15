@@ -60,7 +60,7 @@
 
 namespace {
 
-constexpr std::string_view crepl_version = "2.10.5";
+constexpr std::string_view crepl_version = "2.10.6";
 
 [[nodiscard]] bool stream_is_terminal(std::FILE* stream) noexcept {
 #if defined(_WIN32)
@@ -1033,13 +1033,17 @@ void print_help_full(std::ostream& output) {
     write_wrapped_paragraph(
         output,
         "Controls how unqualified user-defined names in subsequently parsed "
-        "input are stored when set or define has no captured/live modifier. "
-        "References are captured initially. In captured mode, each reference "
-        "captures the current immutable revision and prints as \"name@N\". "
-        "In live mode, each reference remains live, prints as \"name\", and "
-        "follows later redefinitions. Each changed \"set\" or \"define\" "
-        "creates the next revision. An explicit \"name@N\" reference is "
-        "always immutable regardless of the mode. Before the first saved "
+        "input are bound. A captured/live modifier on set or define overrides "
+        "the mode for that command. References are captured initially. In "
+        "captured mode, an unqualified current user name in a plain expression "
+        "captures the current immutable revision but retains its unversioned "
+        "spelling while that revision remains current. If the parsed expression "
+        "is retained after redefinition or removal, it prints the exact name@N "
+        "revision. Captured references stored by set or define, shown by inspect, "
+        "or explicitly written as name@N also print with the immutable name@N "
+        "spelling. In live mode, each unqualified reference remains live, prints "
+        "as name, and follows later redefinitions. Each changed set or define "
+        "creates the next revision. Before the first saved "
         "set, define, or remove, only the last explicit \"references\" command is "
         "saved. If there is none, the saved set list begins with \"references "
         "captured\". Later \"references\" commands remain in chronological order.");

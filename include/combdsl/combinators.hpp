@@ -4736,14 +4736,18 @@ class quoted_parser_basis_reference_node final
 public:
     quoted_parser_basis_reference_node(
         registered_parser_basis_ptr target,
-        parser_live_binding_ptr live_binding)
+        parser_live_binding_ptr live_binding,
+        bool print_unqualified_name)
         : definition_name_(target->name()),
-          printed_name_(live_binding
+          printed_name_(live_binding || print_unqualified_name
               ? target->name()
               : target->name() + "@" +
                     std::to_string(target->version())),
+          revision_name_(target->name() + "@" +
+              std::to_string(target->version())),
           target_(std::move(target)),
           live_binding_(std::move(live_binding)),
+          print_unqualified_name_(print_unqualified_name),
           contains_live_binding_(
               live_binding_ != nullptr ||
               registered_basis_contains_live_binding(target_)) {}
@@ -4779,16 +4783,20 @@ public:
     }
 
     void print_to(std::ostream& output) const override {
+        auto const& displayed_name =
+            print_unqualified_name_ && !target_is_current()
+                ? revision_name_
+                : printed_name_;
         auto const token = ends_with_non_alphanumeric(definition_name_)
             ? printed_token::nonalphanumeric_terminated_basis
             : ends_with_ascii_digit(definition_name_)
                 ? printed_token::digit_terminated_basis
-                : printed_name_ != definition_name_
+                : displayed_name != definition_name_
                     ? printed_token::compact_multicharacter_basis
-                    : basis_printed_token(printed_name_);
+                    : basis_printed_token(displayed_name);
         print_token(
             output,
-            printed_name_,
+            displayed_name,
             token);
     }
 
@@ -4818,6 +4826,16 @@ public:
     }
 
 private:
+    [[nodiscard]] bool target_is_current() const {
+        std::lock_guard transaction_lock(
+            parser_definition_transaction_mutex());
+        std::lock_guard lock(parser_basis_registry_mutex());
+        auto const& registered_bases = parser_basis_registry();
+        auto const match = registered_bases.find(definition_name_);
+        return match != registered_bases.end() &&
+            match->second == target_;
+    }
+
     [[nodiscard]] static bool registered_basis_contains_live_binding(
         registered_parser_basis_ptr const& registration) {
         auto expression = registration->expression();
@@ -4875,18 +4893,22 @@ private:
 
     std::string definition_name_;
     std::string printed_name_;
+    std::string revision_name_;
     registered_parser_basis_ptr target_;
     parser_live_binding_ptr live_binding_;
+    bool print_unqualified_name_;
     bool contains_live_binding_;
 };
 
 [[nodiscard]] inline quoted_expression
 make_parser_basis_reference(
     registered_parser_basis_ptr target,
-    parser_live_binding_ptr live_binding = nullptr) {
+    parser_live_binding_ptr live_binding = nullptr,
+    bool print_unqualified_name = false) {
     return quoted_access::make(
         std::make_shared<quoted_parser_basis_reference_node>(
-            std::move(target), std::move(live_binding)));
+            std::move(target), std::move(live_binding),
+            print_unqualified_name));
 }
 
 [[nodiscard]] inline parser_definition_history&
@@ -6709,7 +6731,7 @@ public:
                                                             ? parse_dependency_command(
                                                                   parser_dependency_direction::
                                                                       uses)
-                                                            : parse_expression();
+                                                            : parse_plain_expression();
         skip_whitespace();
         if (!at_end()) {
             fail("unexpected ')'");
@@ -9304,7 +9326,9 @@ private:
             return basis->expression();
         }
         if (snapshot_enabled_) {
-            return make_parser_basis_reference(basis);
+            return make_parser_basis_reference(
+                basis, nullptr,
+                print_unqualified_current_references_);
         }
         auto const binding = registered_live_bindings_.find(
             basis->name());
@@ -9314,6 +9338,11 @@ private:
         }
         return make_parser_basis_reference(
             basis, binding->second);
+    }
+
+    [[nodiscard]] quoted_expression parse_plain_expression() {
+        print_unqualified_current_references_ = true;
+        return parse_expression();
     }
 
     [[nodiscard]] std::optional<quoted_expression>
@@ -9675,6 +9704,7 @@ private:
     std::optional<quoted_expression> recursive_function_;
     parser_definition_mode definition_mode_;
     bool snapshot_enabled_ = true;
+    bool print_unqualified_current_references_ = false;
     bool is_show_all_ = false;
     bool is_find_no_match_ = false;
     std::string replaced_definition_;

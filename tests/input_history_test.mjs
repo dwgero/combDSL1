@@ -285,6 +285,9 @@ test("keeps references as a typed command without a UI button", () => {
         new URL("../web/index.html", import.meta.url), "utf8");
 
     assert.match(html, /references &lt;captured \| live&gt;/);
+    assert.match(
+        html,
+        /plain expression pins the current\s+immutable revision but retains its unversioned spelling when\s+printed while that revision remains current/);
     assert.doesNotMatch(
         html,
         /<button\b[^>]*\bid=["']references["']/i);

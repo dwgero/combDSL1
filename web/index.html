@@ -388,9 +388,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             color: #c33;
         }
     </style>
-    <script src="./evaluation_watchdog.js?v=2.10.5" defer></script>
-    <script src="./input_history.js?v=2.10.5" defer></script>
-    <script src="./app.js?v=2.10.5" defer></script>
+    <script src="./evaluation_watchdog.js?v=2.10.6" defer></script>
+    <script src="./input_history.js?v=2.10.6" defer></script>
+    <script src="./app.js?v=2.10.6" defer></script>
 </head>
 <body>
     <main aria-labelledby="studio-title">
@@ -702,15 +702,21 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
         <div class="help-section">
             <code>references &lt;captured | live&gt;</code><br>
             Enter this command in the Combinator Expression or Command box to
-            control how named references parsed afterward are stored when a
-            <code>set</code> or <code>define</code> command has no
-            <code>captured</code> or <code>live</code> modifier. References are
-            captured by default. In captured mode, an unqualified
-            <code>name</code> reference pins the current immutable
-            <code>name@N</code> version. In live mode, an unqualified
-            <code>name</code> reference remains live and follows later changes
-            to the current version. An explicit <code>name@N</code> reference
-            always pins that exact immutable version, regardless of the mode.
+            control how named references parsed afterward are bound. A
+            <code>captured</code> or <code>live</code> modifier on
+            <code>set</code> or <code>define</code> overrides that mode for its
+            command. References are captured by default. In captured mode, an
+            unqualified current user name in a plain expression pins the current
+            immutable revision but retains its unversioned spelling when
+            printed while that revision remains current. If the parsed
+            expression is retained after redefinition or removal, it prints the
+            exact <code>name@N</code> revision. Captured references stored by
+            <code>set</code> or <code>define</code>, shown by
+            <code>inspect</code>, or explicitly written as
+            <code>name@N</code> also print with the immutable
+            <code>name@N</code> spelling. In live mode, an unqualified name
+            remains live, prints without a revision, and follows later changes
+            to the current version.
             <br><br>
             <code>show name</code> displays the current definition, while
             <code>show name@N</code> displays that specific revision. A
@@ -985,7 +991,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             data-dialog-initial-focus>About</h2>
         <div class="license-text">
             <!-- Keep this version and the app.js cache key in sync. -->
-            <p>Combinator Studio, version 2.10.5<br>
+            <p>Combinator Studio, version 2.10.6<br>
                 Part of the C++ Combinator DSL<br>
                 Copyright (C) 2026  David W. Gero</p>
             <p>This program is free software: you can redistribute it and/or modify
