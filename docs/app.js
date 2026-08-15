@@ -184,7 +184,28 @@
         "find all 4 ?",
     ].map(phrase =>
         inputHistoryTools.createCommandCompleter([phrase]));
+    const completeFindAmongKeyword =
+        inputHistoryTools.createCommandCompleter(
+            ["find among"], {appendSpaceToExact: true});
+    const completeFindAllAmongKeyword =
+        inputHistoryTools.createCommandCompleter(
+            ["find all among"], {appendSpaceToExact: true});
+    const findAmbiguousOption =
+        /^[ \t\n\r\f\v]*find[ \t\n\r\f\v]+a[ \t\n\r\f\v]*$/;
+    const findAmongPrefix =
+        /^[ \t\n\r\f\v]*find[ \t\n\r\f\v]+am[^ \t\n\r\f\v]*[ \t\n\r\f\v]*$/;
+    const findAllAmongPrefix =
+        /^[ \t\n\r\f\v]*find[ \t\n\r\f\v]+all[ \t\n\r\f\v]+a[^ \t\n\r\f\v]*[ \t\n\r\f\v]*$/;
     const completeFindCommand = source => {
+        if (findAmbiguousOption.test(source)) {
+            return undefined;
+        }
+        if (findAllAmongPrefix.test(source)) {
+            return completeFindAllAmongKeyword(source);
+        }
+        if (findAmongPrefix.test(source)) {
+            return completeFindAmongKeyword(source);
+        }
         for (const complete of findCommandCompleters) {
             const completed = complete(source);
             if (completed !== undefined) {

@@ -12,7 +12,8 @@ define [captured | live] <name> [<xyz...>] = <expression>
 dependson [all] <name> | depends-on [all] <name> | depends on [all] <name>
                                       | display direct and optional indirect users
 exit                                  | end the program
-find [all] [num] ?<symbols> = <expression> | find matching pre-defined bird forms
+find [all] [<num> | among <bird>...] ?<symbols> = <expression>
+                                      | find matching bird forms
 help [brief | full]                   | display help information
 inspect <expression>                  | describe an expression without evaluating it
 key step [on | off]                   | after each step, wait for a keypress to continue
@@ -47,7 +48,8 @@ define [captured | live] <name> [<xyz...>] = <expression>
 dependson [all] <name> | depends-on [all] <name> | depends on [all] <name>
                                       | display direct and optional indirect users
 exit                                  | end the program
-find [all] [num] ?<symbols> = <expression> | find matching pre-defined bird forms
+find [all] [<num> | among <bird>...] ?<symbols> = <expression>
+                                      | find matching bird forms
 help [brief | full]                   | display help information
 inspect <expression>                  | describe an expression without evaluating it
 key step [on | off]                   | after each step, wait for a keypress to continue

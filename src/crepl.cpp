@@ -60,7 +60,7 @@
 
 namespace {
 
-constexpr std::string_view crepl_version = "2.10.3";
+constexpr std::string_view crepl_version = "2.10.5";
 
 [[nodiscard]] bool stream_is_terminal(std::FILE* stream) noexcept {
 #if defined(_WIN32)
@@ -222,10 +222,11 @@ constexpr std::array<std::string_view, 1>
     dependency_path_and_completion_candidates = {"and"};
 constexpr std::array<std::string_view, 1> show_completion_candidates = {
     "all"};
-constexpr std::array<std::string_view, 5> find_completion_candidates = {
-    "all", "1", "2", "3", "4"};
-constexpr std::array<std::string_view, 4>
-    find_after_all_completion_candidates = {"1", "2", "3", "4"};
+constexpr std::array<std::string_view, 6> find_completion_candidates = {
+    "all", "among", "1", "2", "3", "4"};
+constexpr std::array<std::string_view, 5>
+    find_after_all_completion_candidates = {
+        "among", "1", "2", "3", "4"};
 std::string last_save_filename = "set_list.cmb";
 std::array<std::string_view, 1> save_filename_completion_candidates;
 std::string last_load_filename = "set_list.cmb";
@@ -870,7 +871,8 @@ void print_help_brief(std::ostream& output) {
         "dependson [all] <name> | depends-on [all] <name> | depends on [all] <name>\n"
         "                                      | display direct and optional indirect users\n"
         "exit                                  | end the program\n"
-        "find [all] [num] ?<symbols> = <expression> | find matching pre-defined bird forms\n"
+        "find [all] [<num> | among <bird>...] ?<symbols> = <expression>\n"
+        "                                      | find matching bird forms\n"
         "help [brief | full]                   | display help information\n"
         "inspect <expression>                  | describe an expression without evaluating it\n"
         "key step [on | off]                   | after each step, wait for a keypress to continue\n"
@@ -996,6 +998,11 @@ void print_help_full(std::ostream& output) {
         "letter, the space before symbols may be omitted. For example, to "
         "add the Eagle bird:");
     output << "define Exyzwv = xy(zwv)\n\n";
+    write_wrapped_paragraph(
+        output,
+        "A basis name cannot begin with ? because ? introduces parser "
+        "command markers.");
+    output.put('\n');
     write_wrapped_paragraph(
         output,
         "The optional \"captured\" or \"live\" modifier on set and "
@@ -1190,7 +1197,8 @@ void print_help_full(std::ostream& output) {
         "colorize modes.");
 
     output << "\nFinding Combinators\n\n"
-           << "find [all] [num] ?<symbol_list> = <combinator_expression>\n";
+           << "find [all] [<num> | among <bird>...] ?<symbol_list> = "
+              "<combinator_expression>\n";
     write_wrapped_paragraph(
         output,
         "Searches the pre-defined bird catalog for forms that reduce to "
@@ -1207,6 +1215,27 @@ void print_help_full(std::ostream& output) {
         "colorize modes. Matching uses bounded normalization, so the red "
         "response \"No match within search bounds\" does not prove that no "
         "equivalent expression exists.");
+    output.put('\n');
+    write_wrapped_paragraph(
+        output,
+        "Instead of num, \"among\" selects a restricted catalog. It must "
+        "be followed by one or more bird names before the question mark. "
+        "Whitespace between names is optional, but whitespace before the "
+        "question mark remains required. Within each contiguous group, an "
+        "exact whole name or revision wins; otherwise the longest valid bird "
+        "name or revision is taken from left to right. "
+        "Whitespace can force a shorter boundary. S, K, I, Y, pre-defined "
+        "birds, current user-defined names, and explicit retained name@N "
+        "revisions are "
+        "accepted; an explicit retained revision remains usable after its "
+        "name is removed. Unlike the default catalog, an explicitly listed "
+        "Y is allowed. A restricted search examines increasing composition "
+        "sizes within one 10-second window. Only fully completed sizes are "
+        "reported, and results from a size still in progress when time "
+        "expires are discarded. Without \"all\", it stops at the first "
+        "completed size with answers. With \"all\", it retains answers "
+        "from every size completed within the same window. The output is "
+        "otherwise unchanged, including the bounded no-match response.");
 
     output << "\nCommand Entry\n\n";
     print_help_topic(

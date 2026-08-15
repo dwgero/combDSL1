@@ -538,6 +538,11 @@ private:
                 "combdsl::basis names cannot be empty");
         }
 
+        if (name[0] == '?') {
+            throw std::invalid_argument(
+                "combdsl::basis names cannot begin with ?");
+        }
+
         if (name[0] == '(' || name[0] == ')' || name[0] == '"' ||
             name[0] == '\\' || name[0] == ' ' ||
             name[0] == '\t' || name[0] == '\n' || name[0] == '\r' ||
@@ -6518,13 +6523,40 @@ struct combinator_find_options {
     bool all_sizes = false;
 };
 
+struct catalog_combinator_find_result {
+    std::vector<std::vector<quoted_expression>> completed_sizes;
+    bool timed_out = false;
+};
+
 [[nodiscard]] inline combinator_find_result
 find_combinator_matches(
     std::span<quoted_atomic const> symbol_list,
     quoted_expression const& expression,
     combinator_find_options options = {});
 
+[[nodiscard]] inline catalog_combinator_find_result
+find_combinator_matches_among(
+    std::span<quoted_atomic const> symbol_list,
+    quoted_expression const& expression,
+    std::span<quoted_expression const> catalog,
+    bool all_sizes = false);
+
 namespace detail {
+
+using find_clock = std::chrono::steady_clock;
+
+inline thread_local std::function<find_clock::time_point()>
+    find_clock_now_override;
+
+[[nodiscard]] inline find_clock::time_point find_clock_now() {
+    if (find_clock_now_override) {
+        return find_clock_now_override();
+    }
+    return find_clock::now();
+}
+
+inline constexpr auto find_search_window =
+    std::chrono::seconds{10};
 
 using compare_clock = std::chrono::steady_clock;
 
@@ -6705,6 +6737,17 @@ private:
     struct inspect_reference {
         std::string name;
         std::string classification;
+    };
+
+    struct find_catalog_entry {
+        quoted_expression expression;
+        registered_parser_basis_ptr registration;
+        bool live_reference = false;
+    };
+
+    struct find_catalog_prefix_match {
+        find_catalog_entry entry;
+        std::size_t size;
     };
 
     [[nodiscard]] static std::string inspect_printed_expression(
@@ -7244,6 +7287,11 @@ private:
         }
         auto const [name_text, parsed_name_position] =
             parse_definition_basis_name_token();
+        if (!name_text.empty() && name_text.front() == '?') {
+            throw parse_error(
+                parsed_name_position,
+                "combdsl::basis names cannot begin with ?");
+        }
         if (auto versioned = parse_versioned_basis_name(
                 name_text, parsed_name_position)) {
             static_cast<void>(versioned);
@@ -7553,6 +7601,217 @@ private:
         return quote(std::move(output));
     }
 
+    [[nodiscard]] std::optional<find_catalog_entry>
+    try_resolve_unversioned_find_catalog_bird(
+        std::string_view token) const {
+        if (token == "S") {
+            return find_catalog_entry{quote(S), {}, false};
+        }
+        if (token == "K") {
+            return find_catalog_entry{quote(K), {}, false};
+        }
+        if (token == "I") {
+            return find_catalog_entry{quote(I), {}, false};
+        }
+        if (token == "Y") {
+            return find_catalog_entry{quote(Y), {}, false};
+        }
+
+        if (auto const match = registered_bases_.find(token);
+            match != registered_bases_.end()) {
+            return find_catalog_entry{
+                parser_basis_reference(match->second),
+                match->second,
+                !match->second->predefined() && !snapshot_enabled_,
+            };
+        }
+        return std::nullopt;
+    }
+
+    [[nodiscard]] std::optional<find_catalog_entry>
+    try_resolve_find_catalog_bird(
+        std::string_view token,
+        std::size_t token_position) const {
+        if (has_reserved_version_suffix(token)) {
+            auto const versioned =
+                parse_versioned_basis_name(token, token_position);
+            if (!versioned) {
+                throw std::logic_error(
+                    "combdsl::validated basis revision did not parse");
+            }
+            auto const match = registered_versions_.find(
+                versioned->first);
+            if (match != registered_versions_.end() &&
+                versioned->second != 0 &&
+                versioned->second <= match->second.size()) {
+                auto registration =
+                    match->second[versioned->second - 1];
+                return find_catalog_entry{
+                    make_parser_basis_reference(registration),
+                    std::move(registration),
+                    false,
+                };
+            }
+            return std::nullopt;
+        }
+        return try_resolve_unversioned_find_catalog_bird(token);
+    }
+
+    [[nodiscard]] std::optional<find_catalog_prefix_match>
+    longest_find_catalog_bird_prefix(
+        std::string_view remaining) const {
+        constexpr std::size_t maximum_basis_name_size = 15;
+        std::optional<find_catalog_prefix_match> best;
+
+        auto const maximum_name_size = std::min(
+            remaining.size(), maximum_basis_name_size);
+        for (auto prefix_size = maximum_name_size;
+             prefix_size != 0;
+             --prefix_size) {
+            if (auto entry =
+                    try_resolve_unversioned_find_catalog_bird(
+                        remaining.substr(0, prefix_size))) {
+                best.emplace(
+                    find_catalog_prefix_match{
+                        std::move(*entry), prefix_size});
+                break;
+            }
+        }
+
+        for (std::size_t name_size = 1;
+             name_size <= maximum_name_size;
+             ++name_size) {
+            if (name_size + 1 >= remaining.size() ||
+                remaining[name_size] != '@') {
+                continue;
+            }
+            auto const versions = registered_versions_.find(
+                remaining.substr(0, name_size));
+            if (versions == registered_versions_.end()) {
+                continue;
+            }
+
+            auto digit_position = name_size + 1;
+            if (remaining[digit_position] < '0' ||
+                remaining[digit_position] > '9') {
+                continue;
+            }
+
+            std::size_t version = 0;
+            std::optional<find_catalog_prefix_match>
+                version_match;
+            for (; digit_position < remaining.size();
+                 ++digit_position) {
+                auto const character = remaining[digit_position];
+                if (character < '0' || character > '9') {
+                    break;
+                }
+                auto const digit = static_cast<std::size_t>(
+                    character - '0');
+                if (version >
+                    (std::numeric_limits<std::size_t>::max() -
+                     digit) /
+                        10) {
+                    break;
+                }
+
+                version = version * 10 + digit;
+                if (version == 0 ||
+                    version > versions->second.size()) {
+                    continue;
+                }
+                auto const prefix_size = digit_position + 1;
+                auto registration =
+                    versions->second[version - 1];
+                version_match.emplace(find_catalog_prefix_match{
+                    find_catalog_entry{
+                        make_parser_basis_reference(registration),
+                        std::move(registration),
+                        false,
+                    },
+                    prefix_size,
+                });
+            }
+            if (version_match &&
+                (!best || version_match->size > best->size)) {
+                best = std::move(version_match);
+            }
+        }
+        return best;
+    }
+
+    [[nodiscard]] std::vector<quoted_expression>
+    parse_find_catalog() {
+        std::vector<find_catalog_entry> entries;
+        while (!at_end() && current() != '?') {
+            auto const group_position = position_;
+            auto const group = current_basis_token();
+            if (group.empty()) {
+                fail("expected a bird name or '?'");
+            }
+
+            auto const group_end = group_position + group.size();
+            auto append_bird = [&](find_catalog_entry bird) {
+                auto const duplicate = std::ranges::any_of(
+                    entries,
+                    [&](find_catalog_entry const& existing) {
+                        auto const same_registration =
+                            existing.registration &&
+                            bird.registration &&
+                            existing.registration ==
+                                bird.registration &&
+                            existing.live_reference ==
+                                bird.live_reference;
+                        return same_registration ||
+                               same_parser_definition_expression(
+                                   existing.expression,
+                                   bird.expression);
+                    });
+                if (!duplicate) {
+                    entries.push_back(std::move(bird));
+                }
+            };
+
+            if (auto exact = try_resolve_find_catalog_bird(
+                    group, group_position)) {
+                position_ = group_end;
+                append_bird(std::move(*exact));
+            } else {
+                while (position_ < group_end) {
+                    auto const remaining = source_.substr(
+                        position_, group_end - position_);
+                    auto prefix = longest_find_catalog_bird_prefix(
+                        remaining);
+                    if (!prefix) {
+                        auto message = unescape_input(remaining);
+                        message += " is not a defined name";
+                        throw parse_error(position_, message);
+                    }
+
+                    position_ += prefix->size;
+                    append_bird(std::move(prefix->entry));
+                }
+            }
+
+            if (at_end()) {
+                fail("expected '?'");
+            }
+            if (!is_whitespace(current())) {
+                fail("expected whitespace after bird name");
+            }
+            skip_whitespace();
+        }
+        if (entries.empty()) {
+            fail("expected at least one bird name");
+        }
+        std::vector<quoted_expression> catalog;
+        catalog.reserve(entries.size());
+        for (auto& entry : entries) {
+            catalog.push_back(std::move(entry.expression));
+        }
+        return catalog;
+    }
+
     [[nodiscard]] quoted_expression parse_find_command() {
         constexpr std::size_t keyword_size = 4;
         position_ += keyword_size;
@@ -7570,7 +7829,18 @@ private:
         }
 
         std::size_t maximum_size = 3;
-        if (!at_end() && current() >= '0' && current() <= '9') {
+        std::vector<quoted_expression> catalog;
+        bool search_catalog = false;
+        auto const after_all = source_.substr(position_);
+        if (after_all.starts_with("among")) {
+            search_catalog = true;
+            position_ += 5;
+            if (!at_end() && !is_whitespace(current())) {
+                fail("expected whitespace after 'among'");
+            }
+            skip_whitespace();
+            catalog = parse_find_catalog();
+        } else if (!at_end() && current() >= '0' && current() <= '9') {
             auto const size_position = position_;
             maximum_size = 0;
             bool size_too_large = false;
@@ -7626,11 +7896,6 @@ private:
             return target;
         }
 
-        auto matches = find_combinator_matches(
-            symbols,
-            target,
-            {.maximum_size = maximum_size,
-             .all_sizes = all_sizes});
         std::ostringstream output;
         bool first = true;
         auto append_matches = [&](auto const& expressions) {
@@ -7643,10 +7908,24 @@ private:
                 first = false;
             }
         };
-        append_matches(matches.singles);
-        append_matches(matches.pairs);
-        append_matches(matches.triples);
-        append_matches(matches.quads);
+        if (search_catalog) {
+            auto matches = find_combinator_matches_among(
+                symbols, target, catalog, all_sizes);
+            for (auto const& size_matches :
+                 matches.completed_sizes) {
+                append_matches(size_matches);
+            }
+        } else {
+            auto matches = find_combinator_matches(
+                symbols,
+                target,
+                {.maximum_size = maximum_size,
+                 .all_sizes = all_sizes});
+            append_matches(matches.singles);
+            append_matches(matches.pairs);
+            append_matches(matches.triples);
+            append_matches(matches.quads);
+        }
         if (first) {
             is_find_no_match_ = true;
             return quote(std::string(
@@ -7834,6 +8113,11 @@ private:
         }
         auto const [name_text, parsed_name_position] =
             parse_definition_basis_name_token();
+        if (!name_text.empty() && name_text.front() == '?') {
+            throw parse_error(
+                parsed_name_position,
+                "combdsl::basis names cannot begin with ?");
+        }
         if (auto versioned = parse_versioned_basis_name(
                 name_text, parsed_name_position)) {
             static_cast<void>(versioned);
@@ -8611,6 +8895,11 @@ private:
     [[nodiscard]] basis_label validated_definition_basis_name(
         std::string_view name,
         std::size_t name_position) const {
+        if (!name.empty() && name.front() == '?') {
+            throw parse_error(
+                name_position,
+                "combdsl::basis names cannot begin with ?");
+        }
         if (auto versioned =
                 parse_versioned_basis_name(name, name_position)) {
             static_cast<void>(versioned);
@@ -8620,6 +8909,7 @@ private:
         }
         if (name == "abstract" ||
             name == "all" ||
+            name == "among" ||
             name == "path" ||
             name == "between" ||
             name == "and" ||
@@ -10586,6 +10876,66 @@ normalize_for_combinator_match(quoted_expression expression) {
     }
 }
 
+struct timed_find_normalization_result {
+    std::optional<quoted_expression> expression;
+    bool timed_out = false;
+};
+
+[[nodiscard]] inline timed_find_normalization_result
+normalize_for_combinator_match_until(
+    quoted_expression expression,
+    find_clock::time_point deadline) {
+    if (find_clock_now() >= deadline) {
+        return {{}, true};
+    }
+
+    std::unordered_set<std::string> seen;
+    auto initial_key = quoted_expression_key(expression);
+    if (find_clock_now() >= deadline) {
+        return {{}, true};
+    }
+    if (initial_key.size() >
+        combinator_match_expression_key_size_limit) {
+        return {};
+    }
+    seen.emplace(std::move(initial_key));
+    std::size_t remaining_steps =
+        check_for_match_reduction_limit;
+
+    for (;;) {
+        if (find_clock_now() >= deadline) {
+            return {{}, true};
+        }
+        auto reduced = reduce_next_redex(
+            expression,
+            reduction_options{
+                .basis_step = true,
+                .reduce_partial_k_argument = false,
+            });
+        if (find_clock_now() >= deadline) {
+            return {{}, true};
+        }
+        if (!reduced) {
+            return {std::move(expression), false};
+        }
+        if (remaining_steps == 0) {
+            return {};
+        }
+        --remaining_steps;
+
+        expression = std::move(*reduced);
+        auto key = quoted_expression_key(expression);
+        if (find_clock_now() >= deadline) {
+            return {{}, true};
+        }
+        if (key.size() >
+                combinator_match_expression_key_size_limit ||
+            !seen.emplace(std::move(key)).second) {
+            return {};
+        }
+    }
+}
+
 [[nodiscard]] inline auto const&
 predefined_bird_combinators() {
     static std::array<
@@ -11020,6 +11370,202 @@ inline void for_each_predefined_bird_quad_column_at(
            same_parser_definition_expression(
                *normalized_combs,
                normalized_expression);
+}
+
+struct timed_find_match_result {
+    bool matches = false;
+    bool timed_out = false;
+};
+
+[[nodiscard]] inline timed_find_match_result
+check_normalized_match_until(
+    quoted_expression combs,
+    std::span<quoted_atomic const> symbol_list,
+    quoted_expression const& normalized_expression,
+    find_clock::time_point deadline) {
+    for (auto const& symbol_value : symbol_list) {
+        if (find_clock_now() >= deadline) {
+            return {false, true};
+        }
+        combs = combs(symbol_value.expression());
+    }
+
+    auto normalized_combs =
+        normalize_for_combinator_match_until(
+            std::move(combs), deadline);
+    if (normalized_combs.timed_out) {
+        return {false, true};
+    }
+    auto const matches =
+        normalized_combs.expression &&
+        same_parser_definition_expression(
+            *normalized_combs.expression,
+            normalized_expression);
+    if (find_clock_now() >= deadline) {
+        return {false, true};
+    }
+    return {matches, false};
+}
+
+enum class catalog_find_enumeration_status {
+    completed,
+    timed_out,
+};
+
+template <class Visitor>
+[[nodiscard]] inline catalog_find_enumeration_status
+for_each_catalog_candidate_of_size(
+    std::size_t leaf_count,
+    std::span<quoted_expression const> catalog,
+    find_clock::time_point deadline,
+    Visitor&& visitor) {
+    if (leaf_count == 0 || catalog.empty()) {
+        return catalog_find_enumeration_status::completed;
+    }
+    if (leaf_count >
+        std::numeric_limits<std::size_t>::max() / 2 + 1) {
+        return catalog_find_enumeration_status::completed;
+    }
+
+    auto const node_count = leaf_count * 2 - 1;
+    // A pre-order full-binary-tree encoding: true is an application and
+    // false is a catalog leaf. The explicit DFS stack avoids making the
+    // unbounded leaf count an unbounded C++ call-stack depth.
+    std::vector<bool> shape(node_count);
+    struct shape_frame {
+        std::size_t position;
+        std::size_t applications;
+        std::size_t leaves;
+        std::size_t open_slots;
+        std::uint8_t next_choice = 0;
+    };
+    std::vector<shape_frame> pending;
+    pending.reserve(node_count);
+    pending.push_back({0, 0, 0, 1});
+
+    auto visit_labelings = [&](std::vector<bool> const& tree_shape) {
+        std::vector<std::size_t> labels(leaf_count, 0);
+        for (;;) {
+            if (find_clock_now() >= deadline) {
+                return catalog_find_enumeration_status::timed_out;
+            }
+
+            std::vector<quoted_expression> expressions;
+            expressions.reserve(leaf_count);
+            auto label_position = leaf_count;
+            bool excluded = false;
+            for (auto position = node_count;
+                 position > 0;
+                 --position) {
+                if ((position & std::size_t{63}) == 0 &&
+                    find_clock_now() >= deadline) {
+                    return catalog_find_enumeration_status::timed_out;
+                }
+                if (!tree_shape[position - 1]) {
+                    --label_position;
+                    expressions.push_back(
+                        catalog[labels[label_position]]);
+                    continue;
+                }
+
+                auto function = std::move(expressions.back());
+                expressions.pop_back();
+                auto argument = std::move(expressions.back());
+                expressions.pop_back();
+                if (is_excluded_match_pair(function, argument)) {
+                    excluded = true;
+                    break;
+                }
+                expressions.push_back(
+                    function(std::move(argument)));
+            }
+            if (!excluded &&
+                !std::invoke(
+                    visitor,
+                    std::move(expressions.back()))) {
+                return catalog_find_enumeration_status::timed_out;
+            }
+
+            bool advanced = false;
+            for (auto position = leaf_count;
+                 position > 0;
+                 --position) {
+                auto& label = labels[position - 1];
+                ++label;
+                if (label != catalog.size()) {
+                    advanced = true;
+                    break;
+                }
+                label = 0;
+            }
+            if (!advanced) {
+                return catalog_find_enumeration_status::completed;
+            }
+        }
+    };
+
+    while (!pending.empty()) {
+        if (find_clock_now() >= deadline) {
+            return catalog_find_enumeration_status::timed_out;
+        }
+
+        auto& frame = pending.back();
+        if (frame.position == node_count) {
+            if (frame.applications == leaf_count - 1 &&
+                frame.leaves == leaf_count &&
+                frame.open_slots == 0) {
+                auto const status = visit_labelings(shape);
+                if (status !=
+                    catalog_find_enumeration_status::completed) {
+                    return status;
+                }
+            }
+            pending.pop_back();
+            continue;
+        }
+
+        if (frame.next_choice == 0) {
+            frame.next_choice = 1;
+            if (frame.applications < leaf_count - 1) {
+                auto const new_open_slots =
+                    frame.open_slots + 1;
+                if (new_open_slots <=
+                    leaf_count - frame.leaves) {
+                    shape[frame.position] = true;
+                    pending.push_back({
+                        frame.position + 1,
+                        frame.applications + 1,
+                        frame.leaves,
+                        new_open_slots,
+                    });
+                }
+            }
+            continue;
+        }
+
+        if (frame.next_choice == 1) {
+            frame.next_choice = 2;
+            if (frame.leaves < leaf_count &&
+                frame.open_slots != 0) {
+                auto const new_open_slots =
+                    frame.open_slots - 1;
+                if (new_open_slots != 0 ||
+                    frame.position + 1 == node_count) {
+                    shape[frame.position] = false;
+                    pending.push_back({
+                        frame.position + 1,
+                        frame.applications,
+                        frame.leaves + 1,
+                        new_open_slots,
+                    });
+                }
+            }
+            continue;
+        }
+
+        pending.pop_back();
+    }
+    return catalog_find_enumeration_status::completed;
 }
 
 #if !defined(__EMSCRIPTEN__)
@@ -11582,6 +12128,79 @@ find_combinator_matches(
     result.quads = check_for_quads_match(
         symbol_list, expression);
     return result;
+}
+
+[[nodiscard]] inline catalog_combinator_find_result
+find_combinator_matches_among(
+    std::span<quoted_atomic const> symbol_list,
+    quoted_expression const& expression,
+    std::span<quoted_expression const> catalog,
+    bool all_sizes) {
+    if (catalog.empty()) {
+        throw std::invalid_argument(
+            "combdsl::find among catalog cannot be empty");
+    }
+
+    catalog_combinator_find_result result;
+    auto const deadline =
+        detail::find_clock_now() + detail::find_search_window;
+    auto normalized_expression =
+        detail::normalize_for_combinator_match_until(
+            expression, deadline);
+    if (normalized_expression.timed_out) {
+        result.timed_out = true;
+        return result;
+    }
+    if (!normalized_expression.expression) {
+        return result;
+    }
+
+    for (std::size_t leaf_count = 1;; ++leaf_count) {
+        if (detail::find_clock_now() >= deadline) {
+            result.timed_out = true;
+            return result;
+        }
+        std::vector<quoted_expression> matches;
+        auto const enumeration_status =
+            detail::for_each_catalog_candidate_of_size(
+                leaf_count,
+                catalog,
+                deadline,
+                [&](quoted_expression candidate) {
+                    auto const checked =
+                        detail::check_normalized_match_until(
+                            candidate,
+                            symbol_list,
+                            *normalized_expression.expression,
+                            deadline);
+                    if (checked.timed_out) {
+                        return false;
+                    }
+                    if (checked.matches) {
+                        matches.push_back(std::move(candidate));
+                    }
+                    return true;
+                });
+        if (enumeration_status ==
+            detail::catalog_find_enumeration_status::timed_out) {
+            result.timed_out = true;
+            return result;
+        }
+        if (detail::find_clock_now() >= deadline) {
+            result.timed_out = true;
+            return result;
+        }
+
+        auto const found_match = !matches.empty();
+        result.completed_sizes.push_back(std::move(matches));
+        if (!all_sizes && found_match) {
+            return result;
+        }
+        if (leaf_count ==
+            std::numeric_limits<std::size_t>::max()) {
+            return result;
+        }
+    }
 }
 
 } // namespace combdsl

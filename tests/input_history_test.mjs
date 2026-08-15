@@ -322,6 +322,27 @@ test("keeps compare as a typed command without a UI button", () => {
         /<button\b[^>]*\bid=["']compare["']/i);
 });
 
+test("documents compact restricted Find catalogs in Studio", () => {
+    const html = readFileSync(
+        new URL("../web/index.html", import.meta.url), "utf8");
+
+    assert.match(
+        html,
+        /find \[all\] \[&lt;num&gt; \| among &lt;bird&gt;\.\.\.\]/);
+    assert.match(html, /Whitespace between names is optional/);
+    assert.match(
+        html,
+        /whitespace before the question mark remains required/);
+    assert.match(html, /exact whole name or revision wins/);
+    assert.match(
+        html,
+        /longest valid bird name or revision is taken from/);
+    assert.match(
+        html,
+        /A basis name cannot begin with <code>\?<\/code>/);
+    assert.match(html, /introduces parser command markers/);
+});
+
 test("completes unambiguous abstract command forms", () => {
     const completers = [
         "abstract ?",
@@ -394,6 +415,15 @@ test("completes unambiguous find command forms", () => {
     assert.equal(complete("find 5"), undefined);
     assert.equal(complete("find all 5"), undefined);
     assert.equal(complete("find ?x"), undefined);
+
+    const completeAmong = createCommandCompleter(
+        ["find among", "find all among"],
+        {appendSpaceToExact: true});
+    assert.equal(completeAmong("find a"), undefined);
+    assert.equal(completeAmong("find am"), "find among ");
+    assert.equal(
+        completeAmong("find all am"),
+        "find all among ");
 });
 
 test("normalizes extensible command phrase definitions", () => {

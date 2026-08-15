@@ -402,6 +402,54 @@ test("runs ordinary evaluation in cooperative slices", async () => {
     assert.equal(results.length, 0);
 });
 
+test("lets restricted Find finish under its own deadline", async () => {
+    const command = "find among AKIS ?xy = x(yx)";
+    const module = {
+        setList: () => "",
+        beginLimitedEval: (
+            source, requestId, sliceLimit, checkAtLimit,
+        ) => {
+            assert.equal(source, command);
+            assert.equal(requestId, 22);
+            assert.equal(sliceLimit, 1000);
+            assert.equal(checkAtLimit, false);
+            return {
+                success: true,
+                definition: false,
+                recoverWorker: false,
+                output: "?=A\n",
+                error: "",
+                reductions: 0,
+                limitReached: false,
+            };
+        },
+    };
+    const harness = await createWorkerHarness(module);
+
+    await harness.send({
+        type: "evaluate",
+        id: 22,
+        source: command,
+        singleStep: false,
+        basisStep: false,
+        keyStep: false,
+        colorize: false,
+        stepLimitEnabled: false,
+        stepLimit: 0,
+    });
+
+    assert.deepEqual(
+        harness.messages.filter(message => message.id === 22)
+            .map(message => message.type),
+        ["eval-started", "result"],
+    );
+    const result = harness.messages.find(
+        message => message.type === "result" && message.id === 22);
+    assert.equal(result.result.output, "?=A\n");
+    assert.equal(harness.timers.size, 0,
+        "the worker must not impose a second timer on Find");
+});
+
 test("checks normal form only at a configured limit boundary", async () => {
     const sliceCalls = [];
     const module = {

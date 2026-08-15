@@ -217,8 +217,8 @@ name compact on its left.
 Basis names are copied into the expression and may contain up to 15
 bytes. Names cannot be empty or begin with a null character; a later null
 character terminates the copied name. Because leading whitespace and
-parentheses belong to the parser grammar, names cannot begin with one of those
-characters or with a double quote. A name also cannot begin with a single
+parentheses and `?` belong to the parser grammar, names cannot begin with one of
+those characters or with a double quote. A name also cannot begin with a single
 or doubled backslash, though a doubled backslash may occur later in the name.
 A visible name cannot end in `@`. A visible name longer than 15 bytes throws
 `std::length_error`; an invalid name throws `std::invalid_argument`.
@@ -520,8 +520,9 @@ then printed on a new line beginning with `= `. Thus,
 `takeout x from Ox: O`, and `?=O`. Unchanged preprocessing and optimization
 passes are omitted.
 
-The names `abstract`, `all`, `captured`, `live`, `step`, `steps`, `ministeps`,
-`limit`, `set`, `define`, `show`, `remove`, `revisions`, `inspect`, `compare`,
+The names `abstract`, `all`, `among`, `captured`, `live`, `step`, `steps`,
+`ministeps`, `limit`, `set`, `define`, `show`, `remove`, `revisions`,
+`inspect`, `compare`,
 `references`,
 `snapshot`, `dependson`, `depends-on`, `depends`, `on`, `usedby`, `used-by`,
 `used`, `by`, `path`, `between`, `and`, `single`, `key`, `basis`, `colorize`,
@@ -663,6 +664,8 @@ find 2 ?xy = x(yx)
 find 4 ?xyzw = xy(xwz)
 find all ?xy = x(yx)
 find all 2 ?xy = x(yx)
+find among BCS ?xy = x(yx)
+find all among BC foofoo@1 ?xy = x(yx)
 ```
 
 The required `?` marks the unknown combinator expression. The optional number
@@ -674,6 +677,23 @@ also prints its two-bird answers. Each match is printed on its own line. If none
 is found, it prints `No match within search bounds`, because bounded
 normalization and the catalog exclusions mean an empty search is not a proof
 that no equivalent expression exists.
+
+Instead of a numeric maximum, `among` selects a restricted catalog. One or
+more bird names must follow it before the required `?`. Whitespace between
+names is optional, but whitespace before `?` remains required. Within each
+contiguous group, an exact whole name or revision wins; otherwise the longest
+valid bird name or revision is taken from left to right. Add whitespace to
+force a shorter boundary when names are ambiguous. The list accepts `S`, `K`,
+`I`, `Y`, pre-defined birds, current user-defined names, and explicit retained
+`name@N` revisions. An explicit retained revision remains usable after its name
+is removed, and an explicitly listed `Y` is allowed even though the default
+catalog excludes it. A restricted search
+examines increasing composition sizes within one 10-second window. Only fully
+completed sizes are committed to the result; matches from a size still in
+progress when the window expires are discarded. Without `all`, the command
+stops after the first completed size that has answers. With `all`, it retains
+answers from every size completed within the same window. Its `?=<match>` and
+bounded no-match formats are otherwise unchanged.
 
 Names created with `set` or `define` may be redefined. Every changed definition
 creates a new immutable revision, starting with `name@1` and increasing by one
@@ -929,7 +949,7 @@ expression produces no output, while malformed or empty lines throw
 The `crepl` executable applies `input_escape` to each line before passing it to
 `parse_eval`, so ordinary quoted words and backslashes can be entered directly.
 When standard output is a terminal, it first prints
-`Combinator Read-Eval-Print Loop, version 2.10.3`. Long evaluations display
+`Combinator Read-Eval-Print Loop, version 2.10.5`. Long evaluations display
 the accumulated step count every 1,000 reductions by overwriting one status
 line; the line is cleared before evaluation output is printed. Its interactive
 prompt is `>`. Interactive input uses GNU Readline, so previous nonempty
@@ -1056,17 +1076,30 @@ Enter `define [captured | live] <name> [<symbol_list>] =
 expression directly. Both commands are silent. The optional modifier overrides
 the current reference mode for that command only and is retained in the saved
 journal.
-Enter `find [all] [num] ?<symbol_list> = <combinator_expression>` to search
-the pre-defined bird catalog. The `?` is required and marks the unknown
+Enter `find [all] [<num> | among <bird>...] ?<symbol_list> =
+<combinator_expression>` to search for matching bird forms. Without `among`,
+the pre-defined catalog is used. The `?` is required and marks the unknown
 combinator expression. The optional number must be from one through four and
 sets the largest composition size to search; it defaults to three. Without
 `all`, the command stops after the first size that produces answers. With
 `all`, it continues through every size up to the limit. Thus, `find 2 ?...`
 returns only the lowest-size answers, while `find all 2 ?...` can return both
 one- and two-bird answers. Every answer is printed as `?=<bird_expression>`. A
-four-bird search may take minutes. `Y` is excluded from the catalog,
-and matching is bounded, so `No match within search bounds` is not a proof of
-impossibility. In an interactive terminal, that message is displayed in red.
+four-bird search may take minutes. `Y` is excluded from the default catalog.
+`among` is an alternative to the number and requires one or more bird names
+before `?`. Whitespace between names is optional, but whitespace before `?`
+remains required. Exact whole names and revisions take precedence within each
+contiguous group, followed by the longest valid bird name or revision;
+whitespace can force a shorter boundary.
+Its restricted catalog may contain `S`, `K`, `I`, `Y`, pre-defined birds,
+current user-defined names, and explicit retained `name@N` revisions, including
+revisions of removed names. It searches
+increasing composition sizes for one 10-second window and reports only fully
+completed sizes, discarding a partially searched size when time expires.
+Without `all`, it stops after the first completed size with answers; with
+`all`, it keeps answers from every size completed during that window. Matching
+is bounded, so `No match within search bounds` is not a proof of impossibility.
+In an interactive terminal, that message is displayed in red.
 Enter `birds` to list every bird and its
 reduction rule. The list uses three
 columns when their
@@ -1324,12 +1357,16 @@ Studio accepts the same `abstract [steps | ministeps] ?...`,
 `compare ?... left = right`,
 `define [captured | live] name [symbols] = ...`,
 `set [captured | live] name = ...`, and
-`find [all] [num] ?...` forms as `crepl`. Find has a default limit of three.
+`find [all] [<num> | among <bird>...] ?...` forms as `crepl`. Find has a default
+limit of three when it uses the pre-defined catalog.
 Without `all`, it stops at the first size with
 answers; with `all`, it continues through the full range. Every answer
-is shown as `?=<bird_expression>`, and a no-match message is red. A search
-ignores the stepping and color modes and displays `Searching…`. Pause stops a
-search; Resume restarts that search in the same Results entry.
+is shown as `?=<bird_expression>`, and a no-match message is red. The
+restricted `among` form accepts the same optionally separated names and exact
+revisions as CREPL, and commits only sizes fully searched within its one
+10-second window. A search ignores the stepping and color modes and displays
+`Searching…`. Pause stops a search; Resume restarts that search in the same
+Results entry with a fresh window.
 
 Reference mode is controlled by typing `references captured` or
 `references live` in the Combinator Expression box; Studio deliberately has no

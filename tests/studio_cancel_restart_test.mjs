@@ -1219,6 +1219,39 @@ test("completes abstract ministeps as a typed Studio command", () => {
     );
 });
 
+test("completes restricted Find catalog keywords in Studio", () => {
+    for (const [sourceText, completed] of [
+        ["find am", "find among "],
+        ["find all am", "find all among "],
+    ]) {
+        const harness = createHarness({
+            inputHistoryTools: createPopulatedHistoryTools([]),
+        });
+        const source = harness.element("source");
+        source.value = sourceText;
+        source.setSelectionRange(sourceText.length, sourceText.length);
+
+        const event = dispatchSourceKey(source, "Tab");
+
+        assert.equal(event.defaultPrevented, true);
+        assert.equal(source.value, completed);
+        assert.deepEqual(
+            [source.selectionStart, source.selectionEnd],
+            [completed.length, completed.length],
+        );
+    }
+
+    const harness = createHarness({
+        inputHistoryTools: createPopulatedHistoryTools([]),
+    });
+    const source = harness.element("source");
+    source.value = "find a";
+    source.setSelectionRange(6, 6);
+    const ambiguous = dispatchSourceKey(source, "Tab");
+    assert.equal(ambiguous.defaultPrevented, false);
+    assert.equal(source.value, "find a");
+});
+
 test("completes all forms of transitive dependency commands", () => {
     for (const [sourceText, completed] of [
         ["dependson a", "dependson all "],
@@ -3255,44 +3288,51 @@ test("keeps the step limit when cancellation replaces the worker", () => {
 });
 
 test("routes find as an unstepped cancellable search", () => {
-    const harness = createHarness();
-    const source = harness.element("source");
-    const worker = harness.workers[0];
+    for (const command of [
+        "find ?xy = x(yx)",
+        "find among AKIS ?xy = x(yx)",
+    ]) {
+        const harness = createHarness();
+        const source = harness.element("source");
+        const worker = harness.workers[0];
 
-    worker.send({type: "ready", setList: ""});
-    harness.flushAnimationFrames();
-    harness.element("single-step").click();
-    harness.element("basis-step").click();
-    harness.element("colorize").click();
+        worker.send({type: "ready", setList: ""});
+        harness.flushAnimationFrames();
+        harness.element("single-step").click();
+        harness.element("basis-step").click();
+        harness.element("colorize").click();
 
-    source.value = "find ?xy = x(yx)";
-    harness.pressEnter();
-    harness.flushAnimationFrames();
-    const inspection = worker.messages.find(
-        message => message.type === "inspect-definition");
-    worker.send({
-        type: "definition-inspection-result",
-        id: inspection.id,
-        result: {
-            success: true,
-            definition: false,
-            displayOnly: true,
-            showAll: false,
-            find: true,
-            replacement: "",
-        },
-    });
-    assert.equal(harness.element("status").textContent, "Searching…");
-    harness.flushAnimationFrames();
+        source.value = command;
+        harness.pressEnter();
+        harness.flushAnimationFrames();
+        const inspection = worker.messages.find(
+            message => message.type === "inspect-definition");
+        worker.send({
+            type: "definition-inspection-result",
+            id: inspection.id,
+            result: {
+                success: true,
+                definition: false,
+                displayOnly: true,
+                showAll: false,
+                find: true,
+                replacement: "",
+            },
+        });
+        assert.equal(harness.element("status").textContent, "Searching…");
+        harness.flushAnimationFrames();
 
-    const evaluation = worker.messages.find(
-        message => message.type === "evaluate");
-    assert.equal(evaluation.source, "find ?xy = x(yx)");
-    assert.equal(evaluation.singleStep, false);
-    assert.equal(evaluation.keyStep, false);
-    assert.equal(evaluation.basisStep, false);
-    assert.equal(evaluation.colorize, false);
-    assert.equal(harness.element("cancel").disabled, false);
+        const evaluation = worker.messages.find(
+            message => message.type === "evaluate");
+        assert.equal(evaluation.source, command);
+        assert.equal(evaluation.singleStep, false);
+        assert.equal(evaluation.keyStep, false);
+        assert.equal(evaluation.basisStep, false);
+        assert.equal(evaluation.colorize, false);
+        assert.equal(harness.element("cancel").disabled, false);
+        assert.equal(harness.scheduledTimeouts.length, 0,
+            "Find uses its own search deadline, not the evaluation watchdog");
+    }
 });
 
 test("Pause restarts and resumes Find in its original Results entry", () => {

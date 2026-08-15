@@ -309,6 +309,18 @@ static_assert(
     (combdsl::check_for_match_combinator_count - 1) *
         (combdsl::check_for_match_combinator_count - 1) *
         combdsl::check_for_pairs_match_candidate_count);
+static_assert(
+    combdsl::detail::find_search_window ==
+    std::chrono::seconds{10});
+static_assert(std::is_same_v<
+              decltype(combdsl::find_combinator_matches_among(
+                  std::declval<
+                      std::span<combdsl::quoted_atomic const>>(),
+                  std::declval<combdsl::quoted_expression const&>(),
+                  std::declval<
+                      std::span<combdsl::quoted_expression const>>(),
+                  true)),
+              combdsl::catalog_combinator_find_result>);
 #if !defined(__EMSCRIPTEN__)
 static_assert(
     combdsl::detail::native_find_worker_count(0, 12) == 0);
@@ -531,6 +543,12 @@ volatile std::sig_atomic_t test_sigint_received = 0;
 struct compare_clock_override_reset {
     ~compare_clock_override_reset() {
         combdsl::detail::compare_clock_now_override = {};
+    }
+};
+
+struct find_clock_override_reset {
+    ~find_clock_override_reset() {
+        combdsl::detail::find_clock_now_override = {};
     }
 };
 
@@ -2308,6 +2326,74 @@ int main() {
         "remove rejects a version suffix",
         "remove Versioned@1", 16,
         "version suffix is not allowed in a removal name");
+    test("the C++ basis API rejects a leading question mark",
+         [] {
+             try {
+                 static_cast<void>(basis("?CppQuestion", 1, I));
+             } catch (std::invalid_argument const& error) {
+                 std::cout << error.what();
+             }
+         },
+         "combdsl::basis names cannot begin with ?");
+    test("the C++ basis API accepts an interior question mark",
+         basis("Cpp?Question", 1, I), "Cpp?Question");
+    test("the C++ basis API accepts an ending question mark",
+         basis("CppQuestion?", 1, I), "CppQuestion?");
+    auto const leading_question_registry_before =
+        combdsl::detail::registered_parser_lookup_snapshot();
+    auto const leading_question_history_before = set_list();
+    test_parse_failure(
+        "set rejects a name beginning with a question mark",
+        "set ?SetQuestion = I", 4,
+        "combdsl::basis names cannot begin with ?");
+    test_parse_failure(
+        "define rejects a name beginning with a question mark",
+        "define ?DefineQuestion x = x", 7,
+        "combdsl::basis names cannot begin with ?");
+    test_parse_failure(
+        "remove rejects a name beginning with a question mark",
+        "remove ?RemoveQuestion", 7,
+        "combdsl::basis names cannot begin with ?");
+    test_parse_failure(
+        "set leading question mark precedes a version-suffix error",
+        "set ?Bad@1 = I", 4,
+        "combdsl::basis names cannot begin with ?");
+    test_parse_failure(
+        "define leading question mark precedes a version-suffix error",
+        "define ?Bad@1 x = x", 7,
+        "combdsl::basis names cannot begin with ?");
+    test_parse_failure(
+        "remove leading question mark precedes a version-suffix error",
+        "remove ?Bad@1", 7,
+        "combdsl::basis names cannot begin with ?");
+    test_parse_failure(
+        "revisions leading question mark precedes a version-suffix error",
+        "revisions ?Bad@1", 10,
+        "combdsl::basis names cannot begin with ?");
+    test("leading-question rejections do not mutate definitions",
+         [&] {
+             auto const after =
+                 combdsl::detail::registered_parser_lookup_snapshot();
+             std::cout
+                 << (after.bases.size() ==
+                     leading_question_registry_before.bases.size())
+                 << (after.versions.size() ==
+                     leading_question_registry_before.versions.size())
+                 << (after.live_bindings.size() ==
+                     leading_question_registry_before.live_bindings.size())
+                 << !after.bases.contains("?SetQuestion")
+                 << !after.bases.contains("?DefineQuestion")
+                 << !after.bases.contains("?RemoveQuestion")
+                 << !after.bases.contains("?Bad@1")
+                 << (set_list() == leading_question_history_before);
+         },
+         "11111111");
+    test("set accepts a question mark inside a basis name",
+         parse("set Mid?Set = 1 I"), "Mid?Set");
+    test("define accepts a question mark at the end of a basis name",
+         parse("define EndDefine? x = x"), "EndDefine?");
+    test("remove accepts a question mark inside a basis name",
+         parse("remove Mid?Set"), "Mid?Set");
     test_parse_failure(
         "set rejects a name ending in an at sign",
         "set AtSet@ = I", 4,
@@ -4197,6 +4283,37 @@ int main() {
         "find all requires a question-mark marker", "find all", 8,
         "expected '?'");
     test_parse_failure(
+        "find among requires a bird", "find among", 10,
+        "expected at least one bird name");
+    test_parse_failure(
+        "find among rejects an empty catalog",
+        "find among ?x = x", 11,
+        "expected at least one bird name");
+    test_parse_failure(
+        "find all among requires a bird", "find all among", 14,
+        "expected at least one bird name");
+    test_parse_failure(
+        "find among rejects an unknown bird",
+        "find among MissingBird ?x = x", 12,
+        "issingBird is not a defined name");
+    test_parse_failure(
+        "find among requires whitespace after its keyword",
+        "find amongA ?x = x", 10,
+        "expected whitespace after 'among'");
+    test_parse_failure(
+        "find among requires whitespace before its marker",
+        "find among A?x = x", 12,
+        "?x is not a defined name");
+    test_parse_failure(
+        "find among preserves an exact overflowing revision diagnostic",
+        "find among A@999999999999999999999999999999 ?x = x",
+        13, "basis version is out of range");
+    test_parse_failure(
+        "find among treats an internal overflowing revision as a suffix",
+        "find among A@999999999999999999999999999999K ?x = x",
+        12,
+        "@999999999999999999999999999999K is not a defined name");
+    test_parse_failure(
         "find 4 requires a question-mark marker", "find 4", 6,
         "expected '?'");
     test_parse_failure(
@@ -4227,6 +4344,14 @@ int main() {
     test_parse_failure(
         "find options have a fixed order", "find 4 all ?x = x", 7,
         "expected '?'");
+    test_parse_failure(
+        "find maximum and among are mutually exclusive",
+        "find 2 among A ?x = x", 7,
+        "expected '?'");
+    test_parse_failure(
+        "find among does not accept a maximum after its birds",
+        "find among A 2 ?x = x", 13,
+        "2 is not a defined name");
     test_parse_failure(
         "find rejects a zero maximum", "find 0 ?x = x", 5,
         "find maximum size must be from 1 to 4");
@@ -4325,7 +4450,8 @@ int main() {
          },
          "11:step limit is too large");
     constexpr std::string_view reserved_definition_names[] = {
-        "abstract", "all", "captured", "live", "limit", "step",
+        "abstract", "all", "among", "captured", "live", "limit",
+        "step",
         "steps", "ministeps", "path", "between", "and", "set",
         "define", "show", "single", "key", "basis", "colorize",
         "about", "birds", "find", "help", "load", "remove", "save",
@@ -5556,6 +5682,434 @@ int main() {
                        << parsed.is_definition;
          },
          "1100");
+    test("find among restricts the catalog",
+         [] {
+             std::ostringstream output;
+             parse("find among A ?xy = x(yx)").print_to(output);
+             auto const padded = '\n' + output.str() + '\n';
+             std::cout
+                 << (padded.find("\n?=A\n") != std::string::npos)
+                 << (padded.find("\n?=CO\n") == std::string::npos);
+         },
+         "11");
+    test("find among searches increasing composition sizes",
+         parse("find among B C ?x = BCx"), "?=BC");
+    test("find among accepts compact fundamental and predefined birds",
+         parse("find among AKIS ?xy = x(yx)"), "?=A");
+    test("find among accepts mixed compact and spaced bird groups",
+         parse("find among A BC\tS ?xy = x(yx)"), "?=A");
+    test("find among accepts a compact group before a spaced bird",
+         parse("find among BC S ?x = Bx"), "?=B");
+    test("find among accepts a spaced bird before a compact group",
+         parse("find among B CS ?x = Bx"), "?=B");
+    test("find among chooses the longest punctuation bird prefix",
+         parse("find among C**K ?x = C**x"), "?=C**");
+    test("find among separates adjacent punctuation-ending birds",
+         parse("find among C**W*K ?x = C**x"), "?=C**");
+    test("find among treats punctuation as a compact bird boundary",
+         parse("find among C*K ?x = C*x"), "?=C*");
+    test("find among separates adjacent digit-ending birds",
+         parse("find among Q1Q3 ?xyz = x(zy)"), "?=Q1");
+    test("find among silently deduplicates repeated birds",
+         parse("find among A A A ?xy = x(yx)"), "?=A");
+    test("find among deduplicates compact repeated birds",
+         parse("find among AA@1 ?xy = x(yx)"), "?=A");
+    test("find among compact deduplication preserves exact spelling first",
+         parse("find among A@1A ?xy = x(yx)"), "?=A@1");
+    test("find among deduplicates an exact predefined revision after its name",
+         parse("find among A A@1 ?xy = x(yx)"), "?=A");
+    test("find among preserves an exact predefined revision listed first",
+         parse("find among A@1 A ?xy = x(yx)"), "?=A@1");
+    test("find among compact setup registers overlapping user names",
+         [] {
+             static_cast<void>(parse("references captured"));
+             static_cast<void>(parse("set Compact = 2 K"));
+             static_cast<void>(parse("set CompactLong = 2 A"));
+             static_cast<void>(parse("set CompactLongA = 2 A"));
+             static_cast<void>(parse("set Longtail = 2 A"));
+             static_cast<void>(parse("set CompactBang! = 2 A"));
+             static_cast<void>(parse("set Compact1 = 2 A"));
+             static_cast<void>(parse("set lowerbird = 2 A"));
+             static_cast<void>(parse("set 7 = 2 A"));
+             static_cast<void>(parse("set CompactQuest? = 2 A"));
+             static_cast<void>(parse("set CompactRemoved = 2 A"));
+             static_cast<void>(parse("set CompactLive = 2 A"));
+             static_cast<void>(parse("set CompactOther = 2 A"));
+             static_cast<void>(parse("remove CompactRemoved"));
+             std::cout << "ready";
+         },
+         "ready");
+    test("find among gives an exact whole-group user name precedence",
+         parse("find among CompactLongA ?xy = x(yx)"),
+         "?=CompactLongA@1");
+    test("find among greedily chooses the longest user-name prefix",
+         parse("find among CompactLongB ?xy = x(yx)"),
+         "?=CompactLong@1");
+    test("find among whitespace can force a shorter user-name boundary",
+         parse("find among CompactLong A ?xy = x(yx)"),
+         "?=CompactLong@1\n?=A");
+    test("find among parses adjacent punctuation-ending user names",
+         parse("find among CompactBang!K ?xy = x(yx)"),
+         "?=CompactBang!@1");
+    test("find among parses adjacent digit-ending user names",
+         parse("find among KCompact1A ?xy = x(yx)"),
+         "?=Compact1@1\n?=A");
+    test("find among parses adjacent lowercase user names",
+         parse("find among KlowerbirdA ?xy = x(yx)"),
+         "?=lowerbird@1\n?=A");
+    test("find among gives a registered digit-only name precedence",
+         parse("find among K7A ?xy = x(yx)"),
+         "?=7@1\n?=A");
+    test("find among retains question marks inside an exact bird name",
+         parse("find among CompactQuest? ?xy = x(yx)"),
+         "?=CompactQuest?@1");
+    test("find among retains an ending question mark before an adjacent bird",
+         parse("find among CompactQuest?A ?xy = x(yx)"),
+         "?=CompactQuest?@1\n?=A");
+    test("find among parses an explicit revision next to another bird",
+         parse("find among CompactLong@1A ?xy = x(yx)"),
+         "?=CompactLong@1\n?=A");
+    test("find among accepts a leading-zero revision next to another bird",
+         parse("find among CompactLong@0001A ?xy = x(yx)"),
+         "?=CompactLong@1\n?=A");
+    test("find among retains a valid revision before many digit birds",
+         [] {
+             std::size_t clock_calls = 0;
+             find_clock_override_reset reset;
+             combdsl::detail::find_clock_now_override = [&] {
+                 ++clock_calls;
+                 return combdsl::detail::find_clock::time_point::max();
+             };
+             auto source = std::string(
+                 "find all among CompactLong@1");
+             source.append(30, '7');
+             source += "A ?x = x";
+             auto const parsed = combdsl::detail::parse_input(
+                 source,
+                 combdsl::detail::parser_definition_mode::
+                     inspect_definitions);
+             std::cout << clock_calls << ' '
+                       << parsed.is_display_only
+                       << parsed.is_find << ' ';
+             parsed.expression.print_to(std::cout);
+         },
+         "0 11 x");
+    test("find among parses adjacent revisions as separate birds",
+         parse(
+             "find among CompactLong@1CompactOther@1 "
+             "?xy = x(yx)"),
+         "?=CompactLong@1\n?=CompactOther@1");
+    test("find among accepts a removed revision inside a compact group",
+         parse("find among CompactRemoved@1A ?xy = x(yx)"),
+         "?=CompactRemoved@1\n?=A");
+    test("find among keeps compact live and captured references distinct",
+         [] {
+             static_cast<void>(parse("references live"));
+             parse(
+                 "find among CompactLiveCompactLive@1 "
+                 "?xy = x(yx)")
+                 .print_to(std::cout);
+             static_cast<void>(parse("references captured"));
+         },
+         "?=CompactLive\n?=CompactLive@1");
+    test_parse_failure(
+        "find among uses greedy prefixes without backtracking",
+        "find among CompactLongtail ?x = x", 22,
+        "tail is not a defined name");
+    test_parse_failure(
+        "find among reports an invalid suffix after a revision",
+        "find among CompactLong@1$ ?x = x", 24,
+        "$ is not a defined name");
+    test_parse_failure(
+        "find among reports an unavailable revision at its at-sign",
+        "find among CompactLong@9A ?x = x", 22,
+        "@9A is not a defined name");
+    test_parse_failure(
+        "find among compact groups still require a question-mark marker",
+        "find among BCS", 14,
+        "expected '?'");
+    test("find among reports a long compact invalid suffix without searching",
+         [] {
+             std::size_t clock_calls = 0;
+             find_clock_override_reset reset;
+             combdsl::detail::find_clock_now_override = [&] {
+                 ++clock_calls;
+                 return combdsl::detail::find_clock::time_point::max();
+             };
+             auto source = std::string("find among ");
+             source.append(1'024, 'A');
+             source += "$ ?x = x";
+             try {
+                 static_cast<void>(combdsl::detail::parse_input(
+                     source,
+                     combdsl::detail::parser_definition_mode::
+                         inspect_definitions));
+             } catch (parse_error const& error) {
+                 std::cout << clock_calls << ' '
+                           << error.position() << ' '
+                           << error.detail();
+             }
+         },
+         "0 1035 $ is not a defined name");
+    test("find among enumerates every size-three shape and labeling in order",
+         [] {
+             std::array<combdsl::quoted_expression, 2> const catalog{
+                 quote(A), quote(B),
+             };
+             std::vector<combdsl::quoted_expression> candidates;
+             auto const status =
+                 combdsl::detail::for_each_catalog_candidate_of_size(
+                     3,
+                     catalog,
+                     combdsl::detail::find_clock::time_point::max(),
+                     [&](combdsl::quoted_expression candidate) {
+                         candidates.push_back(std::move(candidate));
+                         return true;
+                     });
+             std::cout
+                 << (status == combdsl::detail::
+                         catalog_find_enumeration_status::completed)
+                 << ' ' << candidates.size() << ' ';
+             for (std::size_t index = 0;
+                  index < candidates.size();
+                  ++index) {
+                 if (index != 0) {
+                     std::cout << ',';
+                 }
+                 candidates[index].print_to(std::cout);
+             }
+         },
+         "1 16 AAA,AAB,ABA,ABB,BAA,BAB,BBA,BBB,"
+         "A(AA),A(AB),A(BA),A(BB),B(AA),B(AB),B(BA),B(BB)");
+    test("find among inspection accepts fundamental birds without searching",
+         [] {
+             std::size_t clock_calls = 0;
+             find_clock_override_reset reset;
+             combdsl::detail::find_clock_now_override = [&] {
+                 ++clock_calls;
+                 return combdsl::detail::find_clock::time_point::max();
+             };
+             auto const parsed = combdsl::detail::parse_input(
+                 "find all among SKIY ?x = x",
+                 combdsl::detail::parser_definition_mode::
+                     inspect_definitions);
+             std::cout << clock_calls << ' '
+                       << parsed.is_display_only
+                       << parsed.is_find << ' ';
+             parsed.expression.print_to(std::cout);
+         },
+         "0 11 x");
+    test("ordinary fixed Find does not use the among deadline",
+         [] {
+             std::size_t clock_calls = 0;
+             find_clock_override_reset reset;
+             combdsl::detail::find_clock_now_override = [&] {
+                 ++clock_calls;
+                 return combdsl::detail::find_clock::time_point::max();
+             };
+             parse("find 1 ?xy = x(yx)").print_to(std::cout);
+             std::cout << ' ' << clock_calls;
+         },
+         "?=A 0");
+    test("find among registers a user bird revision",
+         [] {
+             static_cast<void>(parse("references captured"));
+             parse("set FindAmongUser = 2 A").print_to(std::cout);
+         },
+         "FindAmongUser");
+    test("find among searches the current user revision",
+         parse("find among FindAmongUser ?xy = x(yx)"),
+         "?=FindAmongUser@1");
+    test("find among can retain an earlier explicit revision",
+         [] {
+             static_cast<void>(parse("set FindAmongUser = 2 K"));
+             parse("find among FindAmongUser@1 ?xy = x(yx)")
+                 .print_to(std::cout);
+         },
+         "?=FindAmongUser@1");
+    test("find among accepts an explicit removed revision",
+         [] {
+             static_cast<void>(parse("remove FindAmongUser"));
+             parse("find among FindAmongUser@1 ?xy = x(yx)")
+                 .print_to(std::cout);
+         },
+         "?=FindAmongUser@1");
+    test("find among follows normal live reference semantics",
+         [] {
+             static_cast<void>(parse("references live"));
+             static_cast<void>(parse(
+                 "set FindAmongLive = 2 A"));
+             parse("find among FindAmongLive ?xy = x(yx)")
+                 .print_to(std::cout);
+             static_cast<void>(parse("references captured"));
+         },
+         "?=FindAmongLive");
+    test("find among keeps distinct live and captured references",
+         [] {
+             static_cast<void>(parse("references live"));
+             parse(
+                 "find among FindAmongLive FindAmongLive@1 "
+                 "?xy = x(yx)")
+                 .print_to(std::cout);
+             static_cast<void>(parse("references captured"));
+         },
+         "?=FindAmongLive\n?=FindAmongLive@1");
+    test_parse_failure(
+        "find among rejects an unqualified removed bird",
+        "find among FindAmongUser ?xy = x(yx)", 12,
+        "indAmongUser is not a defined name");
+    test("find among can find a composition larger than four",
+         [] {
+             static_cast<void>(parse(
+                 "set FindAmongLeaf = 100 I"));
+             parse(
+                 "find among FindAmongLeaf@1 ?x = "
+                 "FindAmongLeaf@1 FindAmongLeaf@1 FindAmongLeaf@1 "
+                 "FindAmongLeaf@1 FindAmongLeaf@1 x")
+                 .print_to(std::cout);
+         },
+         "?=FindAmongLeaf@1 FindAmongLeaf@1 FindAmongLeaf@1 "
+         "FindAmongLeaf@1 FindAmongLeaf@1");
+    test("find among times out at the exact ten-second deadline",
+         [] {
+             std::size_t clock_calls = 0;
+             find_clock_override_reset reset;
+             auto const epoch =
+                 combdsl::detail::find_clock::time_point{};
+             combdsl::detail::find_clock_now_override = [&] {
+                 auto const before_deadline = clock_calls++ == 0;
+                 return before_deadline
+                     ? epoch
+                     : epoch + combdsl::detail::find_search_window;
+             };
+             std::array<combdsl::quoted_expression, 1> const catalog{
+                 quote(A),
+             };
+             std::array<combdsl::quoted_atomic, 0> const symbols{};
+             auto const result =
+                 combdsl::find_combinator_matches_among(
+                     symbols, quote(A), catalog, true);
+             std::cout << result.timed_out << ' '
+                       << result.completed_sizes.size() << ' '
+                       << clock_calls;
+         },
+         "1 0 2");
+    test("find among timeout keeps the existing no-match report",
+         [] {
+             std::size_t clock_calls = 0;
+             find_clock_override_reset reset;
+             auto const epoch =
+                 combdsl::detail::find_clock::time_point{};
+             combdsl::detail::find_clock_now_override = [&] {
+                 return clock_calls++ == 0
+                     ? epoch
+                     : epoch + combdsl::detail::find_search_window;
+             };
+             auto const parsed = combdsl::detail::parse_input(
+                 "find all among A ?xy = x(yx)");
+             parsed.expression.print_to(std::cout);
+             std::cout << ' ' << parsed.is_find_no_match;
+         },
+         "No match within search bounds 1");
+    test("find among discards a partially completed matching size",
+         [] {
+             std::size_t clock_calls = 0;
+             // The size-two candidate has matched by this boundary,
+             // but the completed size has not yet been committed.
+             constexpr std::size_t calls_before_deadline = 34;
+             find_clock_override_reset reset;
+             auto const epoch =
+                 combdsl::detail::find_clock::time_point{};
+             combdsl::detail::find_clock_now_override = [&] {
+                 auto const before_deadline =
+                     clock_calls++ < calls_before_deadline;
+                 return before_deadline
+                     ? epoch
+                     : epoch + combdsl::detail::find_search_window;
+             };
+             std::array<combdsl::quoted_expression, 1> const catalog{
+                 quote(A),
+             };
+             std::array<combdsl::quoted_atomic, 0> const symbols{};
+             auto const result =
+                 combdsl::find_combinator_matches_among(
+                     symbols, quote(A)(A), catalog, true);
+             std::cout << result.timed_out << ' '
+                       << result.completed_sizes.size() << ' '
+                       << (result.completed_sizes.size() == 1 &&
+                           result.completed_sizes.front().empty()) << ' '
+                       << clock_calls;
+         },
+         "1 1 1 35");
+    test("find all among keeps completed sizes until its deadline",
+         [] {
+             std::size_t clock_calls = 0;
+             constexpr std::size_t calls_before_deadline = 1'000;
+             find_clock_override_reset reset;
+             auto const epoch =
+                 combdsl::detail::find_clock::time_point{};
+             combdsl::detail::find_clock_now_override = [&] {
+                 auto const before_deadline =
+                     clock_calls++ < calls_before_deadline;
+                 return before_deadline
+                     ? epoch
+                     : epoch + combdsl::detail::find_search_window;
+             };
+             std::array<combdsl::quoted_expression, 1> const catalog{
+                 quote(A),
+             };
+             std::array<combdsl::quoted_atomic, 0> const symbols{};
+             auto const result =
+                 combdsl::find_combinator_matches_among(
+                     symbols, quote(A), catalog, true);
+             std::cout << result.timed_out << ' '
+                       << (result.completed_sizes.size() >= 2) << ' '
+                       << (!result.completed_sizes.empty() &&
+                           result.completed_sizes.front().size() == 1) << ' '
+                       << clock_calls;
+         },
+         "1 1 1 1001");
+    test("find among without all stops at its first matching size",
+         [] {
+             std::size_t clock_calls = 0;
+             constexpr std::size_t calls_before_deadline = 22;
+             find_clock_override_reset reset;
+             auto const epoch =
+                 combdsl::detail::find_clock::time_point{};
+             combdsl::detail::find_clock_now_override = [&] {
+                 auto const before_deadline =
+                     clock_calls++ < calls_before_deadline;
+                 return before_deadline
+                     ? epoch
+                     : epoch + combdsl::detail::find_search_window;
+             };
+             std::array<combdsl::quoted_expression, 1> const catalog{
+                 quote(A),
+             };
+             std::array<combdsl::quoted_atomic, 0> const symbols{};
+             auto const result =
+                 combdsl::find_combinator_matches_among(
+                     symbols, quote(A), catalog, false);
+             std::cout << result.timed_out << ' '
+                       << result.completed_sizes.size() << ' '
+                       << (result.completed_sizes.size() == 1 &&
+                           result.completed_sizes.front().size() == 1) << ' '
+                       << clock_calls;
+         },
+         "0 1 1 17");
+    test("find among public API rejects an empty catalog",
+         [] {
+             std::array<combdsl::quoted_atomic, 0> const symbols{};
+             std::array<combdsl::quoted_expression, 0> const catalog{};
+             try {
+                 static_cast<void>(
+                     combdsl::find_combinator_matches_among(
+                         symbols, quote(A), catalog));
+             } catch (std::invalid_argument const& error) {
+                 std::cout << error.what();
+             }
+         },
+         "combdsl::find among catalog cannot be empty");
     test("find exposes no-match metadata",
          [] {
              auto const parsed = combdsl::detail::parse_input(

@@ -64,6 +64,8 @@ not begin with a lowercase ASCII letter, the space before symbols may be
 omitted. For example, to add the Eagle bird:
 define Exyzwv = xy(zwv)
 
+A basis name cannot begin with ? because ? introduces parser command markers.
+
 The optional "captured" or "live" modifier on set and define overrides the
 reference mode for that command only, without changing the mode for later input.
 Captured references pin current revisions; live references follow later
@@ -208,7 +210,7 @@ Ox: O", and "?=O". Abstract ignores the stepping and colorize modes.
 
 Finding Combinators
 
-find [all] [num] ?<symbol_list> = <combinator_expression>
+find [all] [<num> | among <bird>...] ?<symbol_list> = <combinator_expression>
 Searches the pre-defined bird catalog for forms that reduce to
 combinator_expression when applied to symbol_list. A question mark must
 immediately precede one or more lowercase symbols. The optional num is a number
@@ -221,6 +223,21 @@ Each answer is printed as "?=<match>". Y is excluded from the search catalog.
 Find ignores the stepping and colorize modes. Matching uses bounded
 normalization, so the red response "No match within search bounds" does not
 prove that no equivalent expression exists.
+
+Instead of num, "among" selects a restricted catalog. It must be followed by one
+or more bird names before the question mark. Whitespace between names is
+optional, but whitespace before the question mark remains required. Within each
+contiguous group, an exact whole name or revision wins; otherwise the longest
+valid bird name or revision is taken from left to right. Whitespace can force a
+shorter boundary. S, K, I, Y, pre-defined birds, current user-defined names, and
+explicit retained name@N revisions are accepted; an explicit retained revision
+remains usable after its name is removed. Unlike the default catalog, an
+explicitly listed Y is allowed. A restricted search examines increasing
+composition sizes within one 10-second window. Only fully completed sizes are
+reported, and results from a size still in progress when time expires are
+discarded. Without "all", it stops at the first completed size with answers.
+With "all", it retains answers from every size completed within the same window.
+The output is otherwise unchanged, including the bounded no-match response.
 
 Command Entry
 

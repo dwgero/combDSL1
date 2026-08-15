@@ -388,9 +388,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             color: #c33;
         }
     </style>
-    <script src="./evaluation_watchdog.js?v=2.10.3" defer></script>
-    <script src="./input_history.js?v=2.10.3" defer></script>
-    <script src="./app.js?v=2.10.3" defer></script>
+    <script src="./evaluation_watchdog.js?v=2.10.5" defer></script>
+    <script src="./input_history.js?v=2.10.5" defer></script>
+    <script src="./app.js?v=2.10.5" defer></script>
 </head>
 <body>
     <main aria-labelledby="studio-title">
@@ -612,6 +612,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             be omitted. For example, to add the Eagle bird:<br>
             <code>define Exyzwv = xy(zwv)</code>
             <br><br>
+            A basis name cannot begin with <code>?</code> because
+            <code>?</code> introduces parser command markers.
+            <br><br>
             The optional <code>captured</code> or <code>live</code> modifier
             on <code>set</code> and <code>define</code> overrides the current
             reference mode for that command only without changing the mode for
@@ -815,7 +818,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
         </div>
         <h2 class="help-subheading">Finding Combinators</h2>
         <div class="help-section">
-            <code>find [all] [num] ?symbol_list =
+            <code>find [all] [&lt;num&gt; | among &lt;bird&gt;...]
+                ?symbol_list =
                 combinator_expression</code><br>
             Searches the pre-defined bird catalog for forms that reduce to the
             <code>combinator_expression</code> when applied to the
@@ -834,6 +838,25 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             Matching uses bounded normalization, so the red
             <code>No match within search bounds</code> response does not prove
             that no equivalent expression exists.
+            Instead of <code>num</code>, <code>among</code> selects a
+            restricted catalog. It must be followed by one or more bird names
+            before the question mark. Whitespace between names is optional,
+            but whitespace before the question mark remains required. Within
+            each contiguous group, an exact whole name or revision wins;
+            otherwise the longest valid bird name or revision is taken from
+            left to right. Whitespace can force a shorter boundary. The list
+            may contain <code>S</code>, <code>K</code>, <code>I</code>,
+            <code>Y</code>, pre-defined birds, current user-defined names, and
+            explicit retained <code>name@N</code> revisions, including a
+            retained revision whose name was removed. An explicitly listed
+            <code>Y</code> is allowed. A restricted search examines increasing
+            composition sizes within one 10-second window. Only fully
+            completed sizes are displayed; results from a size still in
+            progress when time expires are discarded. Without
+            <code>all</code>, it stops after the first completed size with
+            answers. With <code>all</code>, it keeps answers from every size
+            completed within that same window. Its answer and bounded
+            no-match formats are unchanged.
         </div>
         <h2 class="help-subheading">Saving and Loading Combinators</h2>
         <div class="help-section">
@@ -962,7 +985,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             data-dialog-initial-focus>About</h2>
         <div class="license-text">
             <!-- Keep this version and the app.js cache key in sync. -->
-            <p>Combinator Studio, version 2.10.3<br>
+            <p>Combinator Studio, version 2.10.5<br>
                 Part of the C++ Combinator DSL<br>
                 Copyright (C) 2026  David W. Gero</p>
             <p>This program is free software: you can redistribute it and/or modify
