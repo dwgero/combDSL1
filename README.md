@@ -831,7 +831,9 @@ parse_eval("usedby all Outer");
 // Outer directly uses: Middle
 // Outer indirectly uses: Base
 parse_eval("usedby path between Base and Outer");
-// Outer uses Base via: Outer -> Middle -> Base
+// Outer uses Base via:
+//   Outer@1 -> Middle@1  [captured]
+//   Middle@1 -> Base@1  [captured]
 ```
 
 The related display-only forms
@@ -841,14 +843,21 @@ The related display-only forms
 different current, non-fundamental names. The words `between` and `and` are
 independently optional, and either endpoint order gives the same result. The
 search follows the directed, actual stored-reference graph in both possible
-endpoint directions. Captured and version-qualified edges retain their exact
-revisions, including removed captured intermediates, while live edges follow
-their current target or retained last target. The path with the fewest edges
-wins; ties use the lexicographically smallest stored basis-name sequence,
-which is the displayed order for ordinary names. A match is printed as
-`A uses B via: A -> C -> B`. If there is no path, the result is
-`A and B have no dependency path`, with the two displayed endpoint names in
-lexicographic order.
+endpoint directions. The path with the fewest edges wins; ties use the
+lexicographically smallest stored basis-name sequence, which is the displayed
+order for ordinary names.
+
+A match begins with `A uses B via:` and then prints one indented line per edge.
+Each user-defined node uses its exact `name@N` revision identity, such as
+`A@2 -> C@4  [live]`. An edge is labeled `[live]`, `[captured]`, or
+`[pre-defined]` according to the stored reference; pre-defined nodes remain
+unversioned. An explicitly written
+`name@N` reference is labeled `[captured]`, just like an implicitly captured
+reference. When the target revision belongs to a name that is no longer
+registered, the same line also ends with `[name removed]`. Live references
+resolve to their current target or retained last target while removed. If
+there is no path, the result is `A and B have no dependency path`, with the
+two displayed endpoint names in lexicographic order.
 
 At the start of a line, optionally preceded by whitespace, `remove` followed
 by whitespace and a name removes a user-defined basis from future parsing.
@@ -920,7 +929,7 @@ expression produces no output, while malformed or empty lines throw
 The `crepl` executable applies `input_escape` to each line before passing it to
 `parse_eval`, so ordinary quoted words and backslashes can be entered directly.
 When standard output is a terminal, it first prints
-`Combinator Read-Eval-Print Loop, version 2.10.2`. Long evaluations display
+`Combinator Read-Eval-Print Loop, version 2.10.3`. Long evaluations display
 the accumulated step count every 1,000 reductions by overwriting one status
 line; the line is cleared before evaluation output is printed. Its interactive
 prompt is `>`. Interactive input uses GNU Readline, so previous nonempty

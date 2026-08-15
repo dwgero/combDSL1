@@ -5960,27 +5960,208 @@ parser_dependency_names(
     return result;
 }
 
-using parser_dependency_path =
-    std::vector<registered_parser_basis_ptr>;
+enum class parser_dependency_edge_kind {
+    captured,
+    live,
+    predefined
+};
+
+struct parser_dependency_edge {
+    registered_parser_basis_ptr target;
+    parser_dependency_edge_kind kind;
+};
+
+[[nodiscard]] inline std::vector<parser_dependency_edge>
+direct_parser_dependency_edges_in_definition(
+    quoted_expression const& expression,
+    registered_parser_basis_table const& registered_bases,
+    parser_basis_version_history const& registered_versions) {
+    auto const& expression_root = quoted_access::root(expression);
+    if (expression_root->kind() != quoted_node_kind::basis) {
+        throw std::logic_error(
+            "combdsl::registered parser basis is not a basis");
+    }
+
+    std::unordered_map<
+        quoted_node const*, registered_parser_basis_ptr>
+        registered_roots;
+    for (auto const& [name, registered] : registered_bases) {
+        static_cast<void>(name);
+        registered_roots.emplace(
+            quoted_access::root(registered->expression()).get(),
+            registered);
+    }
+    for (auto const& [name, versions] : registered_versions) {
+        static_cast<void>(name);
+        for (auto const& registered : versions) {
+            registered_roots.emplace(
+                quoted_access::root(registered->expression()).get(),
+                registered);
+        }
+    }
+
+    std::vector<parser_dependency_edge> result;
+    auto add_edge = [&result](
+                        registered_parser_basis_ptr target,
+                        parser_dependency_edge_kind kind) {
+        if (target->predefined()) {
+            kind = parser_dependency_edge_kind::predefined;
+        }
+        auto const already_added = std::ranges::find_if(
+            result,
+            [&](parser_dependency_edge const& edge) {
+                return edge.target == target && edge.kind == kind;
+            });
+        if (already_added == result.end()) {
+            result.push_back({std::move(target), kind});
+        }
+    };
+
+    auto const& definition =
+        static_cast<quoted_basis_node_base const&>(*expression_root);
+    std::unordered_set<quoted_node const*> visited;
+    std::vector<std::shared_ptr<quoted_node const>> pending{
+        quoted_access::root(definition.body())};
+    while (!pending.empty()) {
+        auto root = std::move(pending.back());
+        pending.pop_back();
+        if (!visited.emplace(root.get()).second) {
+            continue;
+        }
+
+        if (auto const* reference = dynamic_cast<
+                quoted_parser_basis_reference_node const*>(
+                root.get())) {
+            auto target = reference->resolve_from(registered_bases);
+            auto const kind = reference->is_live_binding()
+                ? parser_dependency_edge_kind::live
+                : parser_dependency_edge_kind::captured;
+            add_edge(std::move(target), kind);
+            continue;
+        }
+
+        if (root->kind() == quoted_node_kind::basis) {
+            registered_parser_basis_ptr target;
+            if (auto const match = registered_roots.find(root.get());
+                match != registered_roots.end()) {
+                target = match->second;
+            } else {
+                auto const name =
+                    static_cast<quoted_basis_node_base const&>(
+                        *root).definition_name();
+                if (auto const current = registered_bases.find(name);
+                    current != registered_bases.end()) {
+                    target = current->second;
+                } else if (auto const versions =
+                               registered_versions.find(name);
+                           versions != registered_versions.end() &&
+                           !versions->second.empty()) {
+                    target = versions->second.back();
+                }
+            }
+            if (target) {
+                add_edge(
+                    std::move(target),
+                    parser_dependency_edge_kind::captured);
+            }
+            continue;
+        }
+
+        switch (root->kind()) {
+        case quoted_node_kind::application: {
+            auto const& application =
+                static_cast<quoted_application_node const&>(*root);
+            pending.push_back(
+                quoted_access::root(application.argument()));
+            pending.push_back(
+                quoted_access::root(application.function()));
+            break;
+        }
+        case quoted_node_kind::pending_sk:
+            pending.push_back(quoted_access::root(
+                static_cast<quoted_pending_sk_node const&>(*root)
+                    .application()));
+            break;
+        case quoted_node_kind::recursive_y:
+            pending.push_back(quoted_access::root(
+                static_cast<quoted_recursive_y_node const&>(*root)
+                    .generator()));
+            break;
+        case quoted_node_kind::basis_argument:
+            pending.push_back(quoted_access::root(
+                static_cast<quoted_basis_argument_node const&>(*root)
+                    .argument()));
+            break;
+        case quoted_node_kind::colored_argument:
+            pending.push_back(quoted_access::root(
+                static_cast<quoted_colored_argument_node const&>(*root)
+                    .argument()));
+            break;
+        case quoted_node_kind::opaque:
+        case quoted_node_kind::rec_func:
+        case quoted_node_kind::identity:
+        case quoted_node_kind::constant:
+        case quoted_node_kind::substitution:
+        case quoted_node_kind::fixed_point:
+        case quoted_node_kind::basis:
+            break;
+        }
+    }
+
+    std::ranges::sort(
+        result,
+        [](parser_dependency_edge const& left,
+           parser_dependency_edge const& right) {
+            if (left.target->name() != right.target->name()) {
+                return left.target->name() < right.target->name();
+            }
+            if (left.target->version() != right.target->version()) {
+                return left.target->version() <
+                       right.target->version();
+            }
+            return left.kind < right.kind;
+        });
+    return result;
+}
+
+struct parser_dependency_path {
+    std::vector<registered_parser_basis_ptr> nodes;
+    std::vector<parser_dependency_edge_kind> edge_kinds;
+
+    [[nodiscard]] bool empty() const noexcept {
+        return nodes.empty();
+    }
+
+    [[nodiscard]] std::size_t size() const noexcept {
+        return nodes.size();
+    }
+};
 
 [[nodiscard]] inline bool parser_dependency_path_less(
     parser_dependency_path const& left,
     parser_dependency_path const& right) {
-    auto const common_size = std::min(left.size(), right.size());
+    auto const common_size =
+        std::min(left.nodes.size(), right.nodes.size());
     for (std::size_t index = 0; index < common_size; ++index) {
-        auto const left_name = left[index]->name();
-        auto const right_name = right[index]->name();
+        auto const left_name = left.nodes[index]->name();
+        auto const right_name = right.nodes[index]->name();
         if (left_name != right_name) {
             return left_name < right_name;
         }
     }
-    if (left.size() != right.size()) {
-        return left.size() < right.size();
+    if (left.nodes.size() != right.nodes.size()) {
+        return left.nodes.size() < right.nodes.size();
     }
-    for (std::size_t index = 0; index < left.size(); ++index) {
-        if (left[index]->version() != right[index]->version()) {
-            return left[index]->version() < right[index]->version();
+    for (std::size_t index = 0; index < left.nodes.size(); ++index) {
+        if (left.nodes[index]->version() !=
+            right.nodes[index]->version()) {
+            return left.nodes[index]->version() <
+                   right.nodes[index]->version();
         }
+    }
+    if (left.edge_kinds != right.edge_kinds) {
+        return std::ranges::lexicographical_compare(
+            left.edge_kinds, right.edge_kinds);
     }
     return false;
 }
@@ -5991,34 +6172,36 @@ shortest_parser_dependency_path(
     std::string_view target_name,
     registered_parser_basis_table const& registered_bases,
     parser_basis_version_history const& registered_versions) {
-    std::vector<parser_dependency_path> current_paths{{start}};
+    std::vector<parser_dependency_path> current_paths{
+        {{start}, {}}};
     std::unordered_set<registered_parser_basis const*> visited{
         start.get()};
     while (!current_paths.empty()) {
         std::ranges::sort(
             current_paths, parser_dependency_path_less);
         for (auto const& path : current_paths) {
-            if (path.back()->name() == target_name) {
+            if (path.nodes.back()->name() == target_name) {
                 return path;
             }
         }
 
         std::vector<parser_dependency_path> candidates;
         for (auto const& path : current_paths) {
-            auto dependencies =
-                direct_registered_parser_bases_in_definition(
-                    path.back()->expression(), registered_bases,
+            auto edges =
+                direct_parser_dependency_edges_in_definition(
+                    path.nodes.back()->expression(), registered_bases,
                     registered_versions);
-            for (auto const& dependency : dependencies) {
+            for (auto const& edge : edges) {
                 auto candidate = path;
-                candidate.push_back(dependency);
+                candidate.nodes.push_back(edge.target);
+                candidate.edge_kinds.push_back(edge.kind);
                 candidates.push_back(std::move(candidate));
             }
         }
         std::ranges::sort(candidates, parser_dependency_path_less);
         current_paths.clear();
         for (auto& candidate : candidates) {
-            if (visited.emplace(candidate.back().get()).second) {
+            if (visited.emplace(candidate.nodes.back().get()).second) {
                 current_paths.push_back(std::move(candidate));
             }
         }
@@ -7218,15 +7401,40 @@ private:
             return quote(std::move(first_text));
         }
 
-        std::string output = unescape_input(path.front()->name());
+        std::string output = unescape_input(path.nodes.front()->name());
         output += " uses ";
-        output += unescape_input(path.back()->name());
+        output += unescape_input(path.nodes.back()->name());
         output += " via:";
-        bool first_dependency = true;
-        for (auto const& dependency : path) {
-            output += first_dependency ? " " : " -> ";
-            output += unescape_input(dependency->name());
-            first_dependency = false;
+        auto append_node = [&output](
+                               registered_parser_basis_ptr const& node) {
+            output += unescape_input(node->name());
+            if (!node->predefined()) {
+                output += '@';
+                output += std::to_string(node->version());
+            }
+        };
+        for (std::size_t index = 0;
+             index < path.edge_kinds.size(); ++index) {
+            output += "\n  ";
+            append_node(path.nodes[index]);
+            output += " -> ";
+            auto const& target = path.nodes[index + 1];
+            append_node(target);
+            switch (path.edge_kinds[index]) {
+            case parser_dependency_edge_kind::captured:
+                output += "  [captured]";
+                break;
+            case parser_dependency_edge_kind::live:
+                output += "  [live]";
+                break;
+            case parser_dependency_edge_kind::predefined:
+                output += "  [pre-defined]";
+                break;
+            }
+            if (!target->predefined() &&
+                !registered_bases_.contains(target->name())) {
+                output += " [name removed]";
+            }
         }
         return quote(std::move(output));
     }

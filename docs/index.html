@@ -388,9 +388,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             color: #c33;
         }
     </style>
-    <script src="./evaluation_watchdog.js?v=2.10.2" defer></script>
-    <script src="./input_history.js?v=2.10.2" defer></script>
-    <script src="./app.js?v=2.10.2" defer></script>
+    <script src="./evaluation_watchdog.js?v=2.10.3" defer></script>
+    <script src="./input_history.js?v=2.10.3" defer></script>
+    <script src="./app.js?v=2.10.3" defer></script>
 </head>
 <body>
     <main aria-labelledby="studio-title">
@@ -765,13 +765,22 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             <code>between</code> and <code>and</code> are independently
             optional, and either endpoint order gives the same result. The
             directed search follows actual stored references in both endpoint
-            directions. Captured and version-qualified edges retain their
-            exact revisions, including removed captured intermediates, while
-            live edges follow their current target or retained last target.
+            directions.
             The path with the fewest edges wins; ties use the lexicographically
             smallest stored basis-name sequence, which is the displayed order
-            for ordinary names. A match is displayed as
-            <code>A uses B via: A -&gt; C -&gt; B</code>. With no path, the
+            for ordinary names. A match begins with
+            <code>A uses B via:</code> and then displays one indented line per
+            edge. Each user-defined node uses its exact <code>name@N</code>
+            revision identity, such as
+            <code>A@2 -&gt; C@4&nbsp;&nbsp;[live]</code>. An edge is labeled
+            <code>[live]</code>, <code>[captured]</code>, or
+            <code>[pre-defined]</code> according to the stored reference;
+            pre-defined nodes remain unversioned. An
+            explicitly written <code>name@N</code> reference is labeled
+            <code>[captured]</code>, just like an implicitly captured reference.
+            A target whose name is no longer registered also receives
+            <code>[name removed]</code>. Live references follow their current
+            target or retained last target while removed. With no path, the
             result is <code>A and B have no dependency path</code>, with the
             endpoint names in lexicographic order.
         </div>
@@ -953,7 +962,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             data-dialog-initial-focus>About</h2>
         <div class="license-text">
             <!-- Keep this version and the app.js cache key in sync. -->
-            <p>Combinator Studio, version 2.10.2<br>
+            <p>Combinator Studio, version 2.10.3<br>
                 Part of the C++ Combinator DSL<br>
                 Copyright (C) 2026  David W. Gero</p>
             <p>This program is free software: you can redistribute it and/or modify

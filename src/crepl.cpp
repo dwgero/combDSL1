@@ -60,7 +60,7 @@
 
 namespace {
 
-constexpr std::string_view crepl_version = "2.10.2";
+constexpr std::string_view crepl_version = "2.10.3";
 
 [[nodiscard]] bool stream_is_terminal(std::FILE* stream) noexcept {
 #if defined(_WIN32)
@@ -890,7 +890,7 @@ void print_help_brief(std::ostream& output) {
         "usedby path [between] <name1> [and] <name2>\n"
         "used-by path [between] <name1> [and] <name2>\n"
         "used by path [between] <name1> [and] <name2>\n"
-        "                                      | display the shortest dependency path\n";
+        "                                      | display the shortest labeled dependency path\n";
     output.flush();
 }
 
@@ -1150,13 +1150,22 @@ void print_help_full(std::ostream& output) {
         "both directions. It chooses the path with the fewest edges, breaking "
         "ties by the lexicographically smallest stored basis-name sequence "
         "(the displayed order for ordinary names), so the argument order "
-        "does not affect the result. A found path is "
-        "printed as \"A uses B via: A -> C -> B\". Otherwise it prints \"A and "
-        "B have no dependency path\", with those endpoint names in "
-        "lexicographic order. Captured and version-qualified edges retain "
-        "their exact revisions and may traverse removed captured "
-        "intermediates; live edges follow their current or retained last "
-        "targets.");
+        "does not affect the result. A found path begins with a heading and "
+        "prints one indented line per edge. Each user-defined node uses its "
+        "exact name@N revision identity, as in:");
+    output << "A uses B via:\n"
+           << "  A@2 -> C@4  [live]\n\n";
+    write_wrapped_paragraph(
+        output,
+        "Each edge is labeled "
+        "\"[live]\", \"[captured]\", or \"[pre-defined]\". Pre-defined "
+        "nodes remain unversioned. An explicitly "
+        "written name@N reference is labeled \"[captured]\", just like an "
+        "implicitly captured reference. A target whose name is no longer "
+        "registered also receives \"[name removed]\". Live references follow "
+        "their current or retained last targets. Otherwise the command prints "
+        "\"A and B have no dependency path\", with those endpoint names in "
+        "lexicographic order.");
 
     output << "\nAbstracting Expressions\n\n"
            << "abstract [steps | ministeps] ?<symbol_list> = "

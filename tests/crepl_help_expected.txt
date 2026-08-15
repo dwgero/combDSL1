@@ -32,7 +32,7 @@ usedby [all] <name> | used-by [all] <name> | used by [all] <name>
 usedby path [between] <name1> [and] <name2>
 used-by path [between] <name1> [and] <name2>
 used by path [between] <name1> [and] <name2>
-                                      | display the shortest dependency path
+                                      | display the shortest labeled dependency path
 Commands:
 about                                 | display copyright and redistribution information
 abstract [steps | ministeps] ?<symbols> = <expression>
@@ -67,4 +67,4 @@ usedby [all] <name> | used-by [all] <name> | used by [all] <name>
 usedby path [between] <name1> [and] <name2>
 used-by path [between] <name1> [and] <name2>
 used by path [between] <name1> [and] <name2>
-                                      | display the shortest dependency path
+                                      | display the shortest labeled dependency path

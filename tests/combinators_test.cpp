@@ -1590,8 +1590,9 @@ int main() {
          parse("depends on all AllIndirectD"), all_depended_on_by);
 
     constexpr std::string_view shortest_dependency_path =
-        "AllRoot uses AllIndirectD via: AllRoot -> AllDirectA -> "
-        "AllIndirectD";
+        "AllRoot uses AllIndirectD via:\n"
+        "  AllRoot@1 -> AllDirectA@1  [captured]\n"
+        "  AllDirectA@1 -> AllIndirectD@1  [captured]";
     test("usedby path accepts compact syntax without optional words",
          parse("usedby path AllRoot AllIndirectD"),
          shortest_dependency_path);
@@ -1633,7 +1634,8 @@ int main() {
          shortest_dependency_path);
     test("usedby path chooses a shorter direct edge",
          parse("usedby path AllRoot AllIndirectC"),
-         "AllRoot uses AllIndirectC via: AllRoot -> AllIndirectC");
+         "AllRoot uses AllIndirectC via:\n"
+         "  AllRoot@1 -> AllIndirectC@1  [captured]");
     test("usedby path reports a normalized disconnected pair",
          parse("usedby path AllIndirectE AllIndirectD"),
          "AllIndirectD and AllIndirectE have no dependency path");
@@ -1649,8 +1651,9 @@ int main() {
          parse("set PathRoot: = 1 PathMiddle:"), "PathRoot:");
     test("dependency path keeps separators after punctuation-ending names",
          parse("usedby path PathRoot: PathLeaf:"),
-         "PathRoot: uses PathLeaf: via: PathRoot: -> PathMiddle: -> "
-         "PathLeaf:");
+         "PathRoot: uses PathLeaf: via:\n"
+         "  PathRoot:@1 -> PathMiddle:@1  [captured]\n"
+         "  PathMiddle:@1 -> PathLeaf:@1  [captured]");
 
     test("captured traversal registers its first leaf",
          parse("set AllSnapC = 1 I"), "AllSnapC");
@@ -1673,7 +1676,9 @@ int main() {
     test("dependson all follows captured revisions after redefinition",
          parse("dependson all AllSnapC"), captured_depended_on_by);
     constexpr std::string_view captured_path =
-        "AllSnapA uses AllSnapC via: AllSnapA -> AllSnapB -> AllSnapC";
+        "AllSnapA uses AllSnapC via:\n"
+        "  AllSnapA@1 -> AllSnapB@1  [captured]\n"
+        "  AllSnapB@1 -> AllSnapC@1  [captured]";
     test("usedby path follows the captured branch revision",
          parse("usedby path AllSnapA AllSnapC"), captured_path);
     test("usedby path excludes the replacement from a captured path",
@@ -1686,7 +1691,10 @@ int main() {
     test("dependson all retains a captured removed revision",
          parse("dependson all AllSnapC"), captured_depended_on_by);
     test("usedby path retains a removed captured intermediate",
-         parse("usedby path AllSnapA AllSnapC"), captured_path);
+         parse("usedby path AllSnapA AllSnapC"),
+         "AllSnapA uses AllSnapC via:\n"
+         "  AllSnapA@1 -> AllSnapB@1  [captured] [name removed]\n"
+         "  AllSnapB@1 -> AllSnapC@1  [captured]");
 
     test("live traversal enables live references",
          parse("references live"), "references live");
@@ -1710,7 +1718,9 @@ int main() {
          "AllLiveD is indirectly depended on by: AllLiveA");
     test("usedby path follows a live branch replacement",
          parse("usedby path AllLiveA AllLiveD"),
-         "AllLiveA uses AllLiveD via: AllLiveA -> AllLiveB -> AllLiveD");
+         "AllLiveA uses AllLiveD via:\n"
+         "  AllLiveA@1 -> AllLiveB@2  [live]\n"
+         "  AllLiveB@2 -> AllLiveD@1  [live]");
     test("usedby path excludes the old live target",
          parse("usedby path AllLiveA AllLiveC"),
          "AllLiveA and AllLiveC have no dependency path");
@@ -1718,9 +1728,45 @@ int main() {
          parse("remove AllLiveB"), "AllLiveB");
     test("usedby path retains the last removed live target",
          parse("usedby path AllLiveA AllLiveD"),
-         "AllLiveA uses AllLiveD via: AllLiveA -> AllLiveB -> AllLiveD");
+         "AllLiveA uses AllLiveD via:\n"
+         "  AllLiveA@1 -> AllLiveB@2  [live] [name removed]\n"
+         "  AllLiveB@2 -> AllLiveD@1  [live]");
     test("live traversal restores captured references",
          parse("references captured"), "references captured");
+
+    test("dependency path registers a pre-defined target user",
+         parse("set PathPreRoot = 1 M"),
+         "PathPreRoot");
+    test("dependency path leaves pre-defined nodes unversioned",
+         parse("usedby path PathPreRoot M"),
+         "PathPreRoot uses M via:\n"
+         "  PathPreRoot@1 -> M  [pre-defined]");
+
+    test("explicit path target registers its first revision",
+         parse("set PathExpTarget = 1 I"),
+         "PathExpTarget");
+    test("explicit path target advances while retaining history",
+         parse("set PathExpTarget = 2 K"),
+         "PathExpTarget");
+    test("dependency path registers an explicit old-revision edge",
+         parse("set live PathExpRoot = 1 PathExpTarget@1"),
+         "PathExpRoot");
+    test("explicit old-revision edges override live mode as captured",
+         parse("usedby path PathExpRoot PathExpTarget"),
+         "PathExpRoot uses PathExpTarget via:\n"
+         "  PathExpRoot@1 -> PathExpTarget@1  [captured]");
+
+    test("parallel dependency path registers a shared target",
+         parse("set PathParTarget = 1 I"),
+         "PathParTarget");
+    test("parallel dependency path mixes live and exact edges",
+         parse("set live PathParRoot = 1 PathParTarget "
+               "PathParTarget@1"),
+         "PathParRoot");
+    test("captured wins a parallel-edge label deterministically",
+         parse("usedby path PathParRoot PathParTarget"),
+         "PathParRoot uses PathParTarget via:\n"
+         "  PathParRoot@1 -> PathParTarget@1  [captured]");
 
     test("set registers a basis for circular-redefinition checks",
          parse("set SelfReplay = 0 I"), "SelfReplay");
@@ -2203,10 +2249,12 @@ int main() {
          "FrozenTarget is directly depended on by: FrozenUse");
     test("usedby path terminates on a revision-name cycle",
          parse("usedby path FrozenTarget FrozenUse"),
-         "FrozenTarget uses FrozenUse via: FrozenTarget -> FrozenUse");
+         "FrozenTarget uses FrozenUse via:\n"
+         "  FrozenTarget@3 -> FrozenUse@1  [captured]");
     test("usedby path reverses endpoints around a revision-name cycle",
          parse("usedby path FrozenUse FrozenTarget"),
-         "FrozenTarget uses FrozenUse via: FrozenTarget -> FrozenUse");
+         "FrozenTarget uses FrozenUse via:\n"
+         "  FrozenTarget@3 -> FrozenUse@1  [captured]");
     test("usedby path safely exhausts a disconnected name cycle",
          parse("usedby path FrozenTarget AllIndirectC"),
          "AllIndirectC and FrozenTarget have no dependency path");

@@ -387,8 +387,11 @@ def main():
                 raise AssertionError(
                     "expected successful usedby path; "
                     f"received {output!r}")
-            if (b"DepUser uses DepSource via: "
-                    b"DepUser -> DepSource\n" not in normalized_output):
+            expected_path = (
+                b"DepUser uses DepSource via:\n"
+                b"  DepUser@1 -> DepSource@1  [live]\n"
+            )
+            if expected_path not in normalized_output:
                 raise AssertionError(
                     f"expected dependency path; received {output!r}")
 

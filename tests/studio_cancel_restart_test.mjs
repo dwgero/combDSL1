@@ -2577,15 +2577,20 @@ test("routes every dependency alias as display-only", () => {
         ],
         [
             "usedby path A B",
-            "A uses B via: A -> C -> B\n",
+            "A uses B via:\n" +
+                "  A@1 -> C@2  [captured]\n" +
+                "  C@2 -> B@1  [captured]\n",
         ],
         [
             "used-by path between A and B",
-            "A uses B via: A -> C -> B\n",
+            "A uses B via:\n" +
+                "  A@1 -> C@2  [live] [name removed]\n" +
+                "  C@2 -> B@1  [captured]\n",
         ],
         [
             "used by path A and B",
-            "A uses B via: A -> C -> B\n",
+            "A uses B via:\n" +
+                "  A@1 -> B  [pre-defined]\n",
         ],
     ];
 
