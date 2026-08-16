@@ -239,6 +239,136 @@ def check_exit_commands_not_persisted(
             f"quit was added to command history: {history!r}")
 
 
+def check_exact_consecutive_history_deduplication(
+        executable, working_directory, home):
+    history_path = os.path.join(home, ".crepl", "history")
+
+    child, master, reader = start_session(
+        executable, working_directory, home)
+    try:
+        reader.read_until(b">")
+        for command in (
+                b"show I",
+                b"show K",
+                b"show K",
+                b"show K ",
+                b"show K ",
+                b"show S",
+                b"show K"):
+            output = send_command(master, reader, command)
+            require_completed_line(output, command + b"\n")
+
+        # With adjacent duplicates absent from readline's in-memory history,
+        # the fourth previous entry is the earlier, whitespace-free show K.
+        write_all(master, b"\x10\x10\x10\x10\n")
+        output = reader.read_until(b">")
+        if b"K is a fundamental name with arity:2\n" not in normalized(
+                output):
+            raise AssertionError(
+                "expected readline navigation to execute show K; "
+                f"received {output!r}")
+    except Exception:
+        os.close(master)
+        try:
+            os.kill(child, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        try:
+            os.waitpid(child, 0)
+        except ChildProcessError:
+            pass
+        raise
+    else:
+        finish_session(child, master, reader)
+
+    expected_history = (
+        "show I\n"
+        "show K\n"
+        "show K \n"
+        "show S\n"
+        "show K\n"
+    )
+    with open(history_path, encoding="utf-8") as history_file:
+        history = history_file.read()
+    if history != expected_history:
+        raise AssertionError(
+            "consecutive duplicate suppression changed exact, "
+            f"whitespace-distinct, or non-adjacent history: {history!r}")
+
+    child, master, reader = start_session(
+        executable, working_directory, home)
+    try:
+        reader.read_until(b">")
+
+        # The loaded history ends with show K, so the first command must be
+        # treated as an adjacent duplicate across the startup boundary.
+        for command in (
+                b"show K",
+                b"show K ",
+                b"show K ",
+                b"show I"):
+            output = send_command(master, reader, command)
+            require_completed_line(output, command + b"\n")
+
+        # This also verifies that startup-boundary and current-session
+        # duplicates were omitted from readline's in-memory history.
+        write_all(master, b"\x10\x10\x10\x10\n")
+        output = reader.read_until(b">")
+        if b"S is a fundamental name with arity:3\n" not in normalized(
+                output):
+            raise AssertionError(
+                "expected startup-loaded navigation to execute show S; "
+                f"received {output!r}")
+
+        output = send_command(master, reader, b"show I")
+        require_completed_line(output, b"show I\n")
+        send_command(master, reader, b"")
+        output = send_command(master, reader, b"show I")
+        require_completed_line(output, b"show I\n")
+
+        output = send_command(master, reader, b"   ")
+        require_completed_line(output, b"   \n")
+        output = send_command(master, reader, b"show I")
+        require_completed_line(output, b"show I\n")
+
+        for _ in range(2):
+            output = send_command(master, reader, b"references")
+            require_completed_line(output, b"references\n")
+            if b"Parse error" not in normalized(output):
+                raise AssertionError(
+                    "expected bare references to fail; "
+                    f"received {output!r}")
+    except Exception:
+        os.close(master)
+        try:
+            os.kill(child, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        try:
+            os.waitpid(child, 0)
+        except ChildProcessError:
+            pass
+        raise
+    else:
+        finish_session(child, master, reader)
+
+    expected_history += (
+        "show K \n"
+        "show I\n"
+        "show S\n"
+        "show I\n"
+        "   \n"
+        "show I\n"
+        "references\n"
+    )
+    with open(history_path, encoding="utf-8") as history_file:
+        history = history_file.read()
+    if history != expected_history:
+        raise AssertionError(
+            "startup-loaded duplicate suppression changed exact, "
+            f"whitespace-distinct, or non-adjacent history: {history!r}")
+
+
 def check_restored_state(executable, working_directory, home):
     child, master, reader = start_session(
         executable, working_directory, home)
@@ -374,6 +504,11 @@ def main():
         os.makedirs(exit_home)
         check_exit_commands_not_persisted(
             executable, working_directory, exit_home)
+
+        duplicate_home = os.path.join(temporary, "duplicate-home")
+        os.makedirs(duplicate_home)
+        check_exact_consecutive_history_deduplication(
+            executable, working_directory, duplicate_home)
 
 
 if __name__ == "__main__":

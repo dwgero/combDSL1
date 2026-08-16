@@ -60,7 +60,7 @@
 
 namespace {
 
-constexpr std::string_view crepl_version = "2.12.0";
+constexpr std::string_view crepl_version = "2.12.1";
 constexpr std::string_view no_further_reductions_message =
     "No further reductions";
 
@@ -303,6 +303,17 @@ void append_persistent_history(
         history_truncate_file(
             paths.history.c_str(), persistent_history_limit);
     }
+}
+
+[[nodiscard]] bool last_history_entry_matches(
+    std::string_view source) noexcept {
+    if (history_length == 0) {
+        return false;
+    }
+    auto const* entry =
+        history_get(history_base + history_length - 1);
+    return entry != nullptr && entry->line != nullptr &&
+        source == entry->line;
 }
 
 void load_persistent_filenames(
@@ -2613,7 +2624,8 @@ int main(int argc, char* argv[]) {
             is_exact_command(source, "exit")) {
             break;
         }
-        if (interactive_input && !source.empty()) {
+        if (interactive_input && !source.empty() &&
+            !last_history_entry_matches(source)) {
             add_history(source.c_str());
             if (persistence) {
                 append_persistent_history(*persistence);
