@@ -895,17 +895,13 @@ test("labels the active-evaluation control Pause", () => {
     );
 });
 
-test("Help explains zero-reduction completion in both step modes", () => {
+test("Help explains no-further-reductions in every evaluation mode", () => {
     const helpText = dialogMarkup("help-dialog")
         .replace(/<[^>]+>/g, " ")
         .replace(/\s+/g, " ");
     assert.match(
         helpText,
-        /Single Step .* no available reduction, Studio still prints its canonical normal form as the result\./,
-    );
-    assert.match(
-        helpText,
-        /Key Step .* no available reduction, Studio prints its canonical normal form and completes without waiting for a keypress\./,
+        /Already in normal form .* ordinary evaluation, Single Step, and Key Step print No further reductions instead of repeating the expression\. Key Step completes without entering the key-wait state or waiting for a keypress\./,
     );
 });
 
@@ -1326,9 +1322,11 @@ test("completes every Studio dependency-path alias", () => {
     }
 });
 
-test("renders zero-reduction Single Step and Key Step immediately", () => {
+test("renders no-further-reductions for every zero-redex evaluation mode",
+    () => {
     for (const [steppingMode, expression, basisStep, colorize] of [
-        ["single-step", "Cstar xy", false, false],
+        [undefined, "C*xy", true, true],
+        ["single-step", "C*xy", false, false],
         ["key-step", "C*xy", true, true],
     ]) {
         const harness = createHarness();
@@ -1337,7 +1335,9 @@ test("renders zero-reduction Single Step and Key Step immediately", () => {
 
         worker.send({type: "ready", setList: ""});
         harness.flushAnimationFrames();
-        harness.element(steppingMode).click();
+        if (steppingMode !== undefined) {
+            harness.element(steppingMode).click();
+        }
         if (basisStep) {
             harness.element("basis-step").click();
         }
@@ -1374,7 +1374,7 @@ test("renders zero-reduction Single Step and Key Step immediately", () => {
         assert.equal(evaluation.keyStep, steppingMode === "key-step");
         assert.equal(evaluation.basisStep, basisStep);
         assert.equal(evaluation.colorize, colorize);
-        if (steppingMode === "single-step") {
+        if (steppingMode !== "key-step") {
             worker.send({type: "eval-started", id: inspection.id});
         }
         assert.equal(
@@ -1390,7 +1390,7 @@ test("renders zero-reduction Single Step and Key Step immediately", () => {
                 success: true,
                 definition: false,
                 recoverWorker: false,
-                output: `${expression}\n`,
+                output: "No further reductions\n",
                 error: "",
                 reductions: 0,
                 limitReached: false,
@@ -1399,12 +1399,12 @@ test("renders zero-reduction Single Step and Key Step immediately", () => {
 
         const output = harness.element("output");
         assert.equal(output.lastElementChild.textContent,
-            `${expression}\n${expression}`);
+            `${expression}\nNo further reductions`);
         assert.equal(
             output.childNodes.filter(
                 child => child instanceof FakeElement).length,
             1,
-            "a normal form must finish its existing Results entry",
+            "a zero-redex result must finish its existing Results entry",
         );
         assert.equal(source.value, "");
         assert.equal(

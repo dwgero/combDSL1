@@ -37,6 +37,8 @@ namespace {
 constexpr double evaluation_heartbeat_interval_ms = 100.0;
 constexpr double evaluation_slice_budget_ms = 8.0;
 constexpr std::size_t evaluation_progress_interval = 1000;
+constexpr char no_further_reductions_message[] =
+    "No further reductions\n";
 
 struct evaluation_result {
     bool success;
@@ -255,10 +257,14 @@ void report_limited_evaluation_progress(
             auto reduced = combdsl::detail::reduce_next_redex(
                 state.expression, options);
             if (!reduced) {
-                state.expression.print_to(output);
-                output << '\n';
                 auto const total_reductions =
                     state.total_reductions;
+                if (total_reductions == 0) {
+                    output << no_further_reductions_message;
+                } else {
+                    state.expression.print_to(output);
+                    output << '\n';
+                }
                 reset_limited_evaluation();
                 return {
                     true,
@@ -442,6 +448,16 @@ void report_limited_evaluation_progress(
         if (parsed.is_definition) {
             return {true, true, false, {}, {}};
         }
+        if (!combdsl::detail::has_next_redex(
+                parsed.expression,
+                combdsl::detail::reduction_options{
+                    .basis_step = false,
+                    .reduce_partial_k_argument = false,
+                })) {
+            return {
+                true, false, false,
+                no_further_reductions_message, {}};
+        }
 
         try {
             std::size_t completed_reductions = 0;
@@ -498,6 +514,15 @@ void report_limited_evaluation_progress(
         if (parsed.is_definition) {
             return {true, true, false, {}, {}};
         }
+        if (!combdsl::detail::has_next_redex(
+                parsed.expression,
+                combdsl::detail::reduction_options{
+                    .basis_step = basis_step,
+                })) {
+            return {
+                true, false, false,
+                no_further_reductions_message, {}};
+        }
 
         try {
             std::size_t completed_reductions = 0;
@@ -543,6 +568,15 @@ void report_limited_evaluation_progress(
         }
         if (parsed.is_definition) {
             return {true, true, false, {}, {}};
+        }
+        if (!combdsl::detail::has_next_redex(
+                parsed.expression,
+                combdsl::detail::reduction_options{
+                    .basis_step = basis_step,
+                })) {
+            return {
+                true, false, false,
+                no_further_reductions_message, {}};
         }
 
         try {
@@ -640,8 +674,12 @@ void reset_stepped_evaluation() noexcept {
                         .basis_step = basis_step,
                     });
             std::ostringstream output;
-            stepped_expression->print_to(output);
-            output << '\n';
+            if (limit_reached) {
+                stepped_expression->print_to(output);
+                output << '\n';
+            } else {
+                output << no_further_reductions_message;
+            }
             reset_stepped_evaluation();
             return {
                 true,
@@ -657,13 +695,10 @@ void reset_stepped_evaluation() noexcept {
                 combdsl::detail::reduction_options{
                     .basis_step = basis_step,
                 })) {
-            std::ostringstream output;
-            stepped_expression->print_to(output);
-            output << '\n';
             reset_stepped_evaluation();
             return {
                 true, false, true, false,
-                output.str(), {}};
+                no_further_reductions_message, {}};
         }
         return {true, false, false, false, {}, {}};
     } catch (std::exception const& error) {

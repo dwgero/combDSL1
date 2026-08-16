@@ -1,3 +1,3 @@
-q
-Q
-x
+No further reductions
+No further reductions
+No further reductions

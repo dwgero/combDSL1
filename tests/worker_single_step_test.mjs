@@ -18,6 +18,7 @@
 
 import assert from "node:assert/strict";
 import {readFile} from "node:fs/promises";
+import {createRequire} from "node:module";
 import test from "node:test";
 import vm from "node:vm";
 
@@ -25,6 +26,33 @@ const workerSource = await readFile(
     new URL("../web/worker.js", import.meta.url),
     "utf8",
 );
+const require = createRequire(import.meta.url);
+const createBuiltCombdslModule = require("../docs/combdsl.js");
+const builtCombdslWasm = await readFile(
+    new URL("../docs/combdsl.wasm", import.meta.url),
+);
+
+const loadBuiltCombdslModule = async () => {
+    const previousSelf = globalThis.self;
+    globalThis.self = {
+        location: {href: "https://example.test/combdsl.js"},
+    };
+    try {
+        return await createBuiltCombdslModule({
+            instantiateWasm(imports, receiveInstance) {
+                void WebAssembly.instantiate(
+                    builtCombdslWasm, imports,
+                ).then(result => receiveInstance(result.instance));
+            },
+        });
+    } finally {
+        if (previousSelf === undefined) {
+            delete globalThis.self;
+        } else {
+            globalThis.self = previousSelf;
+        }
+    }
+};
 
 const createTimerQueue = () => {
     let nextId = 0;
@@ -102,7 +130,9 @@ const incompleteStepStart = {
     error: "",
 };
 
-const completedNormalForm = output => ({
+const noFurtherReductions = "No further reductions\n";
+
+const completedStepStart = output => ({
     success: true,
     reduced: false,
     complete: true,
@@ -111,6 +141,207 @@ const completedNormalForm = output => ({
     error: "",
     limitReached: false,
 });
+
+test("built active and legacy browser APIs share the zero-redex notice",
+    async () => {
+        const module = await loadBuiltCombdslModule();
+        const results = [
+            ["active ordinary", module.beginLimitedEval(
+                "C*xy", 201, 1000, false)],
+            ["active Single Step", module.beginSingleStep(
+                "C*xy", false, false, 0)],
+            ["active Basis/Key Step", module.beginSingleStep(
+                "C*xy", true, false, 0)],
+            ["legacy ordinary", module.parseEval(
+                "C*xy", 202, false, 0)],
+            ["legacy Single Step", module.singleStepRun(
+                "C*xy", false, 203)],
+            ["legacy Color/Basis Step", module.colorStepRun(
+                "C*xy", true, 204)],
+        ];
+
+        for (const [description, result] of results) {
+            assert.equal(result.success, true, description);
+            assert.equal(result.definition, false, description);
+            assert.equal(result.output, noFurtherReductions, description);
+            assert.equal(result.error, "", description);
+            assert.equal(result.limitReached, false, description);
+            if ("complete" in result) {
+                assert.equal(result.complete, true, description);
+                assert.equal(result.reduced, false, description);
+            } else {
+                assert.equal(result.reductions, 0, description);
+            }
+        }
+    });
+
+test("built browser APIs preserve commands, errors, reductions, and limits",
+    async () => {
+        const module = await loadBuiltCombdslModule();
+        let requestId = 220;
+        const apiCalls = [
+            ["active ordinary", source => module.beginLimitedEval(
+                source, ++requestId, 1000, false)],
+            ["active stepped", source => module.beginSingleStep(
+                source, false, false, 0)],
+            ["legacy ordinary", source => module.parseEval(
+                source, ++requestId, false, 0)],
+            ["legacy Single Step", source => module.singleStepRun(
+                source, false, ++requestId)],
+            ["legacy Color Step", source => module.colorStepRun(
+                source, true, ++requestId)],
+        ];
+
+        for (const [index, [description, call]] of apiCalls.entries()) {
+            const display = call("show I");
+            assert.equal(display.success, true, description);
+            assert.equal(display.definition, false, description);
+            assert.match(display.output, /fundamental name/, description);
+            assert.equal(
+                display.output.includes(noFurtherReductions.trim()),
+                false,
+                description,
+            );
+
+            const definition = call(`set ApiBranch${index} = 1 I`);
+            assert.equal(definition.success, true, description);
+            assert.equal(definition.definition, true, description);
+            assert.equal(definition.output, "", description);
+
+            const error = call("@");
+            assert.equal(error.success, false, description);
+            assert.match(error.error, /unknown operand/, description);
+            assert.equal(error.output, "", description);
+        }
+
+        const activeOrdinary = module.beginLimitedEval(
+            "Ix", ++requestId, 1000, false);
+        assert.equal(activeOrdinary.output, "x\n");
+        assert.equal(activeOrdinary.reductions, 1);
+        assert.equal(activeOrdinary.limitReached, false);
+
+        const activeStepStart = module.beginSingleStep(
+            "Ix", false, false, 0);
+        assert.equal(activeStepStart.complete, false);
+        const activeStep = module.takeSingleStep(false, false, false);
+        assert.equal(activeStep.output, "x\n");
+        assert.equal(activeStep.reduced, true);
+        assert.equal(activeStep.complete, false);
+        const activeCompletionProbe = module.takeSingleStep(
+            false, false, false);
+        assert.equal(activeCompletionProbe.output, "");
+        assert.equal(activeCompletionProbe.reduced, false);
+        assert.equal(activeCompletionProbe.complete, true);
+
+        const activeKeyStart = module.beginSingleStep(
+            "Ix", false, false, 0);
+        assert.equal(activeKeyStart.complete, false);
+        const activeKeyStep = module.takeSingleStep(false, false, true);
+        assert.equal(activeKeyStep.output, "x\n");
+        assert.equal(activeKeyStep.reduced, true);
+        assert.equal(activeKeyStep.complete, true);
+
+        const activeColorStart = module.beginSingleStep(
+            "Mx", true, false, 0);
+        assert.equal(activeColorStart.complete, false);
+        const activeColorStep = module.takeSingleStep(true, true, false);
+        assert.equal(activeColorStep.reduced, true);
+        assert.match(activeColorStep.output, /class="wor"/);
+        assert.equal(
+            activeColorStep.output.includes(noFurtherReductions.trim()),
+            false,
+        );
+
+        for (const [description, result] of [
+            ["legacy ordinary", module.parseEval(
+                "Ix", ++requestId, false, 0)],
+            ["legacy Single Step", module.singleStepRun(
+                "Ix", false, ++requestId)],
+            ["legacy Color Step", module.colorStepRun(
+                "Ix", false, ++requestId)],
+        ]) {
+            assert.equal(result.success, true, description);
+            assert.equal(result.reductions, 1, description);
+            assert.equal(
+                result.output.includes(noFurtherReductions.trim()),
+                false,
+                description,
+            );
+        }
+
+        const activeZeroLimit = module.beginSingleStep(
+            "Ix", false, true, 0);
+        assert.equal(activeZeroLimit.success, true);
+        assert.equal(activeZeroLimit.complete, true);
+        assert.equal(activeZeroLimit.output, "Ix\n");
+        assert.equal(activeZeroLimit.limitReached, true);
+
+        const activeOrdinaryLimit = module.beginLimitedEval(
+            "IIx", ++requestId, 1, true);
+        assert.equal(activeOrdinaryLimit.success, true);
+        assert.equal(activeOrdinaryLimit.output, "");
+        assert.equal(activeOrdinaryLimit.reductions, 1);
+        assert.equal(activeOrdinaryLimit.limitReached, true);
+
+        const legacyOrdinaryLimit = module.parseEval(
+            "IIx", ++requestId, true, 1);
+        assert.equal(legacyOrdinaryLimit.success, true);
+        assert.equal(legacyOrdinaryLimit.output, "");
+        assert.equal(legacyOrdinaryLimit.reductions, 1);
+        assert.equal(legacyOrdinaryLimit.limitReached, true);
+    });
+
+test("ordinary zero-redex evaluation reports no further reductions",
+    async () => {
+        let resumeCalls = 0;
+        const module = {
+            setList: () => "",
+            beginLimitedEval: (
+                source, requestId, sliceLimit, checkAtLimit,
+            ) => {
+                assert.equal(source, "C*xy");
+                assert.equal(requestId, 106);
+                assert.equal(sliceLimit, 1000);
+                assert.equal(checkAtLimit, false);
+                return {
+                    success: true,
+                    definition: false,
+                    recoverWorker: false,
+                    output: noFurtherReductions,
+                    error: "",
+                    reductions: 0,
+                    limitReached: false,
+                };
+            },
+            resumeLimitedEval: () => {
+                ++resumeCalls;
+            },
+        };
+        const harness = await createWorkerHarness(module);
+
+        await harness.send({
+            type: "evaluate",
+            id: 106,
+            source: "C*xy",
+            singleStep: false,
+            basisStep: false,
+            keyStep: false,
+            colorize: false,
+            stepLimitEnabled: false,
+            stepLimit: 0,
+        });
+
+        const messages = harness.messages.filter(message => message.id === 106);
+        assert.deepEqual(
+            messages.map(message => message.type),
+            ["eval-started", "result"],
+        );
+        assert.equal(messages[1].result.output, noFurtherReductions);
+        assert.equal(messages[1].result.reductions, 0);
+        assert.equal(messages[1].result.limitReached, false);
+        assert.equal(harness.timers.size, 0);
+        assert.equal(resumeCalls, 0);
+    });
 
 test("automatic Single Step streams while reduction is running", async () => {
     const steps = [
@@ -206,7 +437,7 @@ test("automatic Single Step streams while reduction is running", async () => {
     );
 });
 
-test("zero-reduction Single Step returns the unchanged expression immediately",
+test("zero-redex Single Step reports no further reductions immediately",
     async () => {
         let takeCalls = 0;
         const module = {
@@ -214,11 +445,11 @@ test("zero-reduction Single Step returns the unchanged expression immediately",
             beginSingleStep: (
                 source, basisStep, stepLimitEnabled, stepLimit,
             ) => {
-                assert.equal(source, "Cstar xy");
+                assert.equal(source, "C*xy");
                 assert.equal(basisStep, false);
-                assert.equal(stepLimitEnabled, false);
+                assert.equal(stepLimitEnabled, true);
                 assert.equal(stepLimit, 0);
-                return completedNormalForm("Cstar xy\n");
+                return completedStepStart(noFurtherReductions);
             },
             takeSingleStep: () => {
                 ++takeCalls;
@@ -229,12 +460,12 @@ test("zero-reduction Single Step returns the unchanged expression immediately",
         await harness.send({
             type: "evaluate",
             id: 107,
-            source: "Cstar xy",
+            source: "C*xy",
             singleStep: true,
             basisStep: false,
             keyStep: false,
             colorize: false,
-            stepLimitEnabled: false,
+            stepLimitEnabled: true,
             stepLimit: 0,
         });
 
@@ -243,7 +474,7 @@ test("zero-reduction Single Step returns the unchanged expression immediately",
             messages.map(message => message.type),
             ["eval-started", "result"],
         );
-        assert.equal(messages[1].result.output, "Cstar xy\n");
+        assert.equal(messages[1].result.output, noFurtherReductions);
         assert.equal(messages[1].result.reductions, 0);
         assert.equal(messages[1].result.success, true);
         assert.equal(messages[1].html, false);
@@ -251,7 +482,7 @@ test("zero-reduction Single Step returns the unchanged expression immediately",
         assert.equal(takeCalls, 0);
     });
 
-test("zero-reduction Key Step completes without step-ready or a key press",
+test("zero-redex Key Step reports no further reductions without a key press",
     async () => {
         let takeCalls = 0;
         const module = {
@@ -263,7 +494,7 @@ test("zero-reduction Key Step completes without step-ready or a key press",
                 assert.equal(basisStep, true);
                 assert.equal(stepLimitEnabled, false);
                 assert.equal(stepLimit, 0);
-                return completedNormalForm("C*xy\n");
+                return completedStepStart(noFurtherReductions);
             },
             takeSingleStep: () => {
                 ++takeCalls;
@@ -288,7 +519,7 @@ test("zero-reduction Key Step completes without step-ready or a key press",
             messages.map(message => message.type),
             ["result"],
         );
-        assert.equal(messages[0].result.output, "C*xy\n");
+        assert.equal(messages[0].result.output, noFurtherReductions);
         assert.equal(messages[0].result.complete, true);
         assert.equal(messages[0].result.reduced, false);
         assert.equal(messages[0].html, false);
@@ -300,6 +531,58 @@ test("zero-reduction Key Step completes without step-ready or a key press",
             harness.messages.filter(message => message.id === 108).length,
             1,
         );
+        assert.equal(takeCalls, 0);
+    });
+
+test("reducible Single Step at a zero limit remains limit-reached",
+    async () => {
+        let takeCalls = 0;
+        const module = {
+            setList: () => "",
+            beginSingleStep: (
+                source, basisStep, stepLimitEnabled, stepLimit,
+            ) => {
+                assert.equal(source, "Ix");
+                assert.equal(basisStep, false);
+                assert.equal(stepLimitEnabled, true);
+                assert.equal(stepLimit, 0);
+                return {
+                    success: true,
+                    reduced: false,
+                    complete: true,
+                    definition: false,
+                    output: "Ix\n",
+                    error: "",
+                    limitReached: true,
+                };
+            },
+            takeSingleStep: () => {
+                ++takeCalls;
+            },
+        };
+        const harness = await createWorkerHarness(module);
+
+        await harness.send({
+            type: "evaluate",
+            id: 109,
+            source: "Ix",
+            singleStep: true,
+            basisStep: false,
+            keyStep: false,
+            colorize: false,
+            stepLimitEnabled: true,
+            stepLimit: 0,
+        });
+
+        const messages = harness.messages.filter(message => message.id === 109);
+        assert.deepEqual(
+            messages.map(message => message.type),
+            ["eval-started", "result"],
+        );
+        assert.equal(messages[1].result.output, "Ix\n");
+        assert.equal(messages[1].result.reductions, 0);
+        assert.equal(messages[1].result.limitReached, true);
+        assert.equal(harness.timers.size, 0);
         assert.equal(takeCalls, 0);
     });
 
@@ -323,7 +606,7 @@ test("definition, display-only, and error begin paths keep their protocol",
             {
                 source: "show Bird",
                 keyStep: true,
-                result: completedNormalForm("arity:1 I\n"),
+                result: completedStepStart("arity:1 I\n"),
                 types: ["result"],
             },
             {

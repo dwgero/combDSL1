@@ -38,6 +38,7 @@ RED_SGR = rb"\x1b\[(?:31|91|38;5;(?:1|9)|38;2;255;0+;0+)m"
 RESET_SGR = rb"\x1b\[(?:0)?m"
 RESUME_PROMPT = b"Press Enter to resume; press q or Q to quit.\r\n"
 TERMINAL_INPUT_FLAGS = termios.ICANON | termios.ECHO
+NO_FURTHER_REDUCTIONS = b"No further reductions"
 
 
 def require_red_message(output, message):
@@ -45,6 +46,19 @@ def require_red_message(output, message):
     if re.search(expected, output) is None:
         raise AssertionError(
             f"expected red message {message!r}; received {output!r}")
+
+
+def require_plain_no_further_reductions(output, key_step=False):
+    require_completed_line(output, NO_FURTHER_REDUCTIONS + b"\n")
+    if re.search(RED_SGR, output) is not None:
+        raise AssertionError(
+            "expected an uncolored no-further-reductions message; "
+            f"received {output!r}")
+    if (key_step and
+            b"Press any key for one reduction step" in normalized(output)):
+        raise AssertionError(
+            "zero-redex Key Step unexpectedly displayed its keypress "
+            f"prompt: {output!r}")
 
 
 def require_exact_progress_before_message(
@@ -149,6 +163,9 @@ def main():
 
         write_all(master, b"step limit 2\n")
         reader.read_until(b">")
+        write_all(master, b"C*xy\n")
+        output = reader.read_until(b">")
+        require_plain_no_further_reductions(output)
         write_all(master, b"I(I(I(I(Ix))))\n")
         output = reader.read_until(RESUME_PROMPT)
         require_raw_pause(master, "ordinary step-limit pause")
@@ -202,7 +219,30 @@ def main():
 
         write_all(master, b"single step on\n")
         reader.read_until(b">")
+        write_all(master, b"set SingleModeBird = 1 I\n")
+        output = reader.read_until(b">")
+        require_completed_line(output, b"set SingleModeBird = 1 I\n")
+        if NO_FURTHER_REDUCTIONS in normalized(output):
+            raise AssertionError(
+                f"definition unexpectedly produced a result: {output!r}")
+        write_all(master, b"show SingleModeBird\n")
+        output = reader.read_until(b">")
+        require_completed_line(output, b"arity:1 I\n")
+        if NO_FURTHER_REDUCTIONS in normalized(output):
+            raise AssertionError(
+                f"display command was treated as a normal form: {output!r}")
+        write_all(master, b"@\n")
+        output = reader.read_until(b">")
+        require_red_message(
+            output, b"Parse error at position 1: unknown operand")
         write_all(master, b"colorize on\n")
+        reader.read_until(b">")
+        write_all(master, b"basis step on\n")
+        reader.read_until(b">")
+        write_all(master, b"C*xy\n")
+        output = reader.read_until(b">")
+        require_plain_no_further_reductions(output)
+        write_all(master, b"basis step off\n")
         reader.read_until(b">")
         write_all(master, b"I(I(I(I(I(Ix)))))\n")
         output = reader.read_until(RESUME_PROMPT)
@@ -224,6 +264,28 @@ def main():
 
         write_all(master, b"key step on\n")
         reader.read_until(b">")
+        write_all(master, b"set KeyModeBird = 1 I\n")
+        output = reader.read_until(b">")
+        require_completed_line(output, b"set KeyModeBird = 1 I\n")
+        if b"Press any key for one reduction step" in normalized(output):
+            raise AssertionError(
+                f"definition unexpectedly requested a key: {output!r}")
+        write_all(master, b"show KeyModeBird\n")
+        output = reader.read_until(b">")
+        require_completed_line(output, b"arity:1 I\n")
+        if b"Press any key for one reduction step" in normalized(output):
+            raise AssertionError(
+                f"display command unexpectedly requested a key: {output!r}")
+        write_all(master, b"@\n")
+        output = reader.read_until(b">")
+        require_red_message(
+            output, b"Parse error at position 1: unknown operand")
+        if b"Press any key for one reduction step" in normalized(output):
+            raise AssertionError(
+                f"parse error unexpectedly requested a key: {output!r}")
+        write_all(master, b"C*xy\n")
+        output = reader.read_until(b">")
+        require_plain_no_further_reductions(output, key_step=True)
         write_all(master, b"I(I(I(I(Ix))))\n")
         reader.read_until(b"press q or Q to quit.\r\n")
         write_all(master, b"abcde")
@@ -231,6 +293,13 @@ def main():
         require_completed_line(output, b"x\n")
 
         write_all(master, b"colorize on\n")
+        reader.read_until(b">")
+        write_all(master, b"basis step on\n")
+        reader.read_until(b">")
+        write_all(master, b"C*xy\n")
+        output = reader.read_until(b">")
+        require_plain_no_further_reductions(output, key_step=True)
+        write_all(master, b"basis step off\n")
         reader.read_until(b">")
         write_all(master, b"I(I(I(I(I(Ix)))))\n")
         reader.read_until(b"press q or Q to quit.\r\n")

@@ -980,7 +980,7 @@ expression produces no output, while malformed or empty lines throw
 The `crepl` executable applies `input_escape` to each line before passing it to
 `parse_eval`, so ordinary quoted words and backslashes can be entered directly.
 When standard output is a terminal, it first prints
-`Combinator Read-Eval-Print Loop, version 2.10.8`. Long evaluations display
+`Combinator Read-Eval-Print Loop, version 2.10.9`. Long evaluations display
 the accumulated step count every 1,000 reductions by overwriting one status
 line; the line is cleared before evaluation output is printed. Its interactive
 prompt is `>`. Interactive input uses GNU Readline, so previous nonempty
@@ -1011,6 +1011,10 @@ unchanged. Omitting `on` or `off` enables the selected mode. `basis step`,
 `basis step on`, and `basis step off` independently control whether
 named-basis expansion is shown as a separate reduction in either stepping
 mode; ordinary evaluation ignores this setting.
+If the submitted expression already has no available reduction, ordinary
+evaluation, Single Step, and Key Step print `No further reductions` rather
+than repeating the expression. Key Step does this without displaying its
+keypress prompt or waiting for a keypress.
 Enter `step limit <off | num>` to pause each subsequent interactive evaluation
 after `num` reduction steps at a time. With redirected input, evaluation stops
 at the limit. The limit is off at startup, and the command has no default:
@@ -1424,21 +1428,22 @@ entry; Cancel adds only `[cancelled]`. The setting remains active after Studio
 replaces a cancelled or failed worker, but it is not included in saved set-list
 files.
 
+When a submitted expression already has no available reduction, ordinary
+evaluation, Single Step, and Key Step append `No further reductions` beneath
+the submitted source instead of repeating the expression. Key Step completes
+immediately without entering the key-wait state or waiting for a keypress.
+
 The Single Step button switches between displaying only the evaluated result
 and displaying every reduction produced by
-`single_step_run(parse(input_escape(source)))`. If the submitted expression
-has no available reduction, Single Step still prints its canonical normal form
-as the result. Evaluations accumulate in the results area with a blank line
-between them.
+`single_step_run(parse(input_escape(source)))`. Evaluations accumulate in the
+results area with a blank line between them.
 
 The Key Step button starts a
 manual reduction session: after submitting an expression, each ordinary
 keypress performs exactly one `single_step`. The keypress that performs the
 final reduction also ends the session. Pause opens a dialog where the session
 can be resumed or cancelled. The Single Step and Key Step modes are mutually
-exclusive. If the submitted expression has no available reduction, Key Step
-prints its canonical normal form and completes immediately without waiting for
-a keypress.
+exclusive.
 
 The independent Basis Step
 button controls whether either stepping mode exposes a saturated named basis

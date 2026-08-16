@@ -8,6 +8,11 @@ key step [on | off]
 Pauses after initial expression scanning. Press any ordinary key for exactly one
 reduction step. Pressing the letter Q or q exits the reduction immediately.
 
+already in normal form
+When a submitted expression has no available reduction, ordinary evaluation,
+Single Step, and Key Step print "No further reductions". Key Step completes
+without displaying the keypress prompt or waiting for a keypress.
+
 basis step [on | off]
 Changes how "single step" and "key step" handle named bases defined by compound
 combinators. All the bird combinators (see the "birds" command) except S, K, I,

@@ -388,9 +388,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             color: #c33;
         }
     </style>
-    <script src="./evaluation_watchdog.js?v=2.10.8" defer></script>
-    <script src="./input_history.js?v=2.10.8" defer></script>
-    <script src="./app.js?v=2.10.8" defer></script>
+    <script src="./evaluation_watchdog.js?v=2.10.9" defer></script>
+    <script src="./input_history.js?v=2.10.9" defer></script>
+    <script src="./app.js?v=2.10.9" defer></script>
 </head>
 <body>
     <main aria-labelledby="studio-title">
@@ -483,23 +483,26 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
         <h2 id="help-title" tabindex="-1"
             data-dialog-initial-focus>Stepping Options</h2>
         <dl>
+            <dt>Already in normal form</dt>
+            <dd>
+                If the submitted expression has no available reduction,
+                ordinary evaluation, Single Step, and Key Step print
+                <code>No further reductions</code> instead of repeating the
+                expression. Key Step completes without entering the key-wait
+                state or waiting for a keypress.
+            </dd>
             <dt>Single Step</dt>
             <dd>
                 Runs automatically and displays every reduction until normal
                 form is reached or Pause is selected. A paused evaluation can
-                be resumed or cancelled. If the submitted expression has no
-                available reduction, Studio still prints its canonical normal
-                form as the result.
+                be resumed or cancelled.
             </dd>
             <dt>Key Step</dt>
             <dd>
                 Pauses after initial expression scanning. Press any ordinary
                 key for exactly one reduction. When that reduction reaches
                 normal form, the session ends immediately. Pause opens a
-                dialog where the reduction can be resumed or cancelled. If
-                the submitted expression has no available reduction, Studio
-                prints its canonical normal form and completes without waiting
-                for a keypress.
+                dialog where the reduction can be resumed or cancelled.
             </dd>
             <dt>Basis Step</dt>
             <dd>
@@ -1023,7 +1026,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             data-dialog-initial-focus>About</h2>
         <div class="license-text">
             <!-- Keep this version and the app.js cache key in sync. -->
-            <p>Combinator Studio, version 2.10.8<br>
+            <p>Combinator Studio, version 2.10.9<br>
                 Part of the C++ Combinator DSL<br>
                 Copyright (C) 2026  David W. Gero</p>
             <p>This program is free software: you can redistribute it and/or modify

@@ -60,7 +60,9 @@
 
 namespace {
 
-constexpr std::string_view crepl_version = "2.10.8";
+constexpr std::string_view crepl_version = "2.10.9";
+constexpr std::string_view no_further_reductions_message =
+    "No further reductions";
 
 [[nodiscard]] bool stream_is_terminal(std::FILE* stream) noexcept {
 #if defined(_WIN32)
@@ -921,6 +923,13 @@ void print_help_full(std::ostream& output) {
         "exits the reduction immediately.");
     print_help_topic(
         output,
+        "already in normal form",
+        "When a submitted expression has no available reduction, ordinary "
+        "evaluation, Single Step, and Key Step print \"No further "
+        "reductions\". Key Step completes without displaying the keypress "
+        "prompt or waiting for a keypress.");
+    print_help_topic(
+        output,
         "basis step [on | off]",
         "Changes how \"single step\" and \"key step\" handle named bases "
         "defined by compound combinators. All the bird combinators (see the "
@@ -1587,6 +1596,87 @@ void print_expression_line(
     output.flush();
 }
 
+void print_no_further_reductions(std::ostream& output) {
+    output << no_further_reductions_message << '\n';
+    output.flush();
+}
+
+[[nodiscard]] bool has_next_reduction(
+    combdsl::quoted_expression const& expression,
+    bool basis_step,
+    bool reduce_partial_k_argument = true) {
+    return combdsl::detail::has_next_redex(
+        expression,
+        combdsl::detail::reduction_options{
+            .basis_step = basis_step,
+            .reduce_partial_k_argument = reduce_partial_k_argument,
+        });
+}
+
+[[nodiscard]] combdsl::evaluation_outcome parse_and_crepl_eval(
+    std::string_view source,
+    std::ostream& output,
+    std::istream& input,
+    bool basis_step,
+    combdsl::evaluation_progress_callback const& progress_callback,
+    std::optional<std::size_t> step_limit,
+    combdsl::evaluation_step_limit_callback const& step_limit_callback,
+    combdsl::evaluation_interrupt_callback const& interrupt_callback) {
+    auto parsed = combdsl::detail::parse_input(source);
+    if (parsed.is_display_only) {
+        print_expression_line(output, parsed.expression);
+        return combdsl::evaluation_outcome::completed;
+    }
+    if (parsed.is_definition) {
+        return combdsl::evaluation_outcome::completed;
+    }
+    if (!has_next_reduction(parsed.expression, basis_step, false)) {
+        print_no_further_reductions(output);
+        return combdsl::evaluation_outcome::completed;
+    }
+    return combdsl::eval_with_outcome(
+        std::move(parsed.expression),
+        output,
+        input,
+        basis_step,
+        progress_callback,
+        step_limit,
+        step_limit_callback,
+        interrupt_callback);
+}
+
+[[nodiscard]] combdsl::evaluation_outcome
+parse_and_crepl_single_step(
+    std::string_view source,
+    std::ostream& output,
+    std::istream& input,
+    bool basis_step,
+    std::optional<std::size_t> step_limit,
+    combdsl::evaluation_step_limit_callback const& step_limit_callback,
+    combdsl::evaluation_interrupt_callback const& interrupt_callback) {
+    auto parsed = combdsl::detail::parse_input(source);
+    if (parsed.is_display_only) {
+        print_expression_line(output, parsed.expression);
+        return combdsl::evaluation_outcome::completed;
+    }
+    if (parsed.is_definition) {
+        return combdsl::evaluation_outcome::completed;
+    }
+    if (!has_next_reduction(parsed.expression, basis_step)) {
+        print_no_further_reductions(output);
+        return combdsl::evaluation_outcome::completed;
+    }
+    return combdsl::single_step_run_with_outcome(
+        std::move(parsed.expression),
+        output,
+        input,
+        basis_step,
+        combdsl::evaluation_progress_callback{},
+        step_limit,
+        step_limit_callback,
+        interrupt_callback);
+}
+
 void write_step_output(
     std::ostream& output,
     std::ostringstream const& step_output) {
@@ -2021,6 +2111,10 @@ make_interrupt_callback(
         step_limit_callback,
     combdsl::evaluation_interrupt_callback const&
         interrupt_callback) {
+    if (!has_next_reduction(expression, basis_step)) {
+        print_no_further_reductions(output);
+        return combdsl::evaluation_outcome::completed;
+    }
     combdsl::detail::scoped_evaluation_sigint_handler sigint_handler;
     combdsl::detail::print_layout(
         output,
@@ -2102,6 +2196,10 @@ make_interrupt_callback(
         step_limit_callback,
     combdsl::evaluation_interrupt_callback const&
         interrupt_callback) {
+    if (!has_next_reduction(expression, basis_step)) {
+        print_no_further_reductions(output);
+        return combdsl::evaluation_outcome::completed;
+    }
     combdsl::detail::scoped_evaluation_sigint_handler sigint_handler;
     bool reduced = false;
     std::size_t reductions = 0;
@@ -2173,6 +2271,10 @@ make_interrupt_callback(
         step_limit_callback,
     combdsl::evaluation_interrupt_callback const&
         interrupt_callback) {
+    if (!has_next_reduction(expression, basis_step)) {
+        print_no_further_reductions(output);
+        return combdsl::evaluation_outcome::completed;
+    }
     combdsl::detail::scoped_evaluation_sigint_handler sigint_handler;
     combdsl::detail::print_layout(
         output,
@@ -2647,7 +2749,7 @@ int main(int argc, char* argv[]) {
                             step_limit_pause,
                             interrupt_pause);
                     } else {
-                        outcome = combdsl::parse_and_step_with_outcome(
+                        outcome = parse_and_crepl_single_step(
                             escaped_source,
                             std::cout,
                             std::cin,
@@ -2676,7 +2778,7 @@ int main(int argc, char* argv[]) {
                             interrupt_pause);
                     }
                 } else {
-                    outcome = combdsl::parse_eval_with_outcome(
+                    outcome = parse_and_crepl_eval(
                         escaped_source,
                         std::cout,
                         std::cin,
@@ -2725,7 +2827,7 @@ int main(int argc, char* argv[]) {
                         step_limit_pause,
                         interrupt_pause);
                 } else {
-                    outcome = combdsl::parse_and_step_with_outcome(
+                    outcome = parse_and_crepl_single_step(
                         escaped_source,
                         evaluation_output,
                         std::cin,
@@ -2772,7 +2874,7 @@ int main(int argc, char* argv[]) {
                 [&output_buffer](std::size_t reductions) {
                 output_buffer.update_progress(reductions);
             };
-            auto const outcome = combdsl::parse_eval_with_outcome(
+            auto const outcome = parse_and_crepl_eval(
                 escaped_source,
                 evaluation_output,
                 std::cin,
