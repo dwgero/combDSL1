@@ -1609,8 +1609,8 @@ int main() {
 
     constexpr std::string_view shortest_dependency_path =
         "AllRoot uses AllIndirectD via:\n"
-        "  AllRoot@1 -> AllDirectA@1  [captured]\n"
-        "  AllDirectA@1 -> AllIndirectD@1  [captured]";
+        "  AllRoot -> AllDirectA  [captured]\n"
+        "  AllDirectA -> AllIndirectD  [captured]";
     test("usedby path accepts compact syntax without optional words",
          parse("usedby path AllRoot AllIndirectD"),
          shortest_dependency_path);
@@ -1653,7 +1653,7 @@ int main() {
     test("usedby path chooses a shorter direct edge",
          parse("usedby path AllRoot AllIndirectC"),
          "AllRoot uses AllIndirectC via:\n"
-         "  AllRoot@1 -> AllIndirectC@1  [captured]");
+         "  AllRoot -> AllIndirectC  [captured]");
     test("usedby path reports a normalized disconnected pair",
          parse("usedby path AllIndirectE AllIndirectD"),
          "AllIndirectD and AllIndirectE have no dependency path");
@@ -1670,8 +1670,8 @@ int main() {
     test("dependency path keeps separators after punctuation-ending names",
          parse("usedby path PathRoot: PathLeaf:"),
          "PathRoot: uses PathLeaf: via:\n"
-         "  PathRoot:@1 -> PathMiddle:@1  [captured]\n"
-         "  PathMiddle:@1 -> PathLeaf:@1  [captured]");
+         "  PathRoot: -> PathMiddle:  [captured]\n"
+         "  PathMiddle: -> PathLeaf:  [captured]");
 
     test("captured traversal registers its first leaf",
          parse("set AllSnapC = 1 I"), "AllSnapC");
@@ -1695,8 +1695,8 @@ int main() {
          parse("dependson all AllSnapC"), captured_depended_on_by);
     constexpr std::string_view captured_path =
         "AllSnapA uses AllSnapC via:\n"
-        "  AllSnapA@1 -> AllSnapB@1  [captured]\n"
-        "  AllSnapB@1 -> AllSnapC@1  [captured]";
+        "  AllSnapA -> AllSnapB@1  [captured]\n"
+        "  AllSnapB@1 -> AllSnapC  [captured]";
     test("usedby path follows the captured branch revision",
          parse("usedby path AllSnapA AllSnapC"), captured_path);
     test("usedby path excludes the replacement from a captured path",
@@ -1711,8 +1711,8 @@ int main() {
     test("usedby path retains a removed captured intermediate",
          parse("usedby path AllSnapA AllSnapC"),
          "AllSnapA uses AllSnapC via:\n"
-         "  AllSnapA@1 -> AllSnapB@1  [captured] [name removed]\n"
-         "  AllSnapB@1 -> AllSnapC@1  [captured]");
+         "  AllSnapA -> AllSnapB@1  [captured] [name removed]\n"
+         "  AllSnapB@1 -> AllSnapC  [captured]");
 
     test("live traversal enables live references",
          parse("references live"), "references live");
@@ -1737,8 +1737,8 @@ int main() {
     test("usedby path follows a live branch replacement",
          parse("usedby path AllLiveA AllLiveD"),
          "AllLiveA uses AllLiveD via:\n"
-         "  AllLiveA@1 -> AllLiveB@2  [live]\n"
-         "  AllLiveB@2 -> AllLiveD@1  [live]");
+         "  AllLiveA -> AllLiveB@2  [live]\n"
+         "  AllLiveB@2 -> AllLiveD  [live]");
     test("usedby path excludes the old live target",
          parse("usedby path AllLiveA AllLiveC"),
          "AllLiveA and AllLiveC have no dependency path");
@@ -1747,8 +1747,8 @@ int main() {
     test("usedby path retains the last removed live target",
          parse("usedby path AllLiveA AllLiveD"),
          "AllLiveA uses AllLiveD via:\n"
-         "  AllLiveA@1 -> AllLiveB@2  [live] [name removed]\n"
-         "  AllLiveB@2 -> AllLiveD@1  [live]");
+         "  AllLiveA -> AllLiveB@2  [live] [name removed]\n"
+         "  AllLiveB@2 -> AllLiveD  [live]");
     test("live traversal restores captured references",
          parse("references captured"), "references captured");
 
@@ -1758,7 +1758,7 @@ int main() {
     test("dependency path leaves pre-defined nodes unversioned",
          parse("usedby path PathPreRoot M"),
          "PathPreRoot uses M via:\n"
-         "  PathPreRoot@1 -> M  [pre-defined]");
+         "  PathPreRoot -> M  [pre-defined]");
 
     test("explicit path target registers its first revision",
          parse("set PathExpTarget = 1 I"),
@@ -1772,7 +1772,7 @@ int main() {
     test("explicit old-revision edges override live mode as captured",
          parse("usedby path PathExpRoot PathExpTarget"),
          "PathExpRoot uses PathExpTarget via:\n"
-         "  PathExpRoot@1 -> PathExpTarget@1  [captured]");
+         "  PathExpRoot -> PathExpTarget@1  [captured]");
 
     test("parallel dependency path registers a shared target",
          parse("set PathParTarget = 1 I"),
@@ -1784,7 +1784,7 @@ int main() {
     test("captured wins a parallel-edge label deterministically",
          parse("usedby path PathParRoot PathParTarget"),
          "PathParRoot uses PathParTarget via:\n"
-         "  PathParRoot@1 -> PathParTarget@1  [captured]");
+         "  PathParRoot -> PathParTarget  [captured]");
 
     test("set registers a basis for circular-redefinition checks",
          parse("set SelfReplay = 0 I"), "SelfReplay");
@@ -1881,7 +1881,7 @@ int main() {
     test("a removed basis snapshot remains usable",
          single_step(single_step(remove_base_snapshot)), "x");
     test("a dependent basis keeps the removed snapshot",
-         parse("show RemoveUse"), "arity:0 RemoveBase@1");
+         parse("show RemoveUse"), "arity:0 RemoveBase");
     test("usedby recognizes a removed historical dependency",
          parse("usedby RemoveUse"),
          "RemoveUse directly uses: RemoveBase");
@@ -1923,7 +1923,7 @@ int main() {
     test("set accepts a frozen two-name chain revision",
          parse("set CycleA = 0 CycleB"), "CycleA");
     test("the frozen two-name chain identifies its revision",
-         parse("show CycleA"), "arity:0 CycleB@1");
+         parse("show CycleA"), "arity:0 CycleB");
     test("a non-circular redefinition of the same basis succeeds",
          parse("set CycleA = 0 K"), "CycleA");
     test("the non-circular replacement becomes current",
@@ -1938,7 +1938,7 @@ int main() {
     test("set accepts a frozen three-name chain revision",
          parse("set CircleFoo = 3 CircleBaz"), "CircleFoo");
     test("the frozen three-name chain identifies its revision",
-         parse("show CircleFoo"), "arity:3 CircleBaz@1");
+         parse("show CircleFoo"), "arity:3 CircleBaz");
 
     test("set registers a basis for an equivalent cyclic replacement",
          parse("set EqCircleA = 2 I"), "EqCircleA");
@@ -1960,7 +1960,7 @@ int main() {
     test("set accepts that equivalent definition unchanged",
          parse("set EqCircleA = 1 EqCircleB"), "EqCircleA");
     test("the equivalent definition remains current",
-         parse("show EqCircleA"), "arity:1 EqCircleB@1");
+         parse("show EqCircleA"), "arity:1 EqCircleB");
 
     test("set registers a basis for a removed-snapshot circle",
          parse("set RemovedCircleA = 0 I"), "RemovedCircleA");
@@ -1985,7 +1985,7 @@ int main() {
          parse("set RemovedCircleA = 0 RemovedCircleB"),
          "RemovedCircleA");
     test("that frozen chain becomes the current revision",
-         parse("show RemovedCircleA"), "arity:0 RemovedCircleB@1");
+         parse("show RemovedCircleA"), "arity:0 RemovedCircleB");
 
     test("set registers a basis for a late predefined snapshot circle",
          parse("set LateCircleA = 0 I"), "LateCircleA");
@@ -2077,14 +2077,14 @@ int main() {
                  "set captured CmdCapS = 1 CmdCapT"));
              parse("show CmdCapS").print_to(std::cout);
          },
-         "arity:1 CmdCapT@1");
+         "arity:1 CmdCapT");
     test("captured define overrides references live",
          [] {
              static_cast<void>(parse(
                  "define captured CmdCapD x = CmdCapT x"));
              parse("show CmdCapD").print_to(std::cout);
          },
-         "arity:1 CmdCapT@1");
+         "arity:1 CmdCapT");
     test("captured overrides do not change references live",
          [] {
              static_cast<void>(parse(
@@ -2213,8 +2213,8 @@ int main() {
              parse("show CmdAmbCD")
                  .print_to(std::cout);
          },
-         "arity:1 CmdLiveT@1\n"
-         "arity:1 CmdLiveT@1");
+         "arity:1 CmdLiveT\n"
+         "arity:1 CmdLiveT");
     test("live overrides follow redefinition",
          [] {
              static_cast<void>(parse(
@@ -2249,8 +2249,8 @@ int main() {
          parse("set FrozenTarget = 1 I"), "FrozenTarget");
     test("references captured captures the current revision",
          parse("set FrozenUse = 1 FrozenTarget"), "FrozenUse");
-    test("show prints the captured revision suffix",
-         parse("show FrozenUse"), "arity:1 FrozenTarget@1");
+    test("show omits a captured singleton revision suffix",
+         parse("show FrozenUse"), "arity:1 FrozenTarget");
     test("the frozen target can be redefined",
          parse("set FrozenTarget = 1 K"), "FrozenTarget");
     test("the frozen reference retains its old behavior",
@@ -2258,7 +2258,7 @@ int main() {
     test("a frozen name chain is not a runtime cycle",
          parse("set FrozenTarget = 1 FrozenUse"), "FrozenTarget");
     test("the frozen chain points to a specific revision",
-         parse("show FrozenTarget"), "arity:1 FrozenUse@1");
+         parse("show FrozenTarget"), "arity:1 FrozenUse");
     test("usedby all terminates on a revision-name cycle",
          parse("usedby all FrozenTarget"),
          "FrozenTarget directly uses: FrozenUse");
@@ -2268,11 +2268,11 @@ int main() {
     test("usedby path terminates on a revision-name cycle",
          parse("usedby path FrozenTarget FrozenUse"),
          "FrozenTarget uses FrozenUse via:\n"
-         "  FrozenTarget@3 -> FrozenUse@1  [captured]");
+         "  FrozenTarget@3 -> FrozenUse  [captured]");
     test("usedby path reverses endpoints around a revision-name cycle",
          parse("usedby path FrozenUse FrozenTarget"),
          "FrozenTarget uses FrozenUse via:\n"
-         "  FrozenTarget@3 -> FrozenUse@1  [captured]");
+         "  FrozenTarget@3 -> FrozenUse  [captured]");
     test("usedby path safely exhausts a disconnected name cycle",
          parse("usedby path FrozenTarget AllIndirectC"),
          "AllIndirectC and FrozenTarget have no dependency path");
@@ -2289,7 +2289,26 @@ int main() {
         "a frozen revision containing a live edge closes a cycle",
         "set MixedCycleA = 1 MixedCycleB", 4,
         "MixedCycleA would have a circular definition\n"
-        "MixedCycleA -> MixedCycleB@1 -> MixedCycleA");
+        "MixedCycleA -> MixedCycleB -> MixedCycleA");
+
+    test("qualified cycle setup creates a live first revision",
+         [] {
+             static_cast<void>(parse("references live"));
+             static_cast<void>(parse("set QualCycleA = 1 I"));
+             parse("set QualCycleB = 1 QualCycleA")
+                 .print_to(std::cout);
+         },
+         "QualCycleB");
+    test("qualified cycle setup redefines the live intermediary",
+         parse("set QualCycleB = 1 K QualCycleA"),
+         "QualCycleB");
+    test("qualified cycle setup restores captured references",
+         parse("references captured"), "references captured");
+    test_parse_failure(
+        "a circular diagnostic qualifies an old revision after redefinition",
+        "set QualCycleA = 1 QualCycleB@1", 4,
+        "QualCycleA would have a circular definition\n"
+        "QualCycleA -> QualCycleB@1 -> QualCycleA");
 
     test("recursive define remains represented through Y",
          parse("define RecVersion x = RecVersion x"),
@@ -2308,10 +2327,12 @@ int main() {
         "define rejects a cycle through another live binding",
         "define DefineCycleA x = DefineCycleB", 7,
         "DefineCycleA would have a circular definition\n"
-        "DefineCycleA -> DefineCycleB@1 -> DefineCycleA");
+        "DefineCycleA -> DefineCycleB -> DefineCycleA");
 
     test("pre-defined birds expose immutable version one",
          parse("show C@1"), "arity:3 S(S(KB)S)(KK)");
+    test("an explicit pre-defined sole revision prints unqualified",
+         parse("C@1"), "C");
     test("ordinary pre-defined bird printing remains unqualified",
          parse("C"), "C");
     test("set registers a Cardinal-star alias for direct printing",
@@ -2359,16 +2380,15 @@ int main() {
                  << ' ' << rendered.str();
          },
          "1 CstarPrintDigit1x Vstar");
-    test("inspect still exposes a captured current revision",
+    test("inspect omits a sole captured revision suffix",
          parse("inspect PrintCstar xy"),
-         "canonical: PrintCstar@1xy\n"
          "free symbols: x y\n"
          "references:\n"
-         "  PrintCstar@1 [captured]\n"
+         "  PrintCstar [captured]\n"
          "next reduction: none [normal form]");
-    test("an explicit user revision remains qualified and compact",
-         parse("PrintCstar@1xy"), "PrintCstar@1xy");
-    test("an explicit user revision output round trips",
+    test("an explicit sole user revision prints unqualified",
+         parse("PrintCstar@1xy"), "PrintCstar xy");
+    test("an explicit sole user revision output round trips",
          [] {
              auto const expression = parse("PrintCstar@1xy");
              std::ostringstream rendered;
@@ -2379,19 +2399,63 @@ int main() {
                         expression, reparsed)
                  << ' ' << rendered.str();
          },
-         "1 PrintCstar@1xy");
-    test("a stored captured reference remains revision-qualified",
+         "1 PrintCstar xy");
+    test("a stored captured sole revision remains semantically captured",
          parse("set captured PrintCap = 2 PrintCstar"),
          "PrintCap");
-    test("show keeps the stored captured revision",
+    test("show omits the stored captured sole revision suffix",
          parse("show PrintCap"),
-         "arity:2 PrintCstar@1");
+         "arity:2 PrintCstar");
+    test("an explicitly captured sole revision is stored",
+         parse("set captured PrintExact = 2 PrintCstar@1"),
+         "PrintExact");
+    test("show omits an explicitly stored sole revision suffix",
+         parse("show PrintExact"),
+         "arity:2 PrintCstar");
+    test("the replay journal preserves an explicit revision spelling",
+         [] {
+             std::cout << (set_list().find(
+                 "set captured PrintExact = 2 PrintCstar@1") !=
+                 std::string::npos);
+         },
+         "1");
     test("a stored live reference remains unversioned",
          parse("set live PrintLive = 2 PrintCstar"),
          "PrintLive");
     test("show keeps the stored live name",
          parse("show PrintLive"),
          "arity:2 PrintCstar");
+    test("a sole user revision can be removed",
+         [] {
+             static_cast<void>(parse("set PrintOnce = 1 I"));
+             parse("remove PrintOnce").print_to(std::cout);
+         },
+         "PrintOnce");
+    test("a removed sole revision prints bare and round trips",
+         [] {
+             auto const expression = parse("PrintOnce@1x");
+             std::ostringstream rendered;
+             expression.print_to(rendered);
+             auto const reparsed = parse(rendered.str());
+             std::cout
+                 << combdsl::detail::same_parser_definition_expression(
+                        expression, reparsed)
+                 << ' ' << rendered.str();
+         },
+         "1 PrintOnce x");
+    test_parse_failure(
+        "management commands still treat a sole revision as removed",
+        "show PrintOnce", 5,
+        "PrintOnce is not a defined name");
+    test("re-adding a removed sole revision creates revision two",
+         parse("set PrintOnce = 1 K"), "PrintOnce");
+    test("both revisions print qualified after redefinition",
+         [] {
+             parse("PrintOnce@1x").print_to(std::cout);
+             std::cout << ' ';
+             parse("PrintOnce@2x").print_to(std::cout);
+         },
+         "PrintOnce@1x PrintOnce@2x");
     test("live mode is enabled for direct-print coverage",
          parse("references live"), "references live");
     test("a current live user name evaluates unversioned with its boundary",
@@ -2420,6 +2484,9 @@ int main() {
          parse("PrintCstar@2xy"), "PrintCstar@2xy");
     test("expanding a captured holder exposes its old exact revision",
          single_step(parse("PrintCap x y"), true),
+         "PrintCstar@1xy");
+    test("an explicitly captured holder also exposes its old revision",
+         single_step(parse("PrintExact x y"), true),
          "PrintCstar@1xy");
     test("expanding a live holder exposes the current unversioned name",
          single_step(parse("PrintLive x y"), true),
@@ -2638,13 +2705,13 @@ int main() {
     test("replay history continues versions across removal",
          parse("show ReplayTarget@3"), "arity:1 S");
 
-    test("revisions reports an implicit captured current revision",
+    test("revisions omits a sole captured current revision suffix",
          [] {
              static_cast<void>(parse(
                  "set RevModeTarget = 1 I"));
              parse("revisions RevModeTarget").print_to(std::cout);
          },
-         "RevModeTarget@1 arity:1 I [captured] [current]");
+         "RevModeTarget arity:1 I [captured] [current]");
     test("revisions reports changed revisions in chronological order",
          [] {
              static_cast<void>(parse(
@@ -2666,14 +2733,14 @@ int main() {
          "RevModeUse@1 arity:1 RevModeTarget [live]\n"
          "RevModeUse@2 arity:1 RevModeTarget@2 "
          "[captured] [current]");
-    test("an opposite-mode no-op does not create a revision",
+    test("an opposite-mode no-op remains an unqualified sole revision",
          [] {
              static_cast<void>(parse("set RevNoop = 1 I"));
              static_cast<void>(parse(
                  "set live RevNoop = 1 I"));
              parse("revisions RevNoop").print_to(std::cout);
          },
-         "RevNoop@1 arity:1 I [captured] [current]");
+         "RevNoop arity:1 I [captured] [current]");
     test("revisions marks the latest revision of a removed name",
          [] {
              static_cast<void>(parse("remove RevModeTarget"));
@@ -2690,9 +2757,9 @@ int main() {
          "RevModeTarget@1 arity:1 I [captured]\n"
          "RevModeTarget@2 arity:2 K [live]\n"
          "RevModeTarget@3 arity:3 S [captured] [current]");
-    test("revisions identifies a pre-defined current revision",
+    test("revisions omits a pre-defined sole revision suffix",
          parse("revisions M"),
-         "M@1 arity:1 SII [pre-defined] [current]");
+         "M arity:1 SII [pre-defined] [current]");
     test("revisions is display only",
          [] {
              auto const parsed =
@@ -2862,24 +2929,25 @@ int main() {
              std::cout << "ready";
          },
          "ready");
-    test("inspect identifies a captured current revision",
+    test("inspect omits a sole captured current revision suffix",
          parse("inspect InspectCaptured"),
-         "canonical: InspectCaptured@1\n"
          "free symbols: none\n"
          "references:\n"
-         "  InspectCaptured@1 [captured]\n"
+         "  InspectCaptured [captured]\n"
          "next reduction: none [normal form]");
-    test("inspect identifies an explicit removed revision as captured",
+    test("inspect omits an explicit removed sole revision suffix",
          parse("inspect InspectRemoved@1"),
+         "canonical: InspectRemoved\n"
          "free symbols: none\n"
          "references:\n"
-         "  InspectRemoved@1 [captured]\n"
+         "  InspectRemoved [captured]\n"
          "next reduction: none [normal form]");
-    test("inspect identifies an explicit predefined revision",
+    test("inspect omits an explicit predefined sole revision suffix",
          parse("inspect M@1"),
+         "canonical: M\n"
          "free symbols: none\n"
          "references:\n"
-         "  M@1 [pre-defined]\n"
+         "  M [pre-defined]\n"
          "next reduction: none [normal form]");
     test("inspect identifies a live current-name reference",
          [] {
@@ -2891,20 +2959,37 @@ int main() {
          "references:\n"
          "  InspectLive [live]\n"
          "next reduction: none [normal form]");
-    test("inspect limits a captured basis to its declared arity",
+    test("inspect keeps singleton live and captured classifications distinct",
+         [] {
+             static_cast<void>(parse("references live"));
+             parse(
+                 "inspect x(InspectLive)(InspectLive)"
+                 "(InspectLive@1)(InspectLive@1)")
+                 .print_to(std::cout);
+             static_cast<void>(parse("references captured"));
+         },
+         "canonical: x InspectLive InspectLive InspectLive InspectLive\n"
+         "free symbols: x\n"
+         "references:\n"
+         "  InspectLive [live]\n"
+         "  InspectLive [captured]\n"
+         "next reduction: none [normal form]");
+    test("inspect limits an explicit sole revision without a suffix",
          parse("inspect InspectRedex@1xyzw"),
+         "canonical: InspectRedex xyzw\n"
          "free symbols: w x y z\n"
          "references:\n"
-         "  InspectRedex@1 [captured]\n"
-         "next reduction: InspectRedex@1xy "
-         "[InspectRedex@1 at root]");
-    test("inspect reports only a saturated arity-zero basis",
+         "  InspectRedex [captured]\n"
+         "next reduction: InspectRedex xy "
+         "[InspectRedex at root]");
+    test("inspect reports only a saturated sole arity-zero basis",
          parse("inspect InspectZero@1xy"),
+         "canonical: InspectZero xy\n"
          "free symbols: x y\n"
          "references:\n"
-         "  InspectZero@1 [captured]\n"
-         "next reduction: InspectZero@1 "
-         "[InspectZero@1 at root]");
+         "  InspectZero [captured]\n"
+         "next reduction: InspectZero "
+         "[InspectZero at root]");
     test("inspect uses current arity for a live basis",
          [] {
              static_cast<void>(parse("references live"));
@@ -3341,9 +3426,9 @@ int main() {
     test("define preprocessing leaves a user basis undersaturated",
          parse("define PrepKeep x = PrepAlias"), "PrepKeep");
     test("show preserves the undersaturated user basis",
-         parse("show PrepKeep"), "arity:1 K PrepAlias@1");
+         parse("show PrepKeep"), "arity:1 K PrepAlias");
     test("undersaturated user basis remains named",
-         single_step(parse("PrepKeep a")), "PrepAlias@1");
+         single_step(parse("PrepKeep a")), "PrepAlias");
     test("set creates a zero-arity preprocessing basis",
          parse("set PrepZero = 0 I"), "PrepZero");
     test("define preprocessing applies a zero-arity basis",
@@ -3731,6 +3816,10 @@ int main() {
          single_step(parse("f y")), "y");
     test("the lowercase one-letter test definition is removable",
          parse("remove f"), "f");
+    test("a complete removed lowercase singleton remains usable",
+         single_step(parse("f y")), "y");
+    test("an unseparated removed lowercase singleton remains symbols",
+         parse("foox"), "foox");
     test("define accepts a symbol adjacent to a one-letter name",
          parse("define Xx = xSTK(KK)(SK)"), "X");
     test("compact one-letter define preserves its behavior",
@@ -4138,7 +4227,7 @@ int main() {
              parse("revisions RemovedLateCpp").print_to(std::cout);
          },
          "combdsl::basis name is already user-defined: RemovedLateCpp\n"
-         "RemovedLateCpp@1 arity:0 I [captured] [removed]");
+         "RemovedLateCpp arity:0 I [captured] [removed]");
     test("parse left association reduction", single_step(parse("KIxy")),
          "Iy");
     test("parse parentheses override association",
@@ -5877,12 +5966,12 @@ int main() {
          parse("find among A A A ?xy = x(yx)"), "?=A");
     test("find among deduplicates compact repeated birds",
          parse("find among AA@1 ?xy = x(yx)"), "?=A");
-    test("find among compact deduplication preserves exact spelling first",
-         parse("find among A@1A ?xy = x(yx)"), "?=A@1");
+    test("find among omits an exact pre-defined sole revision suffix",
+         parse("find among A@1A ?xy = x(yx)"), "?=A");
     test("find among deduplicates an exact predefined revision after its name",
          parse("find among A A@1 ?xy = x(yx)"), "?=A");
-    test("find among preserves an exact predefined revision listed first",
-         parse("find among A@1 A ?xy = x(yx)"), "?=A@1");
+    test("find among prints an exact predefined sole revision unqualified",
+         parse("find among A@1 A ?xy = x(yx)"), "?=A");
     test("find among compact setup registers overlapping user names",
          [] {
              static_cast<void>(parse("references captured"));
@@ -5904,37 +5993,37 @@ int main() {
          "ready");
     test("find among gives an exact whole-group user name precedence",
          parse("find among CompactLongA ?xy = x(yx)"),
-         "?=CompactLongA@1");
+         "?=CompactLongA");
     test("find among greedily chooses the longest user-name prefix",
          parse("find among CompactLongB ?xy = x(yx)"),
-         "?=CompactLong@1");
+         "?=CompactLong");
     test("find among whitespace can force a shorter user-name boundary",
          parse("find among CompactLong A ?xy = x(yx)"),
-         "?=CompactLong@1\n?=A");
+         "?=CompactLong\n?=A");
     test("find among parses adjacent punctuation-ending user names",
          parse("find among CompactBang!K ?xy = x(yx)"),
-         "?=CompactBang!@1");
+         "?=CompactBang!");
     test("find among parses adjacent digit-ending user names",
          parse("find among KCompact1A ?xy = x(yx)"),
-         "?=Compact1@1\n?=A");
+         "?=Compact1\n?=A");
     test("find among parses adjacent lowercase user names",
          parse("find among KlowerbirdA ?xy = x(yx)"),
-         "?=lowerbird@1\n?=A");
+         "?=lowerbird\n?=A");
     test("find among gives a registered digit-only name precedence",
          parse("find among K7A ?xy = x(yx)"),
-         "?=7@1\n?=A");
+         "?=7\n?=A");
     test("find among retains question marks inside an exact bird name",
          parse("find among CompactQuest? ?xy = x(yx)"),
-         "?=CompactQuest?@1");
+         "?=CompactQuest?");
     test("find among retains an ending question mark before an adjacent bird",
          parse("find among CompactQuest?A ?xy = x(yx)"),
-         "?=CompactQuest?@1\n?=A");
+         "?=CompactQuest?\n?=A");
     test("find among parses an explicit revision next to another bird",
          parse("find among CompactLong@1A ?xy = x(yx)"),
-         "?=CompactLong@1\n?=A");
+         "?=CompactLong\n?=A");
     test("find among accepts a leading-zero revision next to another bird",
          parse("find among CompactLong@0001A ?xy = x(yx)"),
-         "?=CompactLong@1\n?=A");
+         "?=CompactLong\n?=A");
     test("find among retains a valid revision before many digit birds",
          [] {
              std::size_t clock_calls = 0;
@@ -5961,11 +6050,14 @@ int main() {
          parse(
              "find among CompactLong@1CompactOther@1 "
              "?xy = x(yx)"),
-         "?=CompactLong@1\n?=CompactOther@1");
+         "?=CompactLong\n?=CompactOther");
     test("find among accepts a removed revision inside a compact group",
          parse("find among CompactRemoved@1A ?xy = x(yx)"),
-         "?=CompactRemoved@1\n?=A");
-    test("find among keeps compact live and captured references distinct",
+         "?=CompactRemoved\n?=A");
+    test("find among accepts a bare removed sole revision",
+         parse("find among CompactRemoved ?xy = x(yx)"),
+         "?=CompactRemoved");
+    test("find among deduplicates identical singleton live and captured output",
          [] {
              static_cast<void>(parse("references live"));
              parse(
@@ -5974,7 +6066,7 @@ int main() {
                  .print_to(std::cout);
              static_cast<void>(parse("references captured"));
          },
-         "?=CompactLive\n?=CompactLive@1");
+         "?=CompactLive");
     test_parse_failure(
         "find among uses greedy prefixes without backtracking",
         "find among CompactLongtail ?x = x", 22,
@@ -6082,7 +6174,7 @@ int main() {
          "FindAmongUser");
     test("find among searches the current user revision",
          parse("find among FindAmongUser ?xy = x(yx)"),
-         "?=FindAmongUser@1");
+         "?=FindAmongUser");
     test("find among can retain an earlier explicit revision",
          [] {
              static_cast<void>(parse("set FindAmongUser = 2 K"));
@@ -6107,9 +6199,21 @@ int main() {
              static_cast<void>(parse("references captured"));
          },
          "?=FindAmongLive");
-    test("find among keeps distinct live and captured references",
+    test("find among deduplicates singleton live and captured references",
          [] {
              static_cast<void>(parse("references live"));
+             parse(
+                 "find among FindAmongLive FindAmongLive@1 "
+                 "?xy = x(yx)")
+                 .print_to(std::cout);
+             static_cast<void>(parse("references captured"));
+         },
+         "?=FindAmongLive");
+    test("find among keeps live and captured revisions after redefinition",
+         [] {
+             static_cast<void>(parse("references live"));
+             static_cast<void>(parse(
+                 "set FindAmongLive = 2 S(KA)I"));
              parse(
                  "find among FindAmongLive FindAmongLive@1 "
                  "?xy = x(yx)")
@@ -6131,8 +6235,8 @@ int main() {
                  "FindAmongLeaf@1 FindAmongLeaf@1 x")
                  .print_to(std::cout);
          },
-         "?=FindAmongLeaf@1 FindAmongLeaf@1 FindAmongLeaf@1 "
-         "FindAmongLeaf@1 FindAmongLeaf@1");
+         "?=FindAmongLeaf FindAmongLeaf FindAmongLeaf "
+         "FindAmongLeaf FindAmongLeaf");
     test("find among times out at the exact ten-second deadline",
          [] {
              std::size_t clock_calls = 0;
@@ -8862,7 +8966,7 @@ int main() {
              static_cast<void>(parse("references captured"));
          },
          "1 CstarUserTail+Vstar");
-    test("an explicit punctuation-ending revision round trips on both sides",
+    test("an explicit punctuation-ending sole revision prints bare",
          [] {
              auto const spaced = parse("Cstar UserTail+@1 Vstar");
              std::ostringstream rendered;
@@ -8873,8 +8977,8 @@ int main() {
                         spaced, reparsed)
                  << ' ' << rendered.str();
          },
-         "1 CstarUserTail+@1Vstar");
-    test("a removed captured punctuation revision round trips compactly",
+         "1 CstarUserTail+Vstar");
+    test("a removed captured punctuation sole revision round trips bare",
          [] {
              static_cast<void>(parse("remove UserTail+"));
              auto const spaced = parse("Cstar UserTail+@1 Vstar");
@@ -8886,7 +8990,7 @@ int main() {
                         spaced, reparsed)
                  << ' ' << rendered.str();
          },
-         "1 CstarUserTail+@1Vstar");
+         "1 CstarUserTail+Vstar");
     static_cast<void>(basis("LeftDigit1", 1, I));
     test("digit-ending basis needs no leading space after a primitive",
          quote(K)(Q1), "KQ1");
@@ -8932,7 +9036,7 @@ int main() {
     static_cast<void>(basis("xLeftDigit1", 0, I));
     test("exact longer digit-ending basis wins compact parsing",
          single_step(parse("xLeftDigit1")), "I");
-    test("ordinary explicit revision suffix keeps its leading separator",
+    test("an ordinary explicit sole revision prints without its suffix",
          [] {
              static_cast<void>(parse("references captured"));
              static_cast<void>(parse("set PlainCaptured = 1 I"));
@@ -8945,7 +9049,7 @@ int main() {
                         spaced, reparsed)
                  << ' ' << rendered.str();
          },
-         "1 K PlainCaptured@1");
+         "1 K PlainCaptured");
     test("a live user digit-ending basis round trips without a space before",
          [] {
              static_cast<void>(parse("references live"));
@@ -8975,7 +9079,7 @@ int main() {
              static_cast<void>(parse("references captured"));
          },
          "1 CstarUserDigit1 Vstar");
-    test("an explicit digit-ending revision round trips without a space before",
+    test("an explicit digit-ending sole revision prints bare",
          [] {
              auto const spaced = parse("Cstar UserDigit1@1 x Vstar");
              std::ostringstream rendered;
@@ -8986,8 +9090,8 @@ int main() {
                         spaced, reparsed)
                  << ' ' << rendered.str();
          },
-         "1 CstarUserDigit1@1x Vstar");
-    test("an explicit digit-ending revision keeps a space after it",
+         "1 CstarUserDigit1x Vstar");
+    test("an explicit digit-ending sole revision keeps a space after it",
          [] {
              auto const spaced = parse("Cstar UserDigit1@1 Vstar");
              std::ostringstream rendered;
@@ -8998,14 +9102,14 @@ int main() {
                         spaced, reparsed)
                  << ' ' << rendered.str();
          },
-         "1 CstarUserDigit1@1 Vstar");
+         "1 CstarUserDigit1 Vstar");
     test_parse_failure(
         "an unavailable compact captured digit revision stays unknown",
         "CstarUserDigit1@2", 0, "unknown operand");
     test_parse_failure(
         "an invalid prefix before a valid captured digit revision stays unknown",
         "PUserDigit1@1", 0, "unknown operand");
-    test("a removed digit-ending revision round trips without a space before",
+    test("a removed digit-ending sole revision round trips bare",
          [] {
              static_cast<void>(parse("remove UserDigit1"));
              auto const spaced = parse("Cstar UserDigit1@1 x Vstar");
@@ -9017,8 +9121,8 @@ int main() {
                         spaced, reparsed)
                  << ' ' << rendered.str();
          },
-         "1 CstarUserDigit1@1x Vstar");
-    test("a removed digit-ending revision keeps a space after it",
+         "1 CstarUserDigit1x Vstar");
+    test("a removed digit-ending sole revision keeps a space after it",
          [] {
              auto const spaced = parse("Cstar UserDigit1@1 Vstar");
              std::ostringstream rendered;
@@ -9029,7 +9133,7 @@ int main() {
                         spaced, reparsed)
                  << ' ' << rendered.str();
          },
-         "1 CstarUserDigit1@1 Vstar");
+         "1 CstarUserDigit1 Vstar");
     test("multi-character basis after primitive",
          K(copied_name_basis), "K Alias");
     test("multi-character basis after symbol",
@@ -9563,6 +9667,51 @@ int main() {
         check(recursive_depth(8) == 8);
     }
     check(generator_lifetime.expired());
+
+    test("removed lowercase singleton boundary setup defines g",
+         parse("define g x=x"), "g");
+    auto removed_lowercase_singleton_snapshot = parse("g x");
+    test("a current lowercase singleton function remains compact",
+         removed_lowercase_singleton_snapshot, "gx");
+    test("removed lowercase singleton boundary setup removes g",
+         parse("remove g"), "g");
+    test("a compact removed lowercase singleton prefix stays symbols",
+         parse("gx"), "gx");
+    test("a retained removed lowercase singleton adds a safe boundary",
+         [&removed_lowercase_singleton_snapshot] {
+             std::ostringstream rendered;
+             removed_lowercase_singleton_snapshot.print_to(rendered);
+             auto const reparsed = parse(rendered.str());
+             std::cout
+                 << combdsl::detail::same_parser_definition_expression(
+                        removed_lowercase_singleton_snapshot, reparsed)
+                 << ' ' << rendered.str();
+         },
+         "1 g x");
+    test("a removed lowercase singleton function prints unambiguously",
+         [] {
+             auto const expression = parse("g x");
+             std::ostringstream rendered;
+             expression.print_to(rendered);
+             auto const reparsed = parse(rendered.str());
+             std::cout
+                 << combdsl::detail::same_parser_definition_expression(
+                        expression, reparsed)
+                 << ' ' << rendered.str();
+         },
+         "1 g x");
+    test("a removed lowercase singleton argument prints unambiguously",
+         [] {
+             auto const expression = parse("x g");
+             std::ostringstream rendered;
+             expression.print_to(rendered);
+             auto const reparsed = parse(rendered.str());
+             std::cout
+                 << combdsl::detail::same_parser_definition_expression(
+                        expression, reparsed)
+                 << ' ' << rendered.str();
+         },
+         "1 x g");
 
     std::cout << tests_run << " test(s) run, "
               << test_failures << " failed\n";

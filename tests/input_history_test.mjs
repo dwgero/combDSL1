@@ -287,7 +287,7 @@ test("keeps references as a typed command without a UI button", () => {
     assert.match(html, /references &lt;captured \| live&gt;/);
     assert.match(
         html,
-        /plain expression pins the current\s+immutable revision but retains its unversioned spelling when\s+printed while that revision remains current/);
+        /sole first\s+revision always prints as the bare name, even when stored,\s+inspected, explicitly entered as\s+<code>name@1<\/code>, or retained after removal/);
     assert.doesNotMatch(
         html,
         /<button\b[^>]*\bid=["']references["']/i);

@@ -145,7 +145,8 @@ enum class printed_token : long {
     multicharacter_basis,
     compact_multicharacter_basis,
     digit_terminated_basis,
-    nonalphanumeric_terminated_basis
+    nonalphanumeric_terminated_basis,
+    separated_basis
 };
 
 [[nodiscard]] constexpr bool is_parenthesis(printed_token token) noexcept {
@@ -158,7 +159,8 @@ enum class printed_token : long {
     return token == printed_token::multicharacter_basis ||
            token == printed_token::compact_multicharacter_basis ||
            token == printed_token::digit_terminated_basis ||
-           token == printed_token::nonalphanumeric_terminated_basis;
+           token == printed_token::nonalphanumeric_terminated_basis ||
+           token == printed_token::separated_basis;
 }
 
 [[nodiscard]] constexpr bool is_ascii_alphanumeric(char value) noexcept {
@@ -261,6 +263,8 @@ inline void print_token(
         !is_parenthesis(token) &&
         token != printed_token::symbol;
     auto const follows_multicharacter_basis =
+        (previous == printed_token::separated_basis &&
+         !is_parenthesis(token)) ||
         digit_basis_requires_trailing_separator ||
         (is_multicharacter_basis(previous) &&
          !is_parenthesis(token) &&
@@ -4783,11 +4787,13 @@ public:
     }
 
     void print_to(std::ostream& output) const override {
-        auto const& displayed_name =
-            print_unqualified_name_ && !target_is_current()
-                ? revision_name_
-                : printed_name_;
-        auto const token = ends_with_non_alphanumeric(definition_name_)
+        auto const style = display_style();
+        auto const& displayed_name = style.revision_qualified
+            ? revision_name_
+            : definition_name_;
+        auto const token = style.requires_trailing_separator
+            ? printed_token::separated_basis
+            : ends_with_non_alphanumeric(definition_name_)
             ? printed_token::nonalphanumeric_terminated_basis
             : ends_with_ascii_digit(definition_name_)
                 ? printed_token::digit_terminated_basis
@@ -4826,14 +4832,34 @@ public:
     }
 
 private:
-    [[nodiscard]] bool target_is_current() const {
+    struct basis_display_style {
+        bool revision_qualified;
+        bool requires_trailing_separator;
+    };
+
+    [[nodiscard]] basis_display_style display_style() const {
         std::lock_guard transaction_lock(
             parser_definition_transaction_mutex());
         std::lock_guard lock(parser_basis_registry_mutex());
+        auto const& versions = parser_basis_version_registry();
+        auto const revision_match = versions.find(definition_name_);
         auto const& registered_bases = parser_basis_registry();
         auto const match = registered_bases.find(definition_name_);
-        return match != registered_bases.end() &&
+        auto const is_current = match != registered_bases.end() &&
             match->second == target_;
+        auto const revision_count =
+            revision_match == versions.end()
+            ? std::size_t{0}
+            : revision_match->second.size();
+        return {
+            !live_binding_ && revision_count > 1 &&
+                (!print_unqualified_name_ || !is_current),
+            match == registered_bases.end() &&
+                revision_count == 1 &&
+                definition_name_.size() == 1 &&
+                definition_name_.front() >= 'a' &&
+                definition_name_.front() <= 'z',
+        };
     }
 
     [[nodiscard]] static bool registered_basis_contains_live_binding(
@@ -5439,7 +5465,8 @@ direct_registered_parser_bases_in_definition(
 parser_basis_definition_circular_path(
     std::string_view name,
     quoted_expression const& proposed_definition,
-    registered_parser_basis_table const& registered_bases) {
+    registered_parser_basis_table const& registered_bases,
+    parser_basis_version_history const& registered_versions) {
     auto const& proposed_root = quoted_access::root(
         proposed_definition);
     if (proposed_root->kind() != quoted_node_kind::basis) {
@@ -5512,7 +5539,22 @@ parser_basis_definition_circular_path(
         if (root->kind() == quoted_node_kind::basis) {
             auto const& basis =
                 static_cast<quoted_basis_node_base const&>(*root);
-            return visit_basis(root, basis.name());
+            auto displayed_name = std::string(basis.definition_name());
+            if (auto const* reference = dynamic_cast<
+                    quoted_parser_basis_reference_node const*>(
+                    root.get());
+                reference != nullptr &&
+                !reference->is_live_binding()) {
+                auto const revisions = registered_versions.find(
+                    reference->definition_name());
+                if (revisions != registered_versions.end() &&
+                    revisions->second.size() > 1) {
+                    displayed_name.push_back('@');
+                    displayed_name += std::to_string(
+                        reference->frozen_target()->version());
+                }
+            }
+            return visit_basis(root, displayed_name);
         }
 
         switch (root->kind()) {
@@ -5605,6 +5647,7 @@ inspect_parser_definition_basis(
     std::string_view name,
     quoted_expression const& basis,
     registered_parser_basis_table const& registered_bases,
+    parser_basis_version_history const& registered_versions,
     bool reject_circular) {
     if (is_primitive_name(name)) {
         return {
@@ -5615,7 +5658,8 @@ inspect_parser_definition_basis(
     if (match == registered_bases.end()) {
         auto circular_path = reject_circular
             ? parser_basis_definition_circular_path(
-                  name, basis, registered_bases)
+                  name, basis, registered_bases,
+                  registered_versions)
             : std::vector<std::string>{};
         if (!circular_path.empty()) {
             return {
@@ -5637,7 +5681,8 @@ inspect_parser_definition_basis(
     }
     auto circular_path = reject_circular
         ? parser_basis_definition_circular_path(
-              name, basis, registered_bases)
+              name, basis, registered_bases,
+              registered_versions)
         : std::vector<std::string>{};
     if (!circular_path.empty()) {
         return {
@@ -5673,7 +5718,8 @@ register_parser_definition_basis(
     if (existing == entries.end() && reject_circular) {
         circular_path =
             parser_basis_definition_circular_path(
-                name, basis, entries);
+                name, basis, entries,
+                parser_basis_version_registry());
         if (!circular_path.empty()) {
             return parser_definition_change::rejected_circular;
         }
@@ -5689,7 +5735,8 @@ register_parser_definition_basis(
         if (reject_circular) {
             circular_path =
                 parser_basis_definition_circular_path(
-                    name, basis, entries);
+                    name, basis, entries,
+                    parser_basis_version_registry());
             if (!circular_path.empty()) {
                 return parser_definition_change::rejected_circular;
             }
@@ -6803,12 +6850,17 @@ private:
         quoted_expression const& expression,
         std::vector<std::string>& free_symbols,
         std::vector<inspect_reference>& references) {
-        std::unordered_set<std::string> seen_references;
         std::vector<quoted_expression> pending{expression};
 
         auto append_reference = [&](std::string name,
                                     std::string classification) {
-            if (seen_references.emplace(name).second) {
+            auto const duplicate = std::ranges::any_of(
+                references,
+                [&](inspect_reference const& existing) {
+                    return existing.name == name &&
+                        existing.classification == classification;
+                });
+            if (!duplicate) {
                 references.push_back({
                     std::move(name), std::move(classification)});
             }
@@ -7371,9 +7423,11 @@ private:
             }
             auto const& basis =
                 static_cast<quoted_basis_node_base const&>(*root);
-            output << unescape_input(revision->name()) << '@'
-                   << revision->version() << " arity:"
-                   << basis.arity() << ' ';
+            output << unescape_input(revision->name());
+            if (versions->second.size() > 1) {
+                output << '@' << revision->version();
+            }
+            output << " arity:" << basis.arity() << ' ';
             basis.body().print_to(output);
             if (revision->predefined()) {
                 output << " [pre-defined]";
@@ -7475,10 +7529,14 @@ private:
         output += " uses ";
         output += unescape_input(path.nodes.back()->name());
         output += " via:";
-        auto append_node = [&output](
+        auto append_node = [this, &output](
                                registered_parser_basis_ptr const& node) {
             output += unescape_input(node->name());
-            if (!node->predefined()) {
+            auto const revisions =
+                registered_versions_.find(node->name());
+            if (!node->predefined() &&
+                revisions != registered_versions_.end() &&
+                revisions->second.size() > 1) {
                 output += '@';
                 output += std::to_string(node->version());
             }
@@ -7645,6 +7703,13 @@ private:
                 parser_basis_reference(match->second),
                 match->second,
                 !match->second->predefined() && !snapshot_enabled_,
+            };
+        }
+        if (auto revision = removed_single_revision(token)) {
+            return find_catalog_entry{
+                make_parser_basis_reference(revision),
+                std::move(revision),
+                false,
             };
         }
         return std::nullopt;
@@ -7920,13 +7985,20 @@ private:
 
         std::ostringstream output;
         bool first = true;
+        std::unordered_set<std::string> printed_catalog_matches;
         auto append_matches = [&](auto const& expressions) {
             for (auto const& expression : expressions) {
+                std::ostringstream rendered;
+                expression.print_to(rendered);
+                auto text = std::move(rendered).str();
+                if (search_catalog &&
+                    !printed_catalog_matches.emplace(text).second) {
+                    continue;
+                }
                 if (!first) {
                     output << '\n';
                 }
-                output << "?=";
-                expression.print_to(output);
+                output << "?=" << text;
                 first = false;
             }
         };
@@ -8297,6 +8369,7 @@ private:
                     name,
                     result,
                     registered_bases_,
+                    registered_versions_,
                     reject_circular);
             change = inspection.change;
             replaced_definition_ =
@@ -9320,6 +9393,25 @@ private:
             token.substr(0, separator), version};
     }
 
+    [[nodiscard]] registered_parser_basis_ptr
+    removed_single_revision(std::string_view name) const {
+        if (registered_bases_.contains(name)) {
+            return {};
+        }
+        auto const versions = registered_versions_.find(name);
+        if (versions == registered_versions_.end() ||
+            versions->second.size() != 1) {
+            return {};
+        }
+        return versions->second.front();
+    }
+
+    [[nodiscard]] bool has_unversioned_expression_basis(
+        std::string_view name) const {
+        return registered_bases_.contains(name) ||
+            removed_single_revision(name) != nullptr;
+    }
+
     [[nodiscard]] quoted_expression parser_basis_reference(
         registered_parser_basis_ptr const& basis) const {
         if (basis->predefined()) {
@@ -9369,6 +9461,10 @@ private:
             match != registered_bases_.end()) {
             position_ += token.size();
             return parser_basis_reference(match->second);
+        }
+        if (auto revision = removed_single_revision(token)) {
+            position_ += token.size();
+            return make_parser_basis_reference(std::move(revision));
         }
 
         return std::nullopt;
@@ -9450,6 +9546,11 @@ private:
                 position_ += prefix_size;
                 return parser_basis_reference(match->second);
             }
+            if (auto revision = removed_single_revision(prefix)) {
+                position_ += prefix_size;
+                return make_parser_basis_reference(
+                    std::move(revision));
+            }
         }
 
         return std::nullopt;
@@ -9480,8 +9581,14 @@ private:
         for (auto const& [name, versions] : registered_versions_) {
             if ((!ends_with_non_alphanumeric(name) &&
                  !ends_with_ascii_digit(name)) ||
-                !token.starts_with(name) ||
-                token.size() <= name.size() + 1 ||
+                !token.starts_with(name)) {
+                continue;
+            }
+
+            if (versions.size() == 1) {
+                return true;
+            }
+            if (token.size() <= name.size() + 1 ||
                 token[name.size()] != '@') {
                 continue;
             }
@@ -9531,7 +9638,7 @@ private:
         if (name.size() < 2 ||
             !is_lowercase_name(name) ||
             !is_basis_token_start() ||
-            registered_bases_.contains(name) ||
+            has_unversioned_expression_basis(name) ||
             is_recursive_function_name(name)) {
             return;
         }
@@ -9555,7 +9662,7 @@ private:
 
         auto const name = current_basis_token();
         return name.size() > 1 &&
-               (registered_bases_.contains(name) ||
+               (has_unversioned_expression_basis(name) ||
                 is_recursive_function_name(name));
     }
 
@@ -9625,7 +9732,14 @@ private:
     parse_single_character_basis() {
         auto const name = source_.substr(position_, 1);
         auto const match = registered_bases_.find(name);
-        if (match == registered_bases_.end()) {
+        auto revision = match == registered_bases_.end()
+            ? removed_single_revision(name)
+            : registered_parser_basis_ptr{};
+        if (match == registered_bases_.end() && !revision) {
+            return std::nullopt;
+        }
+        if (revision && current_basis_token().size() > 1 &&
+            name.front() >= 'a' && name.front() <= 'z') {
             return std::nullopt;
         }
 
@@ -9635,7 +9749,9 @@ private:
         }
 
         ++position_;
-        return parser_basis_reference(match->second);
+        return match != registered_bases_.end()
+            ? parser_basis_reference(match->second)
+            : make_parser_basis_reference(std::move(revision));
     }
 
     [[nodiscard]] std::string_view current_basis_token() const noexcept {
@@ -9654,7 +9770,8 @@ private:
              length < token.size() &&
              length <= maximum_basis_name_size;
              ++length) {
-            if (registered_bases_.contains(token.substr(0, length))) {
+            if (has_unversioned_expression_basis(
+                    token.substr(0, length))) {
                 return true;
             }
         }

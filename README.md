@@ -684,9 +684,11 @@ names is optional, but whitespace before `?` remains required. Within each
 contiguous group, an exact whole name or revision wins; otherwise the longest
 valid bird name or revision is taken from left to right. Add whitespace to
 force a shorter boundary when names are ambiguous. The list accepts `S`, `K`,
-`I`, `Y`, pre-defined birds, current user-defined names, and explicit retained
-`name@N` revisions. An explicit retained revision remains usable after its name
-is removed, and an explicitly listed `Y` is allowed even though the default
+`I`, `Y`, pre-defined birds, current user-defined names, and retained user
+revisions. A retained revision of a redefined name is written as `name@N`.
+The sole retained revision of a removed, never-redefined name is instead
+written as its bare `name`, which remains usable here so displayed expressions
+round-trip. An explicitly listed `Y` is allowed even though the default
 catalog excludes it. A restricted search
 examines increasing composition sizes within one 10-second window. Only fully
 completed sizes are committed to the result; matches from a size still in
@@ -700,19 +702,34 @@ creates a new immutable revision, starting with `name@1` and increasing by one
 for each later changed `set` or `define` of that name. Repeating an equivalent
 arity and stored expression makes no change and does not increment the version.
 Removing and later adding a name again continues its existing version sequence;
-the earlier revisions remain available.
+the earlier revisions remain available. In formatted expressions and command
+results, the `@N` suffix is displayed only after a name has more than one
+retained revision. While a name has only its first revision, that revision
+prints as bare `name`, including in stored captured expressions, `inspect`,
+`revisions`, dependency paths, and after removal. An unqualified removed
+singleton remains resolvable in ordinary expressions and restricted Find
+catalogs so that output remains parseable. As soon as a changed redefinition
+creates revision 2, stored captures, explicit revisions, inspectors, revision
+listings, and dependency paths expose exact revisions as `name@N`. A directly
+entered unqualified current name and a live reference remain unversioned. The
+replayable journal returned by
+`set_list()` is source history rather than formatted expression output, so it
+may preserve an explicitly entered `name@1`; `show all` and Save expose that
+same journal.
 
 The typed command `references <captured | live>` controls how subsequent
 unqualified name references are bound. A `captured` or `live` modifier on
 `set` or `define` overrides that mode for its command. References start
-captured. In captured mode, an unqualified current user name in a plain
-expression captures the current immutable revision but retains its unversioned
-spelling when printed while that revision remains current. If a parsed
-expression is retained after the name is redefined or removed, it prints its
-exact `name@N` revision instead. Captured references stored by `set` or
-`define`, shown by `inspect`, or explicitly written as `name@N` also print with
-the immutable `name@N` spelling. In live mode, an unqualified name remains
-live, prints without a revision, and follows later redefinitions. Changing the
+captured. In captured mode, an unqualified current user name freezes its
+current immutable revision. Its printed spelling follows the name's retained
+history: outside the replayable source journal, the sole first revision always
+prints as bare `name`, even when the reference is stored, inspected, explicitly
+entered as `name@1`, or retained after removal. Once the name has been
+redefined, stored captures, inspected references, explicit revisions, and stale
+plain expressions print their exact `name@N` revisions. An unqualified current
+name entered directly in a plain expression retains its bare spelling. In live
+mode, an unqualified name always prints without a revision and follows later
+redefinitions. Changing the
 mode does not alter references that were parsed earlier. The command is silent under the
 evaluation and stepping entry points, but it is a state-changing command and
 is recorded in `set_list()` according to the journal compaction rules below.
@@ -732,7 +749,7 @@ continues to use its `Y` transformation and remains supported.
 
 The fundamental names `S`, `K`, `I`, and `Y` are unversioned. Pre-defined bird
 bases are immutable revision 1, so an explicit name such as `C@1` is accepted,
-while ordinary use and printing may continue to show `C`. Attempting to
+but every formatted expression or result canonicalizes it to `C`. Attempting to
 redefine a fundamental or pre-defined name is a parse error. A later C++
 `basis(...)` registration cannot take a name that is already user-defined.
 
@@ -760,12 +777,15 @@ parse_eval("show x");   // parse error: x is not a defined name
 At the start of a line, optionally preceded by whitespace, `revisions name`
 displays every retained immutable revision of the unversioned `name` in
 ascending version order, including revisions retained after the current name
-is removed. Each user-defined line begins with `Name@N arity:A body` and ends
-with either `[captured]` or `[live]` to identify the effective reference mode
-used when that revision was parsed; the current revision also ends with
+is removed. A never-redefined user name begins its sole line with
+`Name arity:A body`; after a changed redefinition, every line for that name
+begins with `Name@N arity:A body`. Each line ends with either `[captured]` or
+`[live]` to identify the effective reference mode used when that revision was
+parsed; the current revision also ends with
 `[current]`. If the name is currently removed, its latest revision instead
 ends with `[removed]`. A pre-defined name has one revision ending with
-`[pre-defined] [current]`. The fundamental names `S`, `K`, `I`, and `Y` are
+`[pre-defined] [current]` and is likewise displayed without `@1`. The
+fundamental names `S`, `K`, `I`, and `Y` are
 unversioned and cannot be queried. The command argument must be an unversioned
 name.
 
@@ -783,8 +803,9 @@ It displays, in order:
   evaluator-selected `function`/`argument` location, or
   `next reduction: none [normal form]`.
 
-Captured references use their explicit immutable `name@N` spelling, including
-retained removed revisions, while live references keep the unversioned name.
+Captured references use bare `name` while it has only one retained revision,
+including after removal. Once the name has been redefined, they use their exact
+immutable `name@N` spelling. Live references keep the unversioned name.
 The command does not list references found only inside a named basis's stored
 definition. Canonical spelling can differ from the submitted text by removing
 redundant whitespace and parentheses, inserting required separators and
@@ -855,8 +876,8 @@ parse_eval("usedby all Outer");
 // Outer indirectly uses: Base
 parse_eval("usedby path between Base and Outer");
 // Outer uses Base via:
-//   Outer@1 -> Middle@1  [captured]
-//   Middle@1 -> Base@1  [captured]
+//   Outer -> Middle  [captured]
+//   Middle -> Base  [captured]
 ```
 
 The related display-only forms
@@ -871,7 +892,8 @@ lexicographically smallest stored basis-name sequence, which is the displayed
 order for ordinary names.
 
 A match begins with `A uses B via:` and then prints one indented line per edge.
-Each user-defined node uses its exact `name@N` revision identity, such as
+A node whose name has only one retained revision is unversioned; once its name
+has been redefined, the node uses its exact `name@N` revision identity, such as
 `A@2 -> C@4  [live]`. An edge is labeled `[live]`, `[captured]`, or
 `[pre-defined]` according to the stored reference; pre-defined nodes remain
 unversioned. An explicitly written
@@ -883,9 +905,12 @@ there is no path, the result is `A and B have no dependency path`, with the
 two displayed endpoint names in lexicographic order.
 
 At the start of a line, optionally preceded by whitespace, `remove` followed
-by whitespace and a name removes a user-defined basis from future parsing.
-Its immutable revisions remain available through explicit `name@N` references,
-and the next definition after a later re-add receives the next version number.
+by whitespace and a name removes a user-defined basis as a current name.
+Its immutable revisions remain available: a never-redefined removed singleton
+is accepted by bare name in ordinary expressions and restricted Find catalogs,
+while revisions of a redefined name use explicit `name@N` references. The
+`show name` and `remove name` commands still treat the removed name as absent.
+The next definition after a later re-add receives the next version number.
 Previously parsed frozen references retain their exact revisions. A previously
 parsed live reference retains its last target while the name is removed and
 follows the new current revision if the name is later added again. Fundamental
@@ -915,7 +940,10 @@ frozen and live references when the journal is replayed. Explicit `captured`
 and `live` modifiers remain on their canonical `set` or `define` lines. A
 `set` declaration always includes its arity, including `0`; a `define`
 declaration includes its defining symbols. Quotes and backslashes appear
-exactly as a user would enter them. Passing each line through `input_escape`
+exactly as a user would enter them. Because this is replayable source history,
+an explicitly entered `name@1` may remain visible here, including through
+`show all` and Save, even while formatted expressions display the singleton as
+bare `name`. Passing each line through `input_escape`
 and then to `parse` recreates the definitions and reference semantics:
 
 ```cpp
@@ -952,7 +980,7 @@ expression produces no output, while malformed or empty lines throw
 The `crepl` executable applies `input_escape` to each line before passing it to
 `parse_eval`, so ordinary quoted words and backslashes can be entered directly.
 When standard output is a terminal, it first prints
-`Combinator Read-Eval-Print Loop, version 2.10.6`. Long evaluations display
+`Combinator Read-Eval-Print Loop, version 2.10.7`. Long evaluations display
 the accumulated step count every 1,000 reductions by overwriting one status
 line; the line is cleared before evaluation output is printed. Its interactive
 prompt is `>`. Interactive input uses GNU Readline, so previous nonempty
@@ -1002,6 +1030,11 @@ Enter `references captured` or `references live` to control how names in
 subsequent expressions and definitions are bound. References are captured at
 startup. In captured mode, unqualified names freeze their current revisions;
 in live mode, they stay live. Explicit `name@N` references are always frozen.
+Every formatted result prints the first and only retained revision without
+`@1`. After a changed redefinition creates revision 2, formatters that expose
+exact revision identity use `name@N`; a directly entered current name and live
+references remain unversioned. The replayable source journal may retain an
+explicitly typed `@1` token.
 `references` commands
 produce no output and are included in the saved definition journal. Before the
 first `set`, `define`, or
@@ -1095,8 +1128,9 @@ remains required. Exact whole names and revisions take precedence within each
 contiguous group, followed by the longest valid bird name or revision;
 whitespace can force a shorter boundary.
 Its restricted catalog may contain `S`, `K`, `I`, `Y`, pre-defined birds,
-current user-defined names, and explicit retained `name@N` revisions, including
-revisions of removed names. It searches
+current user-defined names, and retained user revisions. Revisions of a
+redefined name use `name@N`; a removed singleton that was never redefined uses
+its bare name. It searches
 increasing composition sizes for one 10-second window and reports only fully
 completed sizes, discarding a partially searched size when time expires.
 Without `all`, it stops after the first completed size with answers; with
@@ -1124,7 +1158,7 @@ from a following combinator or basis: the results are `Q1 K` and `Q1 Q3`, not
 `Q1K` and `Q1Q3`. This trailing-space rule takes precedence over the following
 digit-ended basis's no-leading-space rule. A basis name whose final byte is not
 an ASCII letter or digit is self-delimiting on both sides, so
-`CstarW*` means `Cstar W*`, and a captured `Tail+@1` retains the compact
+`CstarW*` means `Cstar W*`, and a captured `Tail+@2` retains the compact
 boundaries of `Tail+`. When the entire compact token is itself a registered
 name, that exact name takes precedence. Other names ending in `a` through `z`
 still require whitespace, parentheses, or an escaped-word opener as a

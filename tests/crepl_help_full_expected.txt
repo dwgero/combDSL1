@@ -76,7 +76,16 @@ Every changed definition creates the next immutable name@N revision; equivalent
 repetitions do not. Revision numbers continue after removal and re-addition. The
 saved set list keeps every changed definition and removal in chronological order
 so all revisions remain replayable. Pre-defined bird combinator names are
-immutable and cannot be redefined.
+immutable and cannot be redefined. In formatted expressions and command results,
+the @N suffix is displayed only after a name has more than one retained
+revision. Until then, its sole first revision prints as bare name, including
+after removal; a removed singleton remains resolvable in ordinary expressions
+and restricted Find catalogs. Once revision 2 exists, stored captures, explicit
+revisions, inspectors, revision listings, and dependency paths expose exact
+revisions as name@N. A directly entered unqualified current name and a live
+reference remain unversioned. The replayable journal is source history, so it
+may preserve an explicitly entered name@1; show all and save expose that same
+journal.
 
 A redefinition is rejected when resolving its live references would make the
 resulting definition graph circular. A frozen or version-qualified reference
@@ -87,14 +96,15 @@ references <captured | live>
 Controls how unqualified user-defined names in subsequently parsed input are
 bound. A captured/live modifier on set or define overrides the mode for that
 command. References are captured initially. In captured mode, an unqualified
-current user name in a plain expression captures the current immutable revision
-but retains its unversioned spelling while that revision remains current. If the
-parsed expression is retained after redefinition or removal, it prints the exact
-name@N revision. Captured references stored by set or define, shown by inspect,
-or explicitly written as name@N also print with the immutable name@N spelling.
-In live mode, each unqualified reference remains live, prints as name, and
-follows later redefinitions. Each changed set or define creates the next
-revision. Before the first saved set, define, or remove, only the last explicit
+current user name freezes its current immutable revision. Outside the replayable
+source journal, the sole first revision always prints as bare name, even when
+stored, inspected, explicitly entered as name@1, or retained after removal. Once
+the name has been redefined, captured references stored or inspected, explicit
+revisions, and stale plain expressions print their exact name@N revisions. An
+unqualified current name entered directly in a plain expression retains its bare
+spelling. In live mode, each unqualified reference prints as name and follows
+later redefinitions. Each changed set or define creates the next revision.
+Before the first saved set, define, or remove, only the last explicit
 "references" command is saved. If there is none, the saved set list begins with
 "references captured". Later "references" commands remain in chronological
 order.
@@ -103,21 +113,28 @@ show <name | name@N | all>
 The show command displays the arity and combinators stored for the current name,
 while "show name@N" displays that exact immutable revision. For example, "show
 E" for the Eagle bird would display "arity:5 BDD". The "show all" form displays
-the entire saved set list, or "Nothing to show" when it is empty.
+the entire saved set list, or "Nothing to show" when it is empty. Because that
+list is replayable source history, it may preserve an explicitly entered name@1
+token.
 
 revisions <name>
 Displays every retained immutable revision of the unversioned name in ascending
-version order, including revisions retained after the current name is removed.
-Each user-defined line begins with "Name@N arity:A body" and ends with either
-"[captured]" or "[live]" to identify the effective reference mode used when that
-revision was parsed; the current revision also ends with "[current]". The latest
-revision of a removed name ends with "[removed]" instead of "[current]". A
-pre-defined name has one revision ending with "[pre-defined] [current]". The
-fundamental names S, K, I, and Y are unversioned and cannot be queried.
+version order, including revisions retained after the current name is removed. A
+never-redefined user name begins its sole line with "Name arity:A body"; after a
+changed redefinition, every line for that name begins with "Name@N arity:A
+body". Each line ends with either "[captured]" or "[live]" to identify the
+effective reference mode used when that revision was parsed; the current
+revision also ends with "[current]". The latest revision of a removed name ends
+with "[removed]" instead of "[current]". A pre-defined name has one unversioned
+revision ending with "[pre-defined] [current]". The fundamental names S, K, I,
+and Y are unversioned and cannot be queried.
 
 remove <name>
 Removes a user-defined combinator name without discarding its immutable
-revisions. Frozen references remain fixed. Live references retain the most
+revisions. A never-redefined removed singleton remains accepted by bare name in
+ordinary expressions and restricted Find catalogs, although show and remove
+still treat the current name as absent. Revisions of a redefined name use
+explicit name@N. Frozen references remain fixed. Live references retain the most
 recent target while the name is absent and follow the new current revision if
 the name is added again. The removal remains in the chronological saved set
 list. Pre-defined names cannot be removed.
@@ -129,8 +146,9 @@ Describes the parsed expression without evaluating it or expanding named bases.
 The report displays its canonical spelling only when it differs from the
 submitted expression, then its sorted free symbols (or none) and direct named
 references in first-use order. Fundamental, pre-defined, captured, and live
-references are labeled; captured references include their immutable name@N
-revision. The final line identifies the minimal head prefix consumed by the next
+references are labeled. A captured reference is unversioned while its name has
+only one retained revision; after redefinition, it includes its exact immutable
+name@N. The final line identifies the minimal head prefix consumed by the next
 reduction, its head, and the evaluator-selected function/argument location, or
 reports normal form when no reduction is available. Trailing arguments not
 consumed by that reduction are omitted. The report contains no tree-size or
@@ -184,8 +202,9 @@ command searches the actual stored-reference graph in both directions. It
 chooses the path with the fewest edges, breaking ties by the lexicographically
 smallest stored basis-name sequence (the displayed order for ordinary names), so
 the argument order does not affect the result. A found path begins with a
-heading and prints one indented line per edge. Each user-defined node uses its
-exact name@N revision identity, as in:
+heading and prints one indented line per edge. A user-defined node is
+unversioned while its name has only one retained revision; after redefinition,
+the node uses its exact name@N revision identity, as in:
 A uses B via:
   A@2 -> C@4  [live]
 
@@ -234,12 +253,12 @@ optional, but whitespace before the question mark remains required. Within each
 contiguous group, an exact whole name or revision wins; otherwise the longest
 valid bird name or revision is taken from left to right. Whitespace can force a
 shorter boundary. S, K, I, Y, pre-defined birds, current user-defined names, and
-explicit retained name@N revisions are accepted; an explicit retained revision
-remains usable after its name is removed. Unlike the default catalog, an
-explicitly listed Y is allowed. A restricted search examines increasing
-composition sizes within one 10-second window. Only fully completed sizes are
-reported, and results from a size still in progress when time expires are
-discarded. Without "all", it stops at the first completed size with answers.
+retained user revisions are accepted. Revisions of a redefined name use name@N;
+a removed singleton that was never redefined uses its bare name. Unlike the
+default catalog, an explicitly listed Y is allowed. A restricted search examines
+increasing composition sizes within one 10-second window. Only fully completed
+sizes are reported, and results from a size still in progress when time expires
+are discarded. Without "all", it stops at the first completed size with answers.
 With "all", it retains answers from every size completed within the same window.
 The output is otherwise unchanged, including the bounded no-match response.
 
@@ -262,6 +281,8 @@ the entire load is rolled back.
 
 save <filename>
 Saves the replayable set-list journal to filename, replacing any existing file.
+This is replayable source history, so an explicitly entered name@1 may remain
+visible even though formatted expressions display that singleton as bare name.
 The filename is the rest of the command after surrounding whitespace is removed,
 so it may contain spaces. If the journal is empty, displays "Nothing to save"
 and leaves any existing file untouched.

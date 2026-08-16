@@ -388,9 +388,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             color: #c33;
         }
     </style>
-    <script src="./evaluation_watchdog.js?v=2.10.6" defer></script>
-    <script src="./input_history.js?v=2.10.6" defer></script>
-    <script src="./app.js?v=2.10.6" defer></script>
+    <script src="./evaluation_watchdog.js?v=2.10.7" defer></script>
+    <script src="./input_history.js?v=2.10.7" defer></script>
+    <script src="./app.js?v=2.10.7" defer></script>
 </head>
 <body>
     <main aria-labelledby="studio-title">
@@ -629,7 +629,20 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             the next immutable <code>name@N</code> revision; equivalent
             repetitions do not. Revision numbers continue after removal and
             re-addition. The saved set list keeps every changed definition and
-            removal in chronological order. A redefinition is rejected only
+            removal in chronological order. In formatted expressions and
+            command results, the <code>@N</code> suffix is displayed only after
+            a name has more than one retained revision. Until then, its sole
+            first revision prints as the bare name, including after removal. A
+            removed singleton remains resolvable in ordinary expressions and
+            restricted Find catalogs.
+            Once revision 2 exists, stored captures, explicit revisions,
+            inspectors, revision listings, and dependency paths expose exact
+            revisions as <code>name@N</code>. A directly entered unqualified
+            current name and a live reference remain unversioned. The
+            replayable journal is source history, so it
+            may preserve an explicitly entered <code>name@1</code>; Save and
+            <code>show all</code> expose that same journal. A redefinition is
+            rejected only
             when its live references would create a true cycle. Recursive
             <code>define</code> remains supported.
             <br><br>
@@ -644,21 +657,28 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             <code>revisions name</code><br>
             Displays every retained immutable revision of the unversioned
             <code>name</code> in ascending version order, including revisions
-            retained after the current name is removed. Each user-defined line
-            begins with <code>Name@N arity:A body</code> and ends with either
+            retained after the current name is removed. A never-redefined user
+            name begins its sole line with <code>Name arity:A body</code>;
+            after a changed redefinition, every line for that name begins with
+            <code>Name@N arity:A body</code>. Each line ends with either
             <code>[captured]</code> or <code>[live]</code> to identify the
             effective reference mode used when that revision was parsed; the
             current revision also ends with <code>[current]</code>. The latest revision of a
             removed name ends with
             <code>[removed]</code> instead of <code>[current]</code>. A
-            pre-defined name has one revision ending with
+            pre-defined name has one unversioned revision ending with
             <code>[pre-defined] [current]</code>. The fundamental names
             <code>S</code>, <code>K</code>, <code>I</code>, and <code>Y</code>
             are unversioned and cannot be queried.
             <br><br>
             <code>remove name</code><br>
             The <code>remove</code> command removes a user-defined combinator
-            name without discarding its immutable revisions. Frozen references
+            name without discarding its immutable revisions. A never-redefined
+            removed singleton remains accepted by bare name in ordinary
+            expressions and restricted Find catalogs, although
+            <code>show</code> and <code>remove</code> still treat the current
+            name as absent. Revisions of a redefined name use explicit
+            <code>name@N</code>. Frozen references
             remain fixed. Live references retain the most recent target while
             the name is absent and follow the new current revision if the name
             is later added again. The removal remains in the chronological
@@ -672,8 +692,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             it differs from the submitted expression, followed by sorted free
             symbols (or <code>none</code>) and direct named references in
             first-use order. Fundamental, pre-defined, captured, and live
-            references are labeled; captured references include their immutable
-            <code>name@N</code> revision. The final line identifies the minimal
+            references are labeled. A captured reference is unversioned while
+            its name has only one retained revision; after redefinition, it
+            includes its exact immutable <code>name@N</code>. The final line
+            identifies the minimal
             head prefix consumed by the next reduction, its head, and the
             evaluator-selected <code>function</code>/<code>argument</code>
             location, or reports normal form when no reduction is available.
@@ -706,17 +728,17 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             <code>captured</code> or <code>live</code> modifier on
             <code>set</code> or <code>define</code> overrides that mode for its
             command. References are captured by default. In captured mode, an
-            unqualified current user name in a plain expression pins the current
-            immutable revision but retains its unversioned spelling when
-            printed while that revision remains current. If the parsed
-            expression is retained after redefinition or removal, it prints the
-            exact <code>name@N</code> revision. Captured references stored by
-            <code>set</code> or <code>define</code>, shown by
-            <code>inspect</code>, or explicitly written as
-            <code>name@N</code> also print with the immutable
-            <code>name@N</code> spelling. In live mode, an unqualified name
-            remains live, prints without a revision, and follows later changes
-            to the current version.
+            unqualified current user name freezes its current immutable
+            revision. Outside the replayable source journal, the sole first
+            revision always prints as the bare name, even when stored,
+            inspected, explicitly entered as
+            <code>name@1</code>, or retained after removal. Once the name has
+            been redefined, stored captures, inspected references, explicit
+            revisions, and stale plain expressions print their exact
+            <code>name@N</code> revisions. An unqualified current name entered
+            directly in a plain expression retains its bare spelling. In live
+            mode, an unqualified name prints without a revision and follows
+            later changes to the current version.
             <br><br>
             <code>show name</code> displays the current definition, while
             <code>show name@N</code> displays that specific revision. A
@@ -779,8 +801,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             smallest stored basis-name sequence, which is the displayed order
             for ordinary names. A match begins with
             <code>A uses B via:</code> and then displays one indented line per
-            edge. Each user-defined node uses its exact <code>name@N</code>
-            revision identity, such as
+            edge. A user-defined node is unversioned while its name has only
+            one retained revision; after redefinition, the node uses its exact
+            <code>name@N</code> revision identity, such as
             <code>A@2 -&gt; C@4&nbsp;&nbsp;[live]</code>. An edge is labeled
             <code>[live]</code>, <code>[captured]</code>, or
             <code>[pre-defined]</code> according to the stored reference;
@@ -853,8 +876,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             left to right. Whitespace can force a shorter boundary. The list
             may contain <code>S</code>, <code>K</code>, <code>I</code>,
             <code>Y</code>, pre-defined birds, current user-defined names, and
-            explicit retained <code>name@N</code> revisions, including a
-            retained revision whose name was removed. An explicitly listed
+            retained user revisions. Revisions of a redefined name use
+            <code>name@N</code>; a removed singleton that was never redefined
+            uses its bare name. An explicitly listed
             <code>Y</code> is allowed. A restricted search examines increasing
             composition sizes within one 10-second window. Only fully
             completed sizes are displayed; results from a size still in
@@ -875,7 +899,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             includes every later <code>references</code> command, changed
             definition and redefinition, and
             removal. Replaying it preserves revision numbers and the original
-            frozen or live references.
+            frozen or live references. Because the journal preserves source
+            syntax, an explicitly entered <code>name@1</code> may remain visible
+            in the saved file and in <code>show all</code>, even though formatted
+            expressions display that singleton as the bare name.
             The Load button reads a <code>.cmb</code> file from your computer
             and replays its definitions, removals, and reference-mode changes in
             order, applying redefinitions without confirmation.
@@ -991,7 +1018,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             data-dialog-initial-focus>About</h2>
         <div class="license-text">
             <!-- Keep this version and the app.js cache key in sync. -->
-            <p>Combinator Studio, version 2.10.6<br>
+            <p>Combinator Studio, version 2.10.7<br>
                 Part of the C++ Combinator DSL<br>
                 Copyright (C) 2026  David W. Gero</p>
             <p>This program is free software: you can redistribute it and/or modify

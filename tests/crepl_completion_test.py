@@ -229,7 +229,7 @@ def main():
         if b"Parse error" in normalized_output:
             raise AssertionError(
                 f"expected successful revisions; received {output!r}")
-        if (b"DepSource@1 arity:1 I [live] [current]\n"
+        if (b"DepSource arity:1 I [live] [current]\n"
                 not in normalized_output):
             raise AssertionError(
                 f"expected revision listing; received {output!r}")
@@ -389,7 +389,7 @@ def main():
                     f"received {output!r}")
             expected_path = (
                 b"DepUser uses DepSource via:\n"
-                b"  DepUser@1 -> DepSource@1  [live]\n"
+                b"  DepUser -> DepSource  [live]\n"
             )
             if expected_path not in normalized_output:
                 raise AssertionError(
