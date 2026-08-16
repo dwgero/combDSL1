@@ -102,6 +102,16 @@ const incompleteStepStart = {
     error: "",
 };
 
+const completedNormalForm = output => ({
+    success: true,
+    reduced: false,
+    complete: true,
+    definition: false,
+    output,
+    error: "",
+    limitReached: false,
+});
+
 test("automatic Single Step streams while reduction is running", async () => {
     const steps = [
         {
@@ -195,6 +205,189 @@ test("automatic Single Step streams while reduction is running", async () => {
         2,
     );
 });
+
+test("zero-reduction Single Step returns the unchanged expression immediately",
+    async () => {
+        let takeCalls = 0;
+        const module = {
+            setList: () => "",
+            beginSingleStep: (
+                source, basisStep, stepLimitEnabled, stepLimit,
+            ) => {
+                assert.equal(source, "Cstar xy");
+                assert.equal(basisStep, false);
+                assert.equal(stepLimitEnabled, false);
+                assert.equal(stepLimit, 0);
+                return completedNormalForm("Cstar xy\n");
+            },
+            takeSingleStep: () => {
+                ++takeCalls;
+            },
+        };
+        const harness = await createWorkerHarness(module);
+
+        await harness.send({
+            type: "evaluate",
+            id: 107,
+            source: "Cstar xy",
+            singleStep: true,
+            basisStep: false,
+            keyStep: false,
+            colorize: false,
+            stepLimitEnabled: false,
+            stepLimit: 0,
+        });
+
+        const messages = harness.messages.filter(message => message.id === 107);
+        assert.deepEqual(
+            messages.map(message => message.type),
+            ["eval-started", "result"],
+        );
+        assert.equal(messages[1].result.output, "Cstar xy\n");
+        assert.equal(messages[1].result.reductions, 0);
+        assert.equal(messages[1].result.success, true);
+        assert.equal(messages[1].html, false);
+        assert.equal(harness.timers.size, 0);
+        assert.equal(takeCalls, 0);
+    });
+
+test("zero-reduction Key Step completes without step-ready or a key press",
+    async () => {
+        let takeCalls = 0;
+        const module = {
+            setList: () => "",
+            beginSingleStep: (
+                source, basisStep, stepLimitEnabled, stepLimit,
+            ) => {
+                assert.equal(source, "C*xy");
+                assert.equal(basisStep, true);
+                assert.equal(stepLimitEnabled, false);
+                assert.equal(stepLimit, 0);
+                return completedNormalForm("C*xy\n");
+            },
+            takeSingleStep: () => {
+                ++takeCalls;
+            },
+        };
+        const harness = await createWorkerHarness(module);
+
+        await harness.send({
+            type: "evaluate",
+            id: 108,
+            source: "C*xy",
+            singleStep: false,
+            basisStep: true,
+            keyStep: true,
+            colorize: true,
+            stepLimitEnabled: true,
+            stepLimit: 99,
+        });
+
+        const messages = harness.messages.filter(message => message.id === 108);
+        assert.deepEqual(
+            messages.map(message => message.type),
+            ["result"],
+        );
+        assert.equal(messages[0].result.output, "C*xy\n");
+        assert.equal(messages[0].result.complete, true);
+        assert.equal(messages[0].result.reduced, false);
+        assert.equal(messages[0].html, false);
+        assert.equal(harness.timers.size, 0);
+        assert.equal(takeCalls, 0);
+
+        await harness.send({type: "step", id: 108});
+        assert.equal(
+            harness.messages.filter(message => message.id === 108).length,
+            1,
+        );
+        assert.equal(takeCalls, 0);
+    });
+
+test("definition, display-only, and error begin paths keep their protocol",
+    async () => {
+        const cases = [
+            {
+                source: "set Bird = 1 I",
+                keyStep: false,
+                result: {
+                    success: true,
+                    reduced: false,
+                    complete: true,
+                    definition: true,
+                    output: "",
+                    error: "",
+                },
+                types: ["eval-started", "result"],
+                setList: "set Bird = 1 I",
+            },
+            {
+                source: "show Bird",
+                keyStep: true,
+                result: completedNormalForm("arity:1 I\n"),
+                types: ["result"],
+            },
+            {
+                source: "@",
+                keyStep: true,
+                result: {
+                    success: false,
+                    reduced: false,
+                    complete: false,
+                    definition: false,
+                    output: "",
+                    error: "Parse error at position 1: unknown operand",
+                },
+                types: ["step-ready"],
+            },
+        ];
+
+        for (const [index, item] of cases.entries()) {
+            let takeCalls = 0;
+            const module = {
+                setList: () => item.setList ?? "",
+                beginSingleStep: () => item.result,
+                takeSingleStep: () => {
+                    ++takeCalls;
+                },
+            };
+            const harness = await createWorkerHarness(module);
+            const id = 120 + index;
+
+            await harness.send({
+                type: "evaluate",
+                id,
+                source: item.source,
+                singleStep: !item.keyStep,
+                basisStep: false,
+                keyStep: item.keyStep,
+                colorize: false,
+                stepLimitEnabled: false,
+                stepLimit: 0,
+            });
+
+            const messages = harness.messages.filter(
+                message => message.id === id);
+            assert.deepEqual(
+                messages.map(message => message.type),
+                item.types,
+            );
+            const response = messages.at(-1);
+            assert.equal(response.result.success, item.result.success);
+            assert.equal(response.result.definition, item.result.definition);
+            assert.equal(response.result.output, item.result.output);
+            assert.equal(response.result.error, item.result.error);
+            assert.equal(response.setList, item.setList);
+            assert.equal(harness.timers.size, 0);
+            assert.equal(takeCalls, 0);
+
+            await harness.send({type: "step", id});
+            assert.equal(
+                harness.messages.filter(message => message.id === id).length,
+                messages.length,
+            );
+            assert.equal(takeCalls, 0);
+        }
+    });
 
 test("automatic Colorize identifies streamed HTML", async () => {
     const markedOutput =

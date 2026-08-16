@@ -652,6 +652,19 @@ void reset_stepped_evaluation() noexcept {
                 {},
                 limit_reached};
         }
+        if (!combdsl::detail::has_next_redex(
+                *stepped_expression,
+                combdsl::detail::reduction_options{
+                    .basis_step = basis_step,
+                })) {
+            std::ostringstream output;
+            stepped_expression->print_to(output);
+            output << '\n';
+            reset_stepped_evaluation();
+            return {
+                true, false, true, false,
+                output.str(), {}};
+        }
         return {true, false, false, false, {}, {}};
     } catch (std::exception const& error) {
         reset_stepped_evaluation();

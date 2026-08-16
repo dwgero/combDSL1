@@ -895,6 +895,20 @@ test("labels the active-evaluation control Pause", () => {
     );
 });
 
+test("Help explains zero-reduction completion in both step modes", () => {
+    const helpText = dialogMarkup("help-dialog")
+        .replace(/<[^>]+>/g, " ")
+        .replace(/\s+/g, " ");
+    assert.match(
+        helpText,
+        /Single Step .* no available reduction, Studio still prints its canonical normal form as the result\./,
+    );
+    assert.match(
+        helpText,
+        /Key Step .* no available reduction, Studio prints its canonical normal form and completes without waiting for a keypress\./,
+    );
+});
+
 test("keeps informational dialog Close buttons below the sole scroller", () => {
     const dialogIds = [
         "help-dialog",
@@ -1308,6 +1322,99 @@ test("completes every Studio dependency-path alias", () => {
         assert.deepEqual(
             [source.selectionStart, source.selectionEnd],
             [completed.length, completed.length],
+        );
+    }
+});
+
+test("renders zero-reduction Single Step and Key Step immediately", () => {
+    for (const [steppingMode, expression, basisStep, colorize] of [
+        ["single-step", "Cstar xy", false, false],
+        ["key-step", "C*xy", true, true],
+    ]) {
+        const harness = createHarness();
+        const source = harness.element("source");
+        const worker = harness.workers[0];
+
+        worker.send({type: "ready", setList: ""});
+        harness.flushAnimationFrames();
+        harness.element(steppingMode).click();
+        if (basisStep) {
+            harness.element("basis-step").click();
+        }
+        if (colorize) {
+            harness.element("colorize").click();
+        }
+
+        source.value = expression;
+        harness.pressEnter();
+        harness.flushAnimationFrames();
+        const inspection = worker.messages.find(
+            message => message.type === "inspect-definition");
+        worker.send({
+            type: "definition-inspection-result",
+            id: inspection.id,
+            result: {
+                success: true,
+                definition: false,
+                displayOnly: false,
+                showAll: false,
+                find: false,
+                replacement: "",
+            },
+        });
+        harness.flushAnimationFrames();
+
+        const evaluation = worker.messages.find(
+            message => message.type === "evaluate");
+        assert.equal(evaluation.source, expression);
+        assert.equal(
+            evaluation.singleStep,
+            steppingMode === "single-step",
+        );
+        assert.equal(evaluation.keyStep, steppingMode === "key-step");
+        assert.equal(evaluation.basisStep, basisStep);
+        assert.equal(evaluation.colorize, colorize);
+        if (steppingMode === "single-step") {
+            worker.send({type: "eval-started", id: inspection.id});
+        }
+        assert.equal(
+            worker.messages.some(message => message.type === "step"),
+            false,
+        );
+
+        worker.send({
+            type: "result",
+            id: inspection.id,
+            html: false,
+            result: {
+                success: true,
+                definition: false,
+                recoverWorker: false,
+                output: `${expression}\n`,
+                error: "",
+                reductions: 0,
+                limitReached: false,
+            },
+        });
+
+        const output = harness.element("output");
+        assert.equal(output.lastElementChild.textContent,
+            `${expression}\n${expression}`);
+        assert.equal(
+            output.childNodes.filter(
+                child => child instanceof FakeElement).length,
+            1,
+            "a normal form must finish its existing Results entry",
+        );
+        assert.equal(source.value, "");
+        assert.equal(
+            harness.element("source-history").textContent,
+            expression,
+        );
+        assert.equal(harness.element("status").textContent, "Ready");
+        assert.equal(
+            worker.messages.some(message => message.type === "step"),
+            false,
         );
     }
 });
@@ -2506,17 +2613,18 @@ test("routes literal-backslash inspect without escape-only canonical output",
 
 test("routes captured and live definitions as silent commands", () => {
     const cases = [
-        "define captured StudioCaptured xy = x(yx)",
-        "set live StudioLive = 1 StudioCaptured",
+        ["define captured StudioCaptured xy = x(yx)", "single-step"],
+        ["set live StudioLive = 1 StudioCaptured", "key-step"],
     ];
 
-    for (const command of cases) {
+    for (const [command, steppingMode] of cases) {
         const harness = createHarness();
         const source = harness.element("source");
         const worker = harness.workers[0];
 
         worker.send({type: "ready", setList: ""});
         harness.flushAnimationFrames();
+        harness.element(steppingMode).click();
 
         source.value = command;
         harness.pressEnter();
@@ -2540,8 +2648,11 @@ test("routes captured and live definitions as silent commands", () => {
         const evaluation = worker.messages.find(
             message => message.type === "evaluate");
         assert.equal(evaluation.source, command);
-        assert.equal(evaluation.singleStep, false);
-        assert.equal(evaluation.keyStep, false);
+        assert.equal(
+            evaluation.singleStep,
+            steppingMode === "single-step",
+        );
+        assert.equal(evaluation.keyStep, steppingMode === "key-step");
         assert.equal(evaluation.basisStep, false);
         assert.equal(evaluation.colorize, false);
 
@@ -2569,6 +2680,83 @@ test("routes captured and live definitions as silent commands", () => {
         assert.equal(
             harness.element("save").attributes.get("aria-disabled"),
             "false",
+        );
+    }
+});
+
+test("step-mode evaluation errors stay in the submitted Results entry", () => {
+    for (const steppingMode of ["single-step", "key-step"]) {
+        const harness = createHarness();
+        const source = harness.element("source");
+        const worker = harness.workers[0];
+        const expression = "ErrorBird x";
+        const error = "evaluation failed";
+
+        worker.send({type: "ready", setList: ""});
+        harness.flushAnimationFrames();
+        harness.element(steppingMode).click();
+        source.value = expression;
+        harness.pressEnter();
+        harness.flushAnimationFrames();
+        const inspection = worker.messages.find(
+            message => message.type === "inspect-definition");
+        worker.send({
+            type: "definition-inspection-result",
+            id: inspection.id,
+            result: {
+                success: true,
+                definition: false,
+                displayOnly: false,
+                showAll: false,
+                find: false,
+                replacement: "",
+            },
+        });
+        harness.flushAnimationFrames();
+
+        if (steppingMode === "key-step") {
+            worker.send({
+                type: "step-ready",
+                id: inspection.id,
+                result: {success: false, error},
+            });
+        } else {
+            worker.send({type: "eval-started", id: inspection.id});
+            worker.send({
+                type: "result",
+                id: inspection.id,
+                result: {
+                    success: false,
+                    definition: false,
+                    recoverWorker: false,
+                    output: "",
+                    error,
+                    reductions: 0,
+                    limitReached: false,
+                },
+            });
+        }
+
+        const output = harness.element("output");
+        assert.equal(output.lastElementChild.textContent,
+            `${expression}\n${error}`);
+        assert.ok(
+            childElements(output.lastElementChild).some(
+                element => element.textContent === error &&
+                    element.dataset.kind === "error"),
+            "evaluation failure must retain error styling",
+        );
+        assert.equal(
+            output.childNodes.filter(
+                child => child instanceof FakeElement).length,
+            1,
+        );
+        assert.equal(source.value, expression);
+        assert.equal(harness.element("source-history").textContent, "");
+        assert.equal(harness.element("status").textContent, "Ready");
+        assert.equal(
+            worker.messages.some(message => message.type === "step"),
+            false,
         );
     }
 });

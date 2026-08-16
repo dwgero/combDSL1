@@ -980,7 +980,7 @@ expression produces no output, while malformed or empty lines throw
 The `crepl` executable applies `input_escape` to each line before passing it to
 `parse_eval`, so ordinary quoted words and backslashes can be entered directly.
 When standard output is a terminal, it first prints
-`Combinator Read-Eval-Print Loop, version 2.10.7`. Long evaluations display
+`Combinator Read-Eval-Print Loop, version 2.10.8`. Long evaluations display
 the accumulated step count every 1,000 reductions by overwriting one status
 line; the line is cleared before evaluation output is printed. Its interactive
 prompt is `>`. Interactive input uses GNU Readline, so previous nonempty
@@ -1426,15 +1426,19 @@ files.
 
 The Single Step button switches between displaying only the evaluated result
 and displaying every reduction produced by
-`single_step_run(parse(input_escape(source)))`. Evaluations accumulate in the
-results area with a blank line between them.
+`single_step_run(parse(input_escape(source)))`. If the submitted expression
+has no available reduction, Single Step still prints its canonical normal form
+as the result. Evaluations accumulate in the results area with a blank line
+between them.
 
 The Key Step button starts a
 manual reduction session: after submitting an expression, each ordinary
 keypress performs exactly one `single_step`. The keypress that performs the
 final reduction also ends the session. Pause opens a dialog where the session
 can be resumed or cancelled. The Single Step and Key Step modes are mutually
-exclusive.
+exclusive. If the submitted expression has no available reduction, Key Step
+prints its canonical normal form and completes immediately without waiting for
+a keypress.
 
 The independent Basis Step
 button controls whether either stepping mode exposes a saturated named basis
