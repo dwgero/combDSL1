@@ -420,7 +420,7 @@ if(COMBDSL_BUILD_BROWSER)
             -sEXPORT_NAME=createCombdslModule
             -sENVIRONMENT=worker
             -sALLOW_MEMORY_GROWTH=1
-            -sINITIAL_HEAP=67108864
+            -sINITIAL_HEAP=16777216
             -sMAXIMUM_MEMORY=4294967296
             -sNO_EXIT_RUNTIME=1
             -sDYNAMIC_EXECUTION=0

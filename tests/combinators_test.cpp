@@ -337,6 +337,26 @@ static_assert(
 static_assert(
     combdsl::detail::native_find_worker_count(100, 100) ==
     combdsl::detail::native_find_worker_limit);
+static_assert(
+    combdsl::detail::native_catalog_find_maximum_work_count(1, 1) ==
+    1);
+static_assert(
+    combdsl::detail::native_catalog_find_maximum_work_count(2, 1) ==
+    1);
+static_assert(
+    combdsl::detail::native_catalog_find_maximum_work_count(3, 1) ==
+    2);
+static_assert(
+    combdsl::detail::native_catalog_find_maximum_work_count(3, 2) ==
+    combdsl::detail::native_catalog_find_worker_limit);
+static_assert(
+    combdsl::detail::native_catalog_find_maximum_work_count(4, 2) ==
+    combdsl::detail::native_catalog_find_worker_limit);
+static_assert(
+    combdsl::detail::native_catalog_find_maximum_work_count(
+        std::numeric_limits<std::size_t>::max(),
+        std::numeric_limits<std::size_t>::max()) ==
+    combdsl::detail::native_catalog_find_worker_limit);
 #endif
 using combinator_match_symbol_span =
     std::span<combdsl::quoted_atomic const>;
@@ -551,6 +571,20 @@ struct find_clock_override_reset {
         combdsl::detail::find_clock_now_override = {};
     }
 };
+
+struct catalog_find_runtime_overrides_reset {
+    ~catalog_find_runtime_overrides_reset() {
+        combdsl::detail::catalog_find_runtime_overrides_override = {};
+    }
+};
+
+std::atomic<std::size_t> catalog_find_thread_token_source{1};
+
+[[nodiscard]] std::size_t catalog_find_thread_token() {
+    thread_local auto const token =
+        catalog_find_thread_token_source.fetch_add(1);
+    return token;
+}
 
 void test_sigint_handler(int) {
     test_sigint_received = 1;
@@ -6136,6 +6170,820 @@ int main() {
          },
          "1 16 AAA,AAB,ABA,ABB,BAA,BAB,BBA,BBB,"
          "A(AA),A(AB),A(BA),A(BB),B(AA),B(AB),B(BA),B(BB)");
+    test("find among size shards partition the deterministic candidate stream",
+         [] {
+             auto const atom = quote(symbol('a'));
+             std::array<combdsl::quoted_expression, 2> const catalog{
+                 atom,
+                 quote(I)(atom),
+             };
+             std::array<combdsl::quoted_atomic, 0> const symbols{};
+             auto const target = atom(atom)(atom);
+             auto const normalized_target = combdsl::detail::
+                 normalize_for_combinator_match(target);
+             auto const deadline =
+                 combdsl::detail::find_clock::time_point::max();
+             auto const serial = combdsl::detail::
+                 find_combinator_matches_among_normalized_size_shard_until(
+                     symbols,
+                     *normalized_target,
+                     catalog,
+                     3,
+                     0,
+                     1,
+                     deadline);
+
+             std::vector<combdsl::detail::catalog_find_shard_match>
+                 merged;
+             bool ownership_is_exact = true;
+             bool every_shard_completed = true;
+             for (std::size_t shard_index = 0;
+                  shard_index < 3;
+                  ++shard_index) {
+                 auto shard = combdsl::detail::
+                     find_combinator_matches_among_normalized_size_shard_until(
+                         symbols,
+                         *normalized_target,
+                         catalog,
+                         3,
+                         shard_index,
+                         3,
+                         deadline);
+                 every_shard_completed =
+                     every_shard_completed && !shard.timed_out;
+                 for (auto& match : shard.matches) {
+                     ownership_is_exact = ownership_is_exact &&
+                         match.index % 3 == shard_index;
+                     merged.push_back(std::move(match));
+                 }
+             }
+             std::ranges::sort(
+                 merged,
+                 {},
+                 &combdsl::detail::catalog_find_shard_match::index);
+
+             bool same_as_serial = merged.size() == serial.matches.size();
+             for (std::size_t index = 0;
+                  same_as_serial && index < merged.size();
+                  ++index) {
+                 same_as_serial =
+                     merged[index].index == serial.matches[index].index &&
+                     combdsl::detail::same_parser_definition_expression(
+                         merged[index].expression,
+                         serial.matches[index].expression);
+             }
+             std::cout
+                 << !serial.timed_out << ' '
+                 << (serial.matches.size() == 8) << ' '
+                 << every_shard_completed << ' '
+                 << ownership_is_exact << ' '
+                 << same_as_serial << ' ';
+             for (std::size_t index = 0;
+                  index < merged.size();
+                  ++index) {
+                 if (index != 0) {
+                     std::cout << ',';
+                 }
+                 std::cout << merged[index].index;
+             }
+         },
+         "1 1 1 1 1 0,1,2,3,4,5,6,7");
+    test("find among size shards mark partial work timed out",
+         [] {
+             catalog_find_runtime_overrides_reset reset;
+             auto const atom = quote(symbol('a'));
+             std::array<combdsl::quoted_expression, 2> const catalog{
+                 atom,
+                 quote(I)(atom),
+             };
+             std::array<combdsl::quoted_atomic, 0> const symbols{};
+             auto const target = atom(atom)(atom);
+             auto const normalized_target = combdsl::detail::
+                 normalize_for_combinator_match(target);
+             bool stop = false;
+             auto& overrides = combdsl::detail::
+                 catalog_find_runtime_overrides_override;
+             overrides.timeout_requested = [&] { return stop; };
+             overrides.candidate_observer = [&](auto observation) {
+                 if (observation.leaf_count == 3 &&
+                     observation.candidate_index == 2 &&
+                     observation.stage == combdsl::detail::
+                         catalog_find_candidate_observation_stage::
+                             after_match) {
+                     stop = true;
+                 }
+             };
+
+             auto const result = combdsl::detail::
+                 find_combinator_matches_among_normalized_size_shard_until(
+                     symbols,
+                     *normalized_target,
+                     catalog,
+                     3,
+                     0,
+                     1,
+                     combdsl::detail::find_clock::time_point::max());
+             std::cout << result.timed_out << ' '
+                       << result.matches.size() << ' ';
+             for (std::size_t index = 0;
+                  index < result.matches.size();
+                  ++index) {
+                 if (index != 0) {
+                     std::cout << ',';
+                 }
+                 std::cout << result.matches[index].index;
+             }
+         },
+         "1 2 0,1");
+    test("find among size shards validate their bounds",
+         [] {
+             auto const atom = quote(symbol('a'));
+             std::array<combdsl::quoted_expression, 1> const catalog{atom};
+             std::array<combdsl::quoted_expression, 0> const empty_catalog{};
+             std::array<combdsl::quoted_atomic, 0> const symbols{};
+             auto const deadline =
+                 combdsl::detail::find_clock::time_point::max();
+             auto rejects = [&](auto const& selected_catalog,
+                                std::size_t leaf_count,
+                                std::size_t shard_index,
+                                std::size_t shard_count) {
+                 try {
+                     static_cast<void>(combdsl::detail::
+                         find_combinator_matches_among_normalized_size_shard_until(
+                             symbols,
+                             atom,
+                             selected_catalog,
+                             leaf_count,
+                             shard_index,
+                             shard_count,
+                             deadline));
+                     return false;
+                 } catch (std::invalid_argument const&) {
+                     return true;
+                 }
+             };
+             std::cout
+                 << rejects(empty_catalog, 1, 0, 1)
+                 << rejects(catalog, 0, 0, 1)
+                 << rejects(catalog, 1, 0, 0)
+                 << rejects(catalog, 1, 1, 1);
+         },
+         "1111");
+#if !defined(__EMSCRIPTEN__)
+    test("native find among keeps small sizes serial and overlaps size three",
+         [] {
+             catalog_find_runtime_overrides_reset reset;
+             auto const producer_thread = std::this_thread::get_id();
+             auto const atom = quote(symbol('a'));
+             std::array<combdsl::quoted_expression, 2> const catalog{
+                 atom,
+                 quote(I)(atom),
+             };
+             auto const target = atom(atom)(atom);
+             std::array<combdsl::quoted_atomic, 0> const symbols{};
+
+             std::vector<combdsl::detail::
+                 catalog_find_dispatch_observation> dispatches;
+             std::array<std::atomic<std::size_t>, 4> starts{};
+             std::atomic<bool> serial_on_producer = true;
+             std::atomic<bool> parallel_off_producer = true;
+             std::latch zero_started{1};
+             std::binary_semaphore peer_finished{0};
+             std::atomic<bool> zero_waited_for_peer = false;
+             std::atomic<bool> peer_overlapped_zero = false;
+             std::atomic<std::size_t> peer_index =
+                 std::numeric_limits<std::size_t>::max();
+             std::mutex observations_mutex;
+             std::vector<std::thread::id> size_three_threads;
+             std::vector<std::size_t> completion_order;
+
+             auto& overrides = combdsl::detail::
+                 catalog_find_runtime_overrides_override;
+             overrides.reported_hardware_concurrency = 4;
+             overrides.dispatch_observer = [&](auto observation) {
+                 dispatches.push_back(observation);
+             };
+             overrides.candidate_observer = [&](auto observation) {
+                 using stage = combdsl::detail::
+                     catalog_find_candidate_observation_stage;
+                 if (observation.stage == stage::before_match) {
+                     starts[observation.leaf_count].fetch_add(1);
+                     auto const worker_thread =
+                         std::this_thread::get_id();
+                     if (observation.leaf_count < 3) {
+                         if (worker_thread != producer_thread) {
+                             serial_on_producer.store(false);
+                         }
+                         return;
+                     }
+                     if (worker_thread == producer_thread) {
+                         parallel_off_producer.store(false);
+                     }
+                     {
+                         std::scoped_lock lock(observations_mutex);
+                         if (std::find(
+                                 size_three_threads.begin(),
+                                 size_three_threads.end(),
+                                 worker_thread) ==
+                             size_three_threads.end()) {
+                             size_three_threads.push_back(worker_thread);
+                         }
+                     }
+                     if (observation.candidate_index == 0) {
+                         zero_started.count_down();
+                         zero_waited_for_peer.store(
+                             peer_finished.try_acquire_for(
+                                 std::chrono::seconds{5}));
+                     } else {
+                         zero_started.wait();
+                         auto expected =
+                             std::numeric_limits<std::size_t>::max();
+                         if (peer_index.compare_exchange_strong(
+                                 expected,
+                                 observation.candidate_index)) {
+                             peer_overlapped_zero.store(true);
+                         }
+                     }
+                     return;
+                 }
+                 if (observation.leaf_count != 3) {
+                     return;
+                 }
+                 {
+                     std::scoped_lock lock(observations_mutex);
+                     completion_order.push_back(
+                         observation.candidate_index);
+                 }
+                 if (observation.candidate_index ==
+                     peer_index.load()) {
+                     peer_finished.release();
+                 }
+             };
+
+             auto const result =
+                 combdsl::find_combinator_matches_among(
+                     symbols, target, catalog, false);
+
+             std::vector<combdsl::quoted_expression> expected;
+             static_cast<void>(
+                 combdsl::detail::for_each_catalog_candidate_of_size(
+                     3,
+                     catalog,
+                     combdsl::detail::find_clock::time_point::max(),
+                     [&](combdsl::quoted_expression candidate) {
+                         expected.push_back(std::move(candidate));
+                         return true;
+                     }));
+             bool sequential_matches =
+                 result.completed_sizes.size() == 3 &&
+                 result.completed_sizes[2].size() == 8 &&
+                 expected.size() == 16;
+             for (std::size_t index = 0;
+                  sequential_matches && index < 8;
+                  ++index) {
+                 sequential_matches =
+                     combdsl::detail::
+                         same_parser_definition_expression(
+                             result.completed_sizes[2][index],
+                             expected[index]);
+             }
+             auto const zero_completion = std::find(
+                 completion_order.begin(), completion_order.end(), 0);
+             auto const selected_peer = peer_index.load();
+             auto const peer_completion = std::find(
+                 completion_order.begin(),
+                 completion_order.end(),
+                 selected_peer);
+             auto const dispatches_are_expected =
+                 dispatches.size() == 3 &&
+                 dispatches[0].leaf_count == 1 &&
+                 !dispatches[0].parallel &&
+                 dispatches[0].worker_count == 0 &&
+                 dispatches[1].leaf_count == 2 &&
+                 !dispatches[1].parallel &&
+                 dispatches[1].worker_count == 0 &&
+                 dispatches[2].leaf_count == 3 &&
+                 dispatches[2].parallel &&
+                 dispatches[2].worker_count == 3;
+             std::cout
+                 << dispatches_are_expected << ' '
+                 << (starts[1].load() == 2 &&
+                     starts[2].load() == 4 &&
+                     starts[3].load() == 16) << ' '
+                 << serial_on_producer.load() << ' '
+                 << parallel_off_producer.load() << ' '
+                 << (size_three_threads.size() >= 2) << ' '
+                 << peer_overlapped_zero.load() << ' '
+                 << zero_waited_for_peer.load() << ' '
+                 << (zero_completion != completion_order.end() &&
+                     selected_peer !=
+                         std::numeric_limits<std::size_t>::max() &&
+                     peer_completion != completion_order.end() &&
+                     peer_completion < zero_completion) << ' '
+                 << sequential_matches << ' '
+                 << !result.timed_out;
+         },
+         "1 1 1 1 1 1 1 1 1 1");
+    test("native find among grows and reuses persistent static shards",
+         [] {
+             catalog_find_runtime_overrides_reset reset;
+             auto const producer_thread = std::this_thread::get_id();
+             auto const atom = quote(symbol('a'));
+             std::array<combdsl::quoted_expression, 1> const catalog{
+                 atom,
+             };
+             std::array<combdsl::quoted_atomic, 0> const symbols{};
+             auto const target = atom(atom)(atom);
+
+             std::vector<combdsl::detail::
+                 catalog_find_dispatch_observation> dispatches;
+             std::array<std::array<std::size_t, 5>, 6>
+                 shard_tokens{};
+             std::array<std::array<std::size_t, 5>, 6>
+                 shard_starts{};
+             std::mutex observations_mutex;
+             std::atomic<bool> ownership_is_static = true;
+             std::atomic<bool> serial_on_producer = true;
+             std::atomic<bool> parallel_off_producer = true;
+             std::atomic<bool> stop = false;
+
+             auto& overrides = combdsl::detail::
+                 catalog_find_runtime_overrides_override;
+             // Five usable native workers: size three needs two, size
+             // four grows the pool to five, and size five reuses all five.
+             overrides.reported_hardware_concurrency = 6;
+             overrides.timeout_requested = [&] {
+                 return stop.load();
+             };
+             overrides.dispatch_observer = [&](auto observation) {
+                 dispatches.push_back(observation);
+             };
+             overrides.candidate_observer = [&](auto observation) {
+                 using stage = combdsl::detail::
+                     catalog_find_candidate_observation_stage;
+                 if (observation.stage != stage::before_match) {
+                     return;
+                 }
+                 auto const current_thread =
+                     std::this_thread::get_id();
+                 if (observation.leaf_count < 3) {
+                     if (current_thread != producer_thread) {
+                         serial_on_producer.store(false);
+                     }
+                     return;
+                 }
+                 if (current_thread == producer_thread) {
+                     parallel_off_producer.store(false);
+                 }
+                 if (observation.leaf_count == 6) {
+                     stop.store(true);
+                     return;
+                 }
+                 if (observation.leaf_count > 5) {
+                     return;
+                 }
+
+                 auto const active_workers =
+                     observation.leaf_count == 3
+                         ? std::size_t{2}
+                         : std::size_t{5};
+                 auto const shard_index =
+                     observation.candidate_index % active_workers;
+                 auto const token = catalog_find_thread_token();
+                 std::scoped_lock lock(observations_mutex);
+                 auto& recorded = shard_tokens
+                     [observation.leaf_count][shard_index];
+                 if (recorded == 0) {
+                     recorded = token;
+                 } else if (recorded != token) {
+                     ownership_is_static.store(false);
+                 }
+                 ++shard_starts
+                     [observation.leaf_count][shard_index];
+             };
+
+             auto const result =
+                 combdsl::find_combinator_matches_among(
+                     symbols, target, catalog, true);
+
+             auto all_unique_and_present =
+                 [&](std::size_t leaf_count,
+                     std::size_t worker_count) {
+                     for (std::size_t left = 0;
+                          left < worker_count;
+                          ++left) {
+                         if (shard_tokens[leaf_count][left] == 0) {
+                             return false;
+                         }
+                         for (std::size_t right = left + 1;
+                              right < worker_count;
+                              ++right) {
+                             if (shard_tokens[leaf_count][left] ==
+                                 shard_tokens[leaf_count][right]) {
+                                 return false;
+                             }
+                         }
+                     }
+                     return true;
+                 };
+             auto const dispatches_are_expected =
+                 dispatches.size() == 6 &&
+                 dispatches[0].leaf_count == 1 &&
+                 !dispatches[0].parallel &&
+                 dispatches[0].worker_count == 0 &&
+                 dispatches[1].leaf_count == 2 &&
+                 !dispatches[1].parallel &&
+                 dispatches[1].worker_count == 0 &&
+                 dispatches[2].leaf_count == 3 &&
+                 dispatches[2].parallel &&
+                 dispatches[2].worker_count == 2 &&
+                 dispatches[3].leaf_count == 4 &&
+                 dispatches[3].parallel &&
+                 dispatches[3].worker_count == 5 &&
+                 dispatches[4].leaf_count == 5 &&
+                 dispatches[4].parallel &&
+                 dispatches[4].worker_count == 5 &&
+                 dispatches[5].leaf_count == 6 &&
+                 dispatches[5].parallel &&
+                 dispatches[5].worker_count == 5;
+             auto const every_shard_ran =
+                 shard_starts[3] ==
+                     std::array<std::size_t, 5>{1, 1, 0, 0, 0} &&
+                 shard_starts[4] ==
+                     std::array<std::size_t, 5>{1, 1, 1, 1, 1} &&
+                 shard_starts[5] ==
+                     std::array<std::size_t, 5>{3, 3, 3, 3, 2};
+             auto const workers_are_persistent =
+                 shard_tokens[3][0] == shard_tokens[4][0] &&
+                 shard_tokens[3][1] == shard_tokens[4][1] &&
+                 shard_tokens[4] == shard_tokens[5];
+             auto const prior_sizes_are_committed =
+                 result.completed_sizes.size() == 5 &&
+                 result.completed_sizes[0].empty() &&
+                 result.completed_sizes[1].empty() &&
+                 result.completed_sizes[2].size() == 1 &&
+                 combdsl::detail::same_parser_definition_expression(
+                     result.completed_sizes[2].front(), target) &&
+                 result.completed_sizes[3].empty() &&
+                 result.completed_sizes[4].empty();
+             std::cout
+                 << dispatches_are_expected << ' '
+                 << every_shard_ran << ' '
+                 << ownership_is_static.load() << ' '
+                 << (all_unique_and_present(3, 2) &&
+                     all_unique_and_present(4, 5) &&
+                     all_unique_and_present(5, 5)) << ' '
+                 << workers_are_persistent << ' '
+                 << serial_on_producer.load() << ' '
+                 << parallel_off_producer.load() << ' '
+                 << result.timed_out << ' '
+                 << prior_sizes_are_committed;
+         },
+         "1 1 1 1 1 1 1 1 1");
+    test("native find among caps workers for a small catalog",
+         [] {
+             catalog_find_runtime_overrides_reset reset;
+             auto const atom = quote(symbol('a'));
+             std::array<combdsl::quoted_expression, 1> const catalog{
+                 atom,
+             };
+             std::array<combdsl::quoted_atomic, 0> const symbols{};
+             std::size_t size_three_workers = 0;
+             auto& overrides = combdsl::detail::
+                 catalog_find_runtime_overrides_override;
+             overrides.reported_hardware_concurrency = 100;
+             overrides.dispatch_observer = [&](auto observation) {
+                 if (observation.leaf_count == 3) {
+                     size_three_workers = observation.worker_count;
+                 }
+             };
+             auto const result =
+                 combdsl::find_combinator_matches_among(
+                     symbols, atom(atom)(atom), catalog, false);
+             std::cout
+                 << (size_three_workers == 2) << ' '
+                 << !result.timed_out << ' '
+                 << (result.completed_sizes.size() == 3) << ' '
+                 << (result.completed_sizes.size() == 3 &&
+                     result.completed_sizes[2].size() == 1);
+         },
+         "1 1 1 1");
+    test("native find among caps and exhausts ordered modulo shards",
+         [] {
+             catalog_find_runtime_overrides_reset reset;
+             auto const producer_thread = std::this_thread::get_id();
+             auto const atom = quote(symbol('a'));
+             std::array<combdsl::quoted_expression, 2> const catalog{
+                 atom,
+                 quote(I)(atom),
+             };
+             std::array<combdsl::quoted_atomic, 0> const symbols{};
+             auto const target = atom(atom)(atom);
+             auto const normalized_target = combdsl::detail::
+                 normalize_for_combinator_match(target);
+             auto const serial = combdsl::detail::
+                 find_combinator_matches_among_normalized_size_shard_until(
+                     symbols,
+                     *normalized_target,
+                     catalog,
+                     3,
+                     0,
+                     1,
+                     combdsl::detail::find_clock::time_point::max());
+
+             std::size_t active_workers = 0;
+             std::array<std::size_t, 8> shard_tokens{};
+             std::array<std::size_t, 8> shard_starts{};
+             std::mutex observations_mutex;
+             std::atomic<bool> ownership_is_static = true;
+             std::atomic<bool> workers_are_off_producer = true;
+             auto& overrides = combdsl::detail::
+                 catalog_find_runtime_overrides_override;
+             overrides.reported_hardware_concurrency = 100;
+             overrides.dispatch_observer = [&](auto observation) {
+                 if (observation.leaf_count == 3) {
+                     active_workers = observation.worker_count;
+                 }
+             };
+             overrides.candidate_observer = [&](auto observation) {
+                 using stage = combdsl::detail::
+                     catalog_find_candidate_observation_stage;
+                 if (observation.leaf_count != 3 ||
+                     observation.stage != stage::before_match) {
+                     return;
+                 }
+                 if (std::this_thread::get_id() == producer_thread) {
+                     workers_are_off_producer.store(false);
+                 }
+                 auto const shard_index =
+                     observation.candidate_index % shard_tokens.size();
+                 auto const token = catalog_find_thread_token();
+                 std::scoped_lock lock(observations_mutex);
+                 auto& recorded = shard_tokens[shard_index];
+                 if (recorded == 0) {
+                     recorded = token;
+                 } else if (recorded != token) {
+                     ownership_is_static.store(false);
+                 }
+                 ++shard_starts[shard_index];
+             };
+
+             auto const result =
+                 combdsl::find_combinator_matches_among(
+                     symbols, target, catalog, false);
+
+             bool all_workers_unique = true;
+             for (std::size_t left = 0;
+                  left < shard_tokens.size();
+                  ++left) {
+                 all_workers_unique =
+                     all_workers_unique &&
+                     shard_tokens[left] != 0;
+                 for (std::size_t right = left + 1;
+                      right < shard_tokens.size();
+                      ++right) {
+                     all_workers_unique =
+                         all_workers_unique &&
+                         shard_tokens[left] != shard_tokens[right];
+                 }
+             }
+             bool exact_order =
+                 !serial.timed_out &&
+                 result.completed_sizes.size() == 3 &&
+                 result.completed_sizes[2].size() ==
+                     serial.matches.size();
+             for (std::size_t index = 0;
+                  exact_order && index < serial.matches.size();
+                  ++index) {
+                 exact_order = combdsl::detail::
+                     same_parser_definition_expression(
+                         result.completed_sizes[2][index],
+                         serial.matches[index].expression);
+             }
+             std::cout
+                 << (active_workers ==
+                     combdsl::detail::
+                         native_catalog_find_worker_limit) << ' '
+                 << (shard_starts ==
+                     std::array<std::size_t, 8>{
+                         2, 2, 2, 2, 2, 2, 2, 2}) << ' '
+                 << ownership_is_static.load() << ' '
+                 << all_workers_unique << ' '
+                 << workers_are_off_producer.load() << ' '
+                 << (serial.matches.size() == 8) << ' '
+                 << exact_order << ' '
+                 << !result.timed_out;
+         },
+         "1 1 1 1 1 1 1 1");
+    test("native find among discards a timed-out parallel size",
+         [] {
+             catalog_find_runtime_overrides_reset reset;
+             auto const atom = quote(symbol('a'));
+             std::array<combdsl::quoted_expression, 2> const catalog{
+                 atom,
+                 quote(symbol('b')),
+             };
+             std::array<combdsl::quoted_atomic, 0> const symbols{};
+             std::atomic<bool> timeout = false;
+             std::atomic<bool> matched_candidate_finished = false;
+             std::size_t size_three_workers = 0;
+             auto& overrides = combdsl::detail::
+                 catalog_find_runtime_overrides_override;
+             overrides.reported_hardware_concurrency = 4;
+             overrides.timeout_requested = [&] {
+                 return timeout.load();
+             };
+             overrides.dispatch_observer = [&](auto observation) {
+                 if (observation.leaf_count == 3) {
+                     size_three_workers = observation.worker_count;
+                 }
+             };
+             overrides.candidate_observer = [&](auto observation) {
+                 using stage = combdsl::detail::
+                     catalog_find_candidate_observation_stage;
+                 if (observation.leaf_count == 3 &&
+                     observation.candidate_index == 0 &&
+                     observation.stage == stage::after_match) {
+                     matched_candidate_finished.store(true);
+                     timeout.store(true);
+                 }
+             };
+             auto const result =
+                 combdsl::find_combinator_matches_among(
+                     symbols, atom(atom)(atom), catalog, true);
+             std::cout
+                 << result.timed_out << ' '
+                 << matched_candidate_finished.load() << ' '
+                 << (size_three_workers == 3) << ' '
+                 << (result.completed_sizes.size() == 2) << ' '
+                 << (result.completed_sizes.size() == 2 &&
+                     result.completed_sizes[0].empty() &&
+                     result.completed_sizes[1].empty());
+         },
+         "1 1 1 1 1");
+    test("native find among final deadline discards a parallel size",
+         [] {
+             catalog_find_runtime_overrides_reset runtime_reset;
+             find_clock_override_reset clock_reset;
+             auto const atom = quote(symbol('a'));
+             std::array<combdsl::quoted_expression, 2> const catalog{
+                 atom,
+                 quote(symbol('b')),
+             };
+             std::array<combdsl::quoted_atomic, 0> const symbols{};
+             std::atomic<bool> deadline_reached = false;
+             std::atomic<bool> matched_candidate_finished = false;
+             std::size_t size_three_workers = 0;
+             auto& overrides = combdsl::detail::
+                 catalog_find_runtime_overrides_override;
+             overrides.reported_hardware_concurrency = 4;
+             overrides.dispatch_observer = [&](auto observation) {
+                 if (observation.leaf_count != 3) {
+                     return;
+                 }
+                 size_three_workers = observation.worker_count;
+                 // The parallel/serial choice for this size has already
+                 // been made. Only the producer thread receives this
+                 // override, so every worker continues to share the real
+                 // deadline while finalization observes its expiration.
+                 combdsl::detail::find_clock_now_override = [&] {
+                     return deadline_reached.load()
+                         ? combdsl::detail::find_clock::time_point::max()
+                         : combdsl::detail::find_clock::now();
+                 };
+             };
+             overrides.candidate_observer = [&](auto observation) {
+                 using stage = combdsl::detail::
+                     catalog_find_candidate_observation_stage;
+                 if (observation.leaf_count == 3 &&
+                     observation.candidate_index == 0 &&
+                     observation.stage == stage::after_match) {
+                     matched_candidate_finished.store(true);
+                     deadline_reached.store(true);
+                 }
+             };
+             auto const result =
+                 combdsl::find_combinator_matches_among(
+                     symbols, atom(atom)(atom), catalog, true);
+             std::cout
+                 << result.timed_out << ' '
+                 << matched_candidate_finished.load() << ' '
+                 << (size_three_workers == 3) << ' '
+                 << (result.completed_sizes.size() == 2) << ' '
+                 << (result.completed_sizes.size() == 2 &&
+                     result.completed_sizes[0].empty() &&
+                     result.completed_sizes[1].empty());
+         },
+         "1 1 1 1 1");
+    test("native find among propagates worker observer exceptions",
+         [] {
+             catalog_find_runtime_overrides_reset reset;
+             auto const atom = quote(symbol('a'));
+             std::array<combdsl::quoted_expression, 2> const catalog{
+                 atom,
+                 quote(symbol('b')),
+             };
+             std::array<combdsl::quoted_atomic, 0> const symbols{};
+             auto& overrides = combdsl::detail::
+                 catalog_find_runtime_overrides_override;
+             overrides.reported_hardware_concurrency = 4;
+             overrides.candidate_observer = [](auto observation) {
+                 using stage = combdsl::detail::
+                     catalog_find_candidate_observation_stage;
+                 if (observation.leaf_count == 3 &&
+                     observation.candidate_index == 3 &&
+                     observation.stage == stage::before_match) {
+                     throw std::runtime_error(
+                         "catalog worker observer failure");
+                 }
+             };
+             bool caught = false;
+             try {
+                 static_cast<void>(
+                     combdsl::find_combinator_matches_among(
+                         symbols, atom(atom)(atom), catalog, false));
+             } catch (std::runtime_error const& error) {
+                 caught = std::string_view(error.what()) ==
+                     "catalog worker observer failure";
+             }
+             overrides.candidate_observer = {};
+             auto const recovered =
+                 combdsl::find_combinator_matches_among(
+                     symbols, atom(atom)(atom), catalog, false);
+             std::cout
+                 << caught << ' '
+                 << !recovered.timed_out << ' '
+                 << (recovered.completed_sizes.size() == 3) << ' '
+                 << (recovered.completed_sizes.size() == 3 &&
+                     recovered.completed_sizes[2].size() == 1);
+         },
+         "1 1 1 1");
+    test("native find among keeps fake-clock searches serial",
+         [] {
+             catalog_find_runtime_overrides_reset runtime_reset;
+             find_clock_override_reset clock_reset;
+             auto const producer_thread = std::this_thread::get_id();
+             auto const epoch =
+                 combdsl::detail::find_clock::time_point{};
+             combdsl::detail::find_clock_now_override = [=] {
+                 return epoch;
+             };
+             auto const atom = quote(symbol('a'));
+             std::array<combdsl::quoted_expression, 1> const catalog{
+                 atom,
+             };
+             std::array<combdsl::quoted_atomic, 0> const symbols{};
+             std::vector<combdsl::detail::
+                 catalog_find_dispatch_observation> dispatches;
+             std::array<std::size_t, 4> starts{};
+             bool every_candidate_on_producer = true;
+             auto& overrides = combdsl::detail::
+                 catalog_find_runtime_overrides_override;
+             overrides.reported_hardware_concurrency = 100;
+             overrides.dispatch_observer = [&](auto observation) {
+                 dispatches.push_back(observation);
+             };
+             overrides.candidate_observer = [&](auto observation) {
+                 using stage = combdsl::detail::
+                     catalog_find_candidate_observation_stage;
+                 if (observation.stage != stage::before_match ||
+                     observation.leaf_count >= starts.size()) {
+                     return;
+                 }
+                 every_candidate_on_producer =
+                     every_candidate_on_producer &&
+                     std::this_thread::get_id() == producer_thread;
+                 ++starts[observation.leaf_count];
+             };
+
+             auto const target = atom(atom)(atom);
+             auto const result =
+                 combdsl::find_combinator_matches_among(
+                     symbols, target, catalog, false);
+             auto const every_dispatch_is_serial =
+                 dispatches.size() == 3 &&
+                 dispatches[0].leaf_count == 1 &&
+                 !dispatches[0].parallel &&
+                 dispatches[0].worker_count == 0 &&
+                 dispatches[1].leaf_count == 2 &&
+                 !dispatches[1].parallel &&
+                 dispatches[1].worker_count == 0 &&
+                 dispatches[2].leaf_count == 3 &&
+                 !dispatches[2].parallel &&
+                 dispatches[2].worker_count == 0;
+             std::cout
+                 << every_dispatch_is_serial << ' '
+                 << every_candidate_on_producer << ' '
+                 << (starts ==
+                     std::array<std::size_t, 4>{0, 1, 1, 2}) << ' '
+                 << !result.timed_out << ' '
+                 << (result.completed_sizes.size() == 3 &&
+                     result.completed_sizes[2].size() == 1 &&
+                     combdsl::detail::same_parser_definition_expression(
+                         result.completed_sizes[2].front(), target));
+         },
+         "1 1 1 1 1");
+#endif
     test("find among inspection accepts fundamental birds without searching",
          [] {
              std::size_t clock_calls = 0;
@@ -6221,6 +7069,19 @@ int main() {
              static_cast<void>(parse("references captured"));
          },
          "?=FindAmongLive\n?=FindAmongLive@1");
+    test("find among keeps live and captured revisions at threaded sizes",
+         [] {
+             static_cast<void>(parse("references captured"));
+             static_cast<void>(parse("set ThreadRef = 100 I"));
+             static_cast<void>(parse("references live"));
+             static_cast<void>(parse("set ThreadRef = 100 K"));
+             parse(
+                 "find among ThreadRef ThreadRef@1 ?x = "
+                 "ThreadRef@1 ThreadRef@1 ThreadRef@1 x")
+                 .print_to(std::cout);
+             static_cast<void>(parse("references captured"));
+         },
+         "?=ThreadRef@1 ThreadRef@1 ThreadRef@1");
     test_parse_failure(
         "find among rejects an unqualified removed bird",
         "find among FindAmongUser ?xy = x(yx)", 12,
@@ -6237,6 +7098,16 @@ int main() {
          },
          "?=FindAmongLeaf FindAmongLeaf FindAmongLeaf "
          "FindAmongLeaf FindAmongLeaf");
+    test("find among keeps command output at the threaded size boundary",
+         [] {
+             static_cast<void>(parse(
+                 "set FindThreadLeaf = 100 I"));
+             parse(
+                 "find among FindThreadLeaf ?x = "
+                 "FindThreadLeaf FindThreadLeaf FindThreadLeaf x")
+                 .print_to(std::cout);
+         },
+         "?=FindThreadLeaf FindThreadLeaf FindThreadLeaf");
     test("find among times out at the exact ten-second deadline",
          [] {
              std::size_t clock_calls = 0;

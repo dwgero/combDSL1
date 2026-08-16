@@ -689,13 +689,23 @@ revisions. A retained revision of a redefined name is written as `name@N`.
 The sole retained revision of a removed, never-redefined name is instead
 written as its bare `name`, which remains usable here so displayed expressions
 round-trip. An explicitly listed `Y` is allowed even though the default
-catalog excludes it. A restricted search
-examines increasing composition sizes within one 10-second window. Only fully
-completed sizes are committed to the result; matches from a size still in
-progress when the window expires are discarded. Without `all`, the command
-stops after the first completed size that has answers. With `all`, it retains
-answers from every size completed within the same window. Its `?=<match>` and
-bounded no-match formats are otherwise unchanged.
+catalog excludes it. A restricted search examines increasing composition
+sizes within one 10-second window. Native builds keep sizes one and two serial,
+then use one grow-only worker pool for the rest of the search. Each worker owns
+a deterministic modulo shard of the global post-pruning candidate stream, and
+indexed answers are merged in sequential-search order. The pool uses at most
+one fewer worker than the machine reports hardware threads, is capped at
+eight, and activates no more shards for a size than that size's candidate
+count. Combinator Studio uses the same size boundary and shard cap with a
+transient pool of independent WebAssembly workers; one available worker is the
+serial fallback. Each Studio helper restores the same definition journal before
+the shared search window begins. Direct Emscripten API calls remain
+single-threaded. Only fully completed sizes are committed to the result;
+matches from a size still in progress when the window expires are discarded.
+Without `all`, the command stops after the first completed size that has
+answers. With `all`, it retains answers from every size completed within the
+same window. Its `?=<match>` and bounded no-match formats are otherwise
+unchanged.
 
 Names created with `set` or `define` may be redefined. Every changed definition
 creates a new immutable revision, starting with `name@1` and increasing by one
@@ -980,7 +990,7 @@ expression produces no output, while malformed or empty lines throw
 The `crepl` executable applies `input_escape` to each line before passing it to
 `parse_eval`, so ordinary quoted words and backslashes can be entered directly.
 When standard output is a terminal, it first prints
-`Combinator Read-Eval-Print Loop, version 2.11.0`. Long evaluations display
+`Combinator Read-Eval-Print Loop, version 2.11.3`. Long evaluations display
 the accumulated step count every 1,000 reductions by overwriting one status
 line; the line is cleared before evaluation output is printed. Its interactive
 prompt is `>`. Interactive input uses GNU Readline, so previous nonempty
@@ -1341,8 +1351,9 @@ EM_CACHE="$PWD/build-emscripten-cache" \
 ```
 
 The `combdsl_browser_docs` target builds the WebAssembly application and
-refreshes the tracked browser files in `docs`. Its WebAssembly heap starts at
-64 MiB and may grow to 4 GiB, subject to browser and device limits. Serve those
+refreshes the tracked browser files in `docs`. Each WebAssembly instance starts
+with a 16 MiB heap and may grow to 4 GiB, subject to browser and device limits.
+Serve those
 static files with any HTTP server and open
 `http://localhost:8000/`:
 
@@ -1405,9 +1416,13 @@ answers; with `all`, it continues through the full range. Every answer
 is shown as `?=<bird_expression>`, and a no-match message is red. The
 restricted `among` form accepts the same optionally separated names and exact
 revisions as CREPL, and commits only sizes fully searched within its one
-10-second window. A search ignores the stepping and color modes and displays
-`Searching…`. Pause stops a search; Resume restarts that search in the same
-Results entry with a fresh window.
+10-second window. Sizes one and two use one helper; sizes three and above use
+up to eight transient WebAssembly helpers, bounded by the reported hardware
+threads and candidate count. Their indexed answers are merged in the same
+order as a serial search. A search ignores the stepping and color modes and
+displays `Searching…`. Pause terminates the helpers; Resume restores the same
+definitions and restarts that search in the same Results entry with a fresh
+window.
 
 Reference mode is controlled by typing `references captured` or
 `references live` in the Combinator Expression box; Studio deliberately has no

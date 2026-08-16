@@ -778,6 +778,7 @@
                     ? false
                     : request.keyStep,
                 colorize: request.colorize,
+                findAmong: Boolean(request.findAmong),
                 stepLimitEnabled:
                     !request.keyStep &&
                     request.stepLimit !== undefined,
@@ -833,6 +834,7 @@
         request.stepReady = false;
         request.stepPending = false;
         request.pauseRequested = false;
+        request.findPoolActive = false;
         request.awaitingPause = true;
         request.pauseReason = reason;
         stepLimitRequest = request;
@@ -1060,6 +1062,8 @@
                     Boolean(message.result.displayOnly);
                 request.showAll = Boolean(message.result.showAll);
                 request.findCommand = Boolean(message.result.find);
+                request.findAmong = Boolean(message.result.findAmong);
+                request.findPoolActive = false;
                 if (request.displayOnly) {
                     request.singleStep = false;
                     request.keyStep = false;
@@ -1094,6 +1098,15 @@
                     return;
                 }
                 beginRequestEvaluation(request);
+                return;
+            }
+
+            if (message.type === "find-pool-mode" &&
+                message.id === activeRequest?.id &&
+                activeRequest.findAmong) {
+                activeRequest.findPoolActive = Boolean(message.pooled);
+                activeRequest.findPoolWorkers =
+                    Number(message.workers) || 0;
                 return;
             }
 
@@ -1539,7 +1552,9 @@
             type: "pause",
             id: activeRequest.id,
         });
-        if (activeRequest.findCommand) {
+        if (activeRequest.findCommand &&
+            !(activeRequest.findAmong &&
+              activeRequest.findPoolActive)) {
             terminateWorker();
             activeRequest.restartOnResume = true;
             pauseEvaluation(activeRequest, "manual");

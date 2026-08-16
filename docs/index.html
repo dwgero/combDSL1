@@ -388,9 +388,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             color: #c33;
         }
     </style>
-    <script src="./evaluation_watchdog.js?v=2.11.0" defer></script>
-    <script src="./input_history.js?v=2.11.0" defer></script>
-    <script src="./app.js?v=2.11.0" defer></script>
+    <script src="./evaluation_watchdog.js?v=2.11.3" defer></script>
+    <script src="./input_history.js?v=2.11.3" defer></script>
+    <script src="./app.js?v=2.11.3" defer></script>
 </head>
 <body>
     <main aria-labelledby="studio-title">
@@ -888,9 +888,16 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             <code>name@N</code>; a removed singleton that was never redefined
             uses its bare name. An explicitly listed
             <code>Y</code> is allowed. A restricted search examines increasing
-            composition sizes within one 10-second window. Only fully
+            composition sizes within one 10-second window. Studio uses one
+            transient WebAssembly helper for sizes one and two. At size three
+            and above it partitions candidates among as many as eight helpers,
+            bounded by the browser's reported hardware threads and the
+            candidate count. Each helper starts with the same definitions, and
+            indexed answers are merged in serial-search order. Only fully
             completed sizes are displayed; results from a size still in
-            progress when time expires are discarded. Without
+            progress when time expires are discarded. Pause terminates the
+            helpers; Resume restores the same definitions and starts a fresh
+            search window. Without
             <code>all</code>, it stops after the first completed size with
             answers. With <code>all</code>, it keeps answers from every size
             completed within that same window. Its answer and bounded
@@ -1026,7 +1033,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             data-dialog-initial-focus>About</h2>
         <div class="license-text">
             <!-- Keep this version and the app.js cache key in sync. -->
-            <p>Combinator Studio, version 2.11.0<br>
+            <p>Combinator Studio, version 2.11.3<br>
                 Part of the C++ Combinator DSL<br>
                 Copyright (C) 2026  David W. Gero</p>
             <p>This program is free software: you can redistribute it and/or modify

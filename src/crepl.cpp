@@ -60,7 +60,7 @@
 
 namespace {
 
-constexpr std::string_view crepl_version = "2.11.0";
+constexpr std::string_view crepl_version = "2.11.3";
 constexpr std::string_view no_further_reductions_message =
     "No further reductions";
 
@@ -1266,12 +1266,18 @@ void print_help_full(std::ostream& output) {
         "singleton that was never redefined uses its bare name. Unlike the "
         "default catalog, an explicitly listed "
         "Y is allowed. A restricted search examines increasing composition "
-        "sizes within one 10-second window. Only fully completed sizes are "
-        "reported, and results from a size still in progress when time "
-        "expires are discarded. Without \"all\", it stops at the first "
-        "completed size with answers. With \"all\", it retains answers "
-        "from every size completed within the same window. The output is "
-        "otherwise unchanged, including the bounded no-match response.");
+        "sizes within one 10-second window. Native CREPL keeps sizes one and "
+        "two serial, then reuses one grow-only worker pool for sizes three "
+        "and above. Each worker owns a deterministic modulo shard; up to "
+        "eight shards are activated, bounded by the machine's reported "
+        "hardware threads and the candidate count, and indexed answers are "
+        "merged in sequential-search order. Only fully completed sizes are "
+        "reported, "
+        "and results from a size still in progress when time expires are "
+        "discarded. Without \"all\", it stops at the first completed size "
+        "with answers. With \"all\", it retains answers from every size "
+        "completed within the same window. The output is otherwise unchanged, "
+        "including the bounded no-match response.");
 
     output << "\nCommand Entry\n\n";
     print_help_topic(

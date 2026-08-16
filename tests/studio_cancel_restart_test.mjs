@@ -811,6 +811,7 @@ const beginFindEvaluation = (
     harness,
     {
         expression = "find ?xy = x(yx)",
+        findAmong = false,
         setList = "set userBird = 1 I\n",
     } = {},
 ) => {
@@ -833,6 +834,7 @@ const beginFindEvaluation = (
             displayOnly: true,
             showAll: false,
             find: true,
+            findAmong,
             replacement: "",
         },
     });
@@ -842,6 +844,7 @@ const beginFindEvaluation = (
     assert.equal(evaluation.source, expression);
     assert.equal(evaluation.singleStep, false);
     assert.equal(evaluation.keyStep, false);
+    assert.equal(evaluation.findAmong, findAmong);
 
     return {
         expression,
@@ -903,6 +906,22 @@ test("Help explains no-further-reductions in every evaluation mode", () => {
         helpText,
         /Already in normal form .* ordinary evaluation, Single Step, and Key Step print No further reductions instead of repeating the expression\. Key Step completes without entering the key-wait state or waiting for a keypress\./,
     );
+});
+
+test("Help explains the bounded restricted-Find worker pool", () => {
+    const helpText = dialogMarkup("help-dialog")
+        .replace(/<[^>]+>/g, " ")
+        .replace(/\s+/g, " ");
+    assert.match(helpText,
+        /one transient WebAssembly helper for sizes one and two/);
+    assert.match(helpText,
+        /size three and above .* as many as eight helpers/);
+    assert.match(helpText,
+        /bounded by the browser's reported hardware threads and the candidate count/);
+    assert.match(helpText,
+        /indexed answers are merged in serial-search order/);
+    assert.match(helpText,
+        /Pause terminates the helpers; Resume restores the same definitions and starts a fresh search window/);
 });
 
 test("keeps informational dialog Close buttons below the sole scroller", () => {
@@ -3504,6 +3523,7 @@ test("routes find as an unstepped cancellable search", () => {
                 displayOnly: true,
                 showAll: false,
                 find: true,
+                findAmong: command.includes(" among "),
                 replacement: "",
             },
         });
@@ -3517,11 +3537,105 @@ test("routes find as an unstepped cancellable search", () => {
         assert.equal(evaluation.keyStep, false);
         assert.equal(evaluation.basisStep, false);
         assert.equal(evaluation.colorize, false);
+        assert.equal(
+            evaluation.findAmong,
+            command.includes(" among "),
+        );
         assert.equal(harness.element("cancel").disabled, false);
         assert.equal(harness.scheduledTimeouts.length, 0,
             "Find uses its own search deadline, not the evaluation watchdog");
     }
 });
+
+test("Pause waits for a pooled restricted Find and Resume reuses its worker",
+    () => {
+        const harness = createHarness();
+        const {
+            expression,
+            outputEntry,
+            requestId,
+            worker,
+        } = beginFindEvaluation(harness, {
+            expression: "find among AKIS ?xy = x(yx)",
+            findAmong: true,
+        });
+        worker.send({
+            type: "find-pool-mode",
+            id: requestId,
+            pooled: true,
+            workers: 3,
+        });
+
+        harness.element("cancel").click();
+        const pause = worker.messages.at(-1);
+        assert.equal(pause.type, "pause");
+        assert.equal(pause.id, requestId);
+        assert.equal(worker.terminated, false,
+            "the primary must stay alive while it cancels its helpers");
+        assert.equal(harness.workers.length, 1);
+        assert.equal(harness.element("step-limit-dialog").open, false,
+            "Studio must wait for the pool's paused acknowledgement");
+        assert.equal(harness.element("status").textContent, "Pausing…");
+
+        worker.send({type: "paused", id: requestId, reductions: 0});
+        assert.equal(harness.element("step-limit-dialog").open, true);
+        assert.equal(harness.element("step-limit-title").textContent,
+            "Paused");
+        harness.element("step-limit-resume").click();
+
+        assert.equal(harness.workers.length, 1,
+            "pooled Resume must not replace or reload the primary");
+        assert.equal(worker.terminated, false);
+        const resume = worker.messages.at(-1);
+        assert.equal(resume.type, "resume");
+        assert.equal(resume.id, requestId);
+        assert.strictEqual(
+            harness.element("output").lastElementChild,
+            outputEntry,
+        );
+
+        worker.send({type: "eval-started", id: requestId});
+        worker.send({
+            type: "result",
+            id: requestId,
+            result: {
+                success: true,
+                definition: false,
+                recoverWorker: false,
+                output: "?=A\n",
+                error: "",
+                reductions: 0,
+                limitReached: false,
+            },
+        });
+        assert.equal(outputEntry.textContent, `${expression}\n?=A`);
+        assert.equal(harness.element("source-history").textContent,
+            expression);
+        assert.equal(harness.element("status").textContent, "Ready");
+    });
+
+test("serial restricted Find fallback keeps the fixed-Find restart path",
+    () => {
+        const harness = createHarness();
+        const {requestId, worker} = beginFindEvaluation(harness, {
+            expression: "find among AKIS ?xy = x(yx)",
+            findAmong: true,
+        });
+        worker.send({
+            type: "find-pool-mode",
+            id: requestId,
+            pooled: false,
+            workers: 0,
+        });
+
+        harness.element("cancel").click();
+        assert.equal(worker.messages.at(-1).type, "pause");
+        assert.equal(worker.terminated, true,
+            "serial fallback remains synchronous and must stop its primary");
+        assert.equal(harness.element("step-limit-dialog").open, true);
+        assert.equal(harness.workers.length, 1,
+            "replacement waits for Resume, as for fixed Find");
+    });
 
 test("Pause restarts and resumes Find in its original Results entry", () => {
     const harness = createHarness();

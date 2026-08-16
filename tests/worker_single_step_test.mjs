@@ -26,13 +26,17 @@ const workerSource = await readFile(
     new URL("../web/worker.js", import.meta.url),
     "utf8",
 );
+const cmakeSource = await readFile(
+    new URL("../CMakeLists.txt", import.meta.url),
+    "utf8",
+);
 const require = createRequire(import.meta.url);
 const createBuiltCombdslModule = require("../docs/combdsl.js");
 const builtCombdslWasm = await readFile(
     new URL("../docs/combdsl.wasm", import.meta.url),
 );
 
-const loadBuiltCombdslModule = async () => {
+const loadBuiltCombdslModule = async ({inspectInstance} = {}) => {
     const previousSelf = globalThis.self;
     globalThis.self = {
         location: {href: "https://example.test/combdsl.js"},
@@ -42,7 +46,10 @@ const loadBuiltCombdslModule = async () => {
             instantiateWasm(imports, receiveInstance) {
                 void WebAssembly.instantiate(
                     builtCombdslWasm, imports,
-                ).then(result => receiveInstance(result.instance));
+                ).then(result => {
+                    inspectInstance?.(result.instance);
+                    receiveInstance(result.instance);
+                });
             },
         });
     } finally {
@@ -57,10 +64,12 @@ const loadBuiltCombdslModule = async () => {
 const createTimerQueue = () => {
     let nextId = 0;
     const callbacks = new Map();
+    const scheduledDelays = [];
     return {
-        setTimeout(callback) {
+        setTimeout(callback, delay = 0) {
             const id = ++nextId;
-            callbacks.set(id, callback);
+            callbacks.set(id, {callback, delay});
+            scheduledDelays.push(delay);
             return id;
         },
         clearTimeout(id) {
@@ -69,22 +78,79 @@ const createTimerQueue = () => {
         runNext() {
             const next = callbacks.entries().next();
             assert.equal(next.done, false);
-            const [id, callback] = next.value;
+            const [id, timer] = next.value;
             callbacks.delete(id);
-            callback();
+            timer.callback();
         },
+        delays() {
+            return [...callbacks.values()].map(timer => timer.delay);
+        },
+        scheduledDelays,
         get size() {
             return callbacks.size;
         },
     };
 };
 
-const createWorkerHarness = async module => {
+const createWorkerHarness = async (
+    module,
+    {
+        hardwareConcurrency = 4,
+        nestedWorkersAvailable = true,
+        now = () => 0,
+        workerHref = "https://example.test/worker.js?v=test",
+    } = {},
+) => {
     const messages = [];
     let messageListener;
     const timers = createTimerQueue();
+    const nestedWorkers = [];
+    class NestedWorker {
+        constructor(url) {
+            this.url = String(url);
+            this.messages = [];
+            this.terminated = false;
+            this.listeners = new Map();
+            nestedWorkers.push(this);
+        }
+
+        addEventListener(type, listener) {
+            const listeners = this.listeners.get(type) ?? [];
+            listeners.push(listener);
+            this.listeners.set(type, listeners);
+        }
+
+        postMessage(message) {
+            this.messages.push({...message});
+        }
+
+        terminate() {
+            this.terminated = true;
+        }
+
+        send(message) {
+            for (const listener of this.listeners.get("message") ?? []) {
+                listener({data: message});
+            }
+        }
+
+        fail(message = "nested worker failed") {
+            const event = {
+                message,
+                defaultPrevented: false,
+                preventDefault() {
+                    this.defaultPrevented = true;
+                },
+            };
+            for (const listener of this.listeners.get("error") ?? []) {
+                listener(event);
+            }
+            return event;
+        }
+    }
     const worker = {
-        location: {href: "https://example.test/worker.js?v=test"},
+        location: {href: workerHref},
+        navigator: {hardwareConcurrency},
         postMessage: message => messages.push({...message}),
         addEventListener: (type, listener) => {
             if (type === "message") {
@@ -94,31 +160,123 @@ const createWorkerHarness = async module => {
     };
     const context = vm.createContext({
         URL,
+        Worker: NestedWorker,
         self: worker,
         importScripts: () => {},
         createCombdslModule: () => Promise.resolve(module),
-        setTimeout: callback => timers.setTimeout(callback),
+        setTimeout: (callback, delay) =>
+            timers.setTimeout(callback, delay),
         clearTimeout: id => timers.clearTimeout(id),
-        performance: {now: () => 0},
+        performance: {now},
         Error,
         String,
         Boolean,
     });
+    if (!nestedWorkersAvailable) {
+        delete context.Worker;
+    }
 
     vm.runInContext(workerSource, context, {
         filename: "worker.js",
     });
     await Promise.resolve();
+    const expectedReadyType = new URL(workerHref).searchParams.get("role") ===
+        "find-helper"
+        ? "find-helper-ready"
+        : "ready";
     assert.equal(
-        messages.some(message => message.type === "ready"),
+        messages.some(message => message.type === expectedReadyType),
         true,
     );
 
     return {
         messages,
+        nestedWorkers,
         timers,
         send: data => messageListener({data}),
     };
+};
+
+const flushMicrotasks = async (turns = 8) => {
+    for (let turn = 0; turn < turns; ++turn) {
+        await Promise.resolve();
+    }
+};
+
+const nextNestedRequest = (worker, type) => {
+    const request = worker.messages.find(message =>
+        message.type === type && !message.testAnswered);
+    assert.ok(request, `missing nested-worker request ${type}`);
+    request.testAnswered = true;
+    return request;
+};
+
+const answerNestedRequest = (worker, type, result) => {
+    const request = nextNestedRequest(worker, type);
+    worker.send({
+        type: "find-helper-result",
+        jobId: request.jobId,
+        result,
+    });
+    return request;
+};
+
+const restrictedFindEvaluationMessage = ({
+    id = 501,
+    source = "find among A B ?x = x",
+} = {}) => ({
+    type: "evaluate",
+    id,
+    source,
+    findAmong: true,
+    singleStep: false,
+    basisStep: false,
+    keyStep: false,
+    colorize: false,
+    stepLimitEnabled: false,
+    stepLimit: 0,
+});
+
+const readyAndRestoreFindHelpers = async (
+    harness,
+    expectedSetList,
+) => {
+    for (const helper of harness.nestedWorkers) {
+        helper.send({type: "find-helper-ready"});
+    }
+    await flushMicrotasks();
+    for (const helper of harness.nestedWorkers) {
+        const load = answerNestedRequest(
+            helper,
+            "find-helper-load",
+            {success: true, loaded: 0, line: 0, error: ""},
+        );
+        assert.equal(load.source, expectedSetList);
+    }
+    await flushMicrotasks();
+};
+
+const prepareFindHelpers = async (
+    harness,
+    {
+        allSizes = false,
+        catalogSize = 2,
+        searchable = true,
+        timedOut = false,
+    } = {},
+) => {
+    for (const helper of harness.nestedWorkers.filter(
+        worker => !worker.terminated)) {
+        answerNestedRequest(helper, "find-helper-prepare", {
+            success: true,
+            timedOut,
+            searchable,
+            allSizes,
+            catalogSize,
+            error: "",
+        });
+    }
+    await flushMicrotasks();
 };
 
 const incompleteStepStart = {
@@ -132,6 +290,32 @@ const incompleteStepStart = {
 
 const noFurtherReductions = "No further reductions\n";
 
+test("builds each Studio WebAssembly instance with a 16 MiB initial heap",
+    async () => {
+        assert.match(
+            cmakeSource,
+            /-sINITIAL_HEAP=16777216(?:\s|$)/,
+        );
+        assert.doesNotMatch(
+            cmakeSource,
+            /-sINITIAL_HEAP=67108864(?:\s|$)/,
+        );
+
+        let initialMemoryBytes = 0;
+        await loadBuiltCombdslModule({
+            inspectInstance(instance) {
+                const memory = Object.values(instance.exports).find(
+                    value => value instanceof WebAssembly.Memory);
+                assert.ok(memory, "built Wasm must export its memory");
+                initialMemoryBytes = memory.buffer.byteLength;
+            },
+        });
+        assert.ok(initialMemoryBytes >= 16 * 1024 * 1024);
+        assert.ok(initialMemoryBytes < 32 * 1024 * 1024,
+            "static data may add to the heap, but the old 64 MiB baseline " +
+            "must not return");
+    });
+
 const completedStepStart = output => ({
     success: true,
     reduced: false,
@@ -140,6 +324,778 @@ const completedStepStart = output => ({
     output,
     error: "",
     limitReached: false,
+});
+
+const takeFindAmongShardMatches = result => {
+    const matches = [];
+    try {
+        for (let index = 0; index < result.matches.size(); ++index) {
+            const match = result.matches.get(index);
+            matches.push({
+                index: Number(match.index),
+                expression: String(match.expression),
+            });
+        }
+    } finally {
+        result.matches.delete();
+    }
+    return matches;
+};
+
+const applyBuiltDefinition = (module, source, requestId) => {
+    const result = module.beginLimitedEval(
+        source, requestId, 1000, false);
+    assert.equal(result.success, true, result.error);
+    assert.equal(result.definition, true, source);
+    assert.equal(result.output, "", source);
+};
+
+test("built inspection identifies only restricted Find metadata",
+    async () => {
+        const module = await loadBuiltCombdslModule();
+        const ordinary = module.inspectDefinition("find ?xy = x(yx)");
+        assert.equal(ordinary.success, true);
+        assert.equal(ordinary.find, true);
+        assert.equal(ordinary.findAmong, false);
+        assert.equal(ordinary.findAllSizes, false);
+        assert.equal(ordinary.findCatalogSize, 0);
+
+        const restricted = module.inspectDefinition(
+            "find all among A A@1 K ?xy = x(yx)");
+        assert.equal(restricted.success, true);
+        assert.equal(restricted.find, true);
+        assert.equal(restricted.findAmong, true);
+        assert.equal(restricted.findAllSizes, true);
+        assert.equal(restricted.findCatalogSize, 2,
+            "catalog metadata must count resolved, deduplicated birds");
+
+        const malformed = module.inspectDefinition(
+            "find all among MissingBird ?x = x");
+        assert.equal(malformed.success, false);
+        assert.equal(malformed.findAmong, false);
+        assert.equal(malformed.findAllSizes, false);
+        assert.equal(malformed.findCatalogSize, 0);
+    });
+
+test("built prepared Find reuses one target across serial and sharded sizes",
+    async () => {
+        const module = await loadBuiltCombdslModule();
+        applyBuiltDefinition(module, "set PoolLeaf = 100 I", 301);
+        const command =
+            "find among PoolLeaf ?x = " +
+            "PoolLeaf PoolLeaf PoolLeaf x";
+
+        const preparation = module.prepareFindAmong(command, 10000);
+        assert.deepEqual({
+            success: preparation.success,
+            timedOut: preparation.timedOut,
+            searchable: preparation.searchable,
+            allSizes: preparation.allSizes,
+            catalogSize: preparation.catalogSize,
+            error: preparation.error,
+        }, {
+            success: true,
+            timedOut: false,
+            searchable: true,
+            allSizes: false,
+            catalogSize: 1,
+            error: "",
+        });
+
+        for (const leafCount of [1, 2]) {
+            const result = module.findAmongPreparedSizeShard(
+                leafCount, 0, 1, 10000);
+            assert.equal(result.success, true, result.error);
+            assert.equal(result.timedOut, false);
+            assert.deepEqual(takeFindAmongShardMatches(result), [],
+                `size ${leafCount} should remain a completed serial size`);
+        }
+
+        const serialResult = module.findAmongPreparedSizeShard(
+            3, 0, 1, 10000);
+        assert.equal(serialResult.success, true, serialResult.error);
+        assert.equal(serialResult.timedOut, false);
+        const serialMatches = takeFindAmongShardMatches(serialResult);
+        assert.deepEqual(serialMatches, [{
+            index: 0,
+            expression: "PoolLeaf PoolLeaf PoolLeaf",
+        }]);
+
+        const shardResults = [1, 0].map(shardIndex => {
+            const result = module.findAmongPreparedSizeShard(
+                3, shardIndex, 2, 10000);
+            assert.equal(result.success, true, result.error);
+            assert.equal(result.timedOut, false);
+            return takeFindAmongShardMatches(result);
+        });
+        const merged = shardResults.flat()
+            .sort((left, right) => left.index - right.index);
+        assert.deepEqual(merged, serialMatches,
+            "out-of-order shard completion must merge by global index");
+
+        const serial = module.parseEval(command, 302, false, 0);
+        assert.equal(serial.success, true, serial.error);
+        assert.equal(
+            serial.output,
+            serialMatches.map(match => `?=${match.expression}\n`).join(""),
+            "the sharded browser primitive must match serial command output");
+
+        module.resetFindAmong();
+        const afterReset = module.findAmongPreparedSizeShard(
+            3, 0, 1, 10000);
+        assert.equal(afterReset.success, false);
+        assert.match(afterReset.error, /no find among command is prepared/);
+        assert.deepEqual(takeFindAmongShardMatches(afterReset), []);
+    });
+
+test("built prepared Find reports shared-budget exhaustion transactionally",
+    async () => {
+        const module = await loadBuiltCombdslModule();
+        const command = "find all among I K ?x = x";
+
+        const expiredPreparation = module.prepareFindAmong(command, 0);
+        assert.equal(expiredPreparation.success, true);
+        assert.equal(expiredPreparation.timedOut, true);
+        assert.equal(expiredPreparation.searchable, false);
+
+        const preparation = module.prepareFindAmong(command, 10000);
+        assert.equal(preparation.success, true, preparation.error);
+        assert.equal(preparation.searchable, true);
+        const expiredShard = module.findAmongPreparedSizeShard(
+            3, 0, 1, 0);
+        assert.equal(expiredShard.success, true, expiredShard.error);
+        assert.equal(expiredShard.timedOut, true);
+        assert.deepEqual(takeFindAmongShardMatches(expiredShard), [],
+            "a timed-out size must not expose partial matches to the merger");
+
+        for (const invalidBudget of [-1, Number.NaN, Number.POSITIVE_INFINITY]) {
+            const invalid = module.prepareFindAmong(
+                command, invalidBudget);
+            assert.equal(invalid.success, false);
+            assert.match(invalid.error, /finite and nonnegative/);
+        }
+        const clearedByFailure = module.findAmongPreparedSizeShard(
+            1, 0, 1, 10000);
+        assert.equal(clearedByFailure.success, false,
+            "a failed prepare must clear the previous retained search");
+        assert.deepEqual(takeFindAmongShardMatches(clearedByFailure), []);
+    });
+
+test("built helper state restore preserves live, captured, and removed birds",
+    async () => {
+        const primary = await loadBuiltCombdslModule();
+        const helper = await loadBuiltCombdslModule();
+        let requestId = 320;
+        for (const definition of [
+            "references live",
+            "set PoolTarget = 0 I",
+            "set captured PoolCaptured = 0 PoolTarget",
+            "set live PoolLive = 0 PoolTarget",
+            "set PoolTarget = 0 K",
+            "remove PoolTarget",
+        ]) {
+            applyBuiltDefinition(primary, definition, ++requestId);
+        }
+
+        const setList = primary.setList();
+        const restored = helper.loadSetList(setList, "pool state");
+        assert.equal(restored.success, true, restored.error);
+        const command =
+            "find all among PoolCaptured PoolLive PoolTarget@1 ?x = x";
+        const results = [];
+        for (const module of [primary, helper]) {
+            const preparation = module.prepareFindAmong(command, 10000);
+            assert.equal(preparation.success, true, preparation.error);
+            assert.equal(preparation.searchable, true);
+            assert.equal(preparation.catalogSize, 3);
+            const shard = module.findAmongPreparedSizeShard(
+                1, 0, 1, 10000);
+            assert.equal(shard.success, true, shard.error);
+            assert.equal(shard.timedOut, false);
+            results.push(takeFindAmongShardMatches(shard));
+            module.resetFindAmong();
+        }
+        assert.deepEqual(results[1], results[0],
+            "a helper Wasm instance must search the exact restored state");
+        assert.deepEqual(
+            results[0].map(match => match.expression),
+            ["PoolCaptured", "PoolTarget@1"],
+            "live removed and captured retained revisions must stay distinct");
+    });
+
+test("Find helper role restores, prepares, shards, cleans up, and resets",
+    async () => {
+        const calls = [];
+        let vectorDeletes = 0;
+        const module = {
+            setList: () => "",
+            loadSetList(source, name) {
+                calls.push(["load", source, name]);
+                return {success: true, loaded: 3, line: 0, error: ""};
+            },
+            prepareFindAmong(source, budget) {
+                calls.push(["prepare", source, budget]);
+                return {
+                    success: true,
+                    timedOut: false,
+                    searchable: true,
+                    allSizes: false,
+                    catalogSize: 2,
+                    error: "",
+                };
+            },
+            findAmongPreparedSizeShard(
+                leafCount, shardIndex, shardCount, budget,
+            ) {
+                calls.push([
+                    "size", leafCount, shardIndex, shardCount, budget,
+                ]);
+                const values = [
+                    {index: 5, expression: "late"},
+                    {index: 2, expression: "early"},
+                ];
+                return {
+                    success: true,
+                    timedOut: false,
+                    error: "",
+                    matches: {
+                        size: () => values.length,
+                        get: index => values[index],
+                        delete() {
+                            ++vectorDeletes;
+                        },
+                    },
+                };
+            },
+            resetFindAmong() {
+                calls.push(["reset"]);
+            },
+        };
+        const harness = await createWorkerHarness(module, {
+            workerHref:
+                "https://example.test/worker.js?v=test&role=find-helper",
+        });
+        assert.deepEqual(
+            harness.messages.map(message => message.type),
+            ["find-helper-ready"],
+        );
+
+        const sendJob = async (jobId, type, fields = {}) => {
+            await harness.send({jobId, type, ...fields});
+            return harness.messages.find(
+                message => message.type === "find-helper-result" &&
+                    message.jobId === jobId);
+        };
+        const load = await sendJob(1, "find-helper-load", {
+            source: "set PoolLeaf = 100 I\n",
+        });
+        assert.equal(load.result.success, true);
+        const prepare = await sendJob(2, "find-helper-prepare", {
+            source: "find among PoolLeaf ?x = x",
+            budget: 9750,
+        });
+        assert.equal(prepare.result.catalogSize, 2);
+        const size = await sendJob(3, "find-helper-size", {
+            leafCount: 3,
+            shardIndex: 1,
+            shardCount: 3,
+            budget: 9400,
+        });
+        assert.deepEqual(Array.from(
+            size.result.matches,
+            match => ({
+                index: match.index,
+                expression: match.expression,
+            }),
+        ), [
+            {index: 5, expression: "late"},
+            {index: 2, expression: "early"},
+        ]);
+        assert.equal(vectorDeletes, 1,
+            "every Embind result vector must be explicitly released");
+        const reset = await sendJob(4, "find-helper-reset");
+        assert.equal(reset.result.success, true);
+        assert.deepEqual(calls, [
+            ["load", "set PoolLeaf = 100 I\n", "Find helper definitions"],
+            ["prepare", "find among PoolLeaf ?x = x", 9750],
+            ["size", 3, 1, 3, 9400],
+            ["reset"],
+        ]);
+    });
+
+test("restricted Find creates the hardware-bounded helper pool",
+    async () => {
+        for (const [hardwareConcurrency, expectedWorkers] of [
+            [1, 1],
+            [2, 1],
+            [4, 3],
+            [100, 8],
+        ]) {
+            const module = {setList: () => ""};
+            const harness = await createWorkerHarness(module, {
+                hardwareConcurrency,
+            });
+            const message = restrictedFindEvaluationMessage({
+                id: 500 + expectedWorkers,
+            });
+            const evaluation = harness.send(message);
+            await flushMicrotasks();
+            assert.equal(
+                harness.nestedWorkers.length,
+                expectedWorkers,
+                `hardwareConcurrency=${hardwareConcurrency}`,
+            );
+            assert.equal(harness.nestedWorkers.every(worker =>
+                new URL(worker.url).searchParams.get("role") ===
+                    "find-helper"), true);
+            assert.equal(harness.nestedWorkers.every(worker =>
+                new URL(worker.url).searchParams.get("v") === "test"), true);
+
+            await harness.send({type: "pause", id: message.id});
+            await evaluation;
+            assert.equal(harness.nestedWorkers.every(
+                worker => worker.terminated), true);
+            assert.equal(harness.messages.some(output =>
+                output.type === "paused" && output.id === message.id), true);
+            assert.equal(harness.messages.some(output =>
+                output.type === "result" && output.id === message.id), false);
+        }
+    });
+
+test("restricted Find keeps sizes one and two serial then merges shards",
+    async () => {
+        let serialCalls = 0;
+        const setList = "set PoolLeaf = 100 I\n";
+        const module = {
+            setList: () => setList,
+            beginLimitedEval() {
+                ++serialCalls;
+                throw new Error("pooled Find must not use serial fallback");
+            },
+        };
+        const harness = await createWorkerHarness(module, {
+            hardwareConcurrency: 4,
+        });
+        const message = restrictedFindEvaluationMessage({id: 520});
+        const evaluation = harness.send(message);
+        await flushMicrotasks();
+        assert.equal(harness.nestedWorkers.length, 3);
+        assert.deepEqual(harness.timers.delays(), [10000, 10000, 10000],
+            "startup watchdogs are separate from the semantic deadline");
+
+        for (const helper of harness.nestedWorkers) {
+            helper.send({type: "find-helper-ready"});
+        }
+        await flushMicrotasks();
+        assert.equal(harness.timers.size, 0,
+            "state restore must also precede the semantic deadline");
+        for (const helper of harness.nestedWorkers) {
+            const load = answerNestedRequest(helper, "find-helper-load", {
+                success: true,
+                loaded: 1,
+                line: 0,
+                error: "",
+            });
+            assert.equal(load.source, setList);
+        }
+        await flushMicrotasks();
+        assert.deepEqual(harness.timers.delays(), [10000]);
+        await prepareFindHelpers(harness, {catalogSize: 2});
+
+        const firstSize = answerNestedRequest(
+            harness.nestedWorkers[0],
+            "find-helper-size",
+            {success: true, timedOut: false, matches: [], error: ""},
+        );
+        assert.equal(firstSize.leafCount, 1);
+        assert.equal(firstSize.shardIndex, 0);
+        assert.equal(firstSize.shardCount, 1);
+        assert.equal(harness.nestedWorkers.slice(1).every(worker =>
+            worker.messages.every(request =>
+                request.type !== "find-helper-size")), true);
+        await flushMicrotasks();
+
+        const secondSize = answerNestedRequest(
+            harness.nestedWorkers[0],
+            "find-helper-size",
+            {success: true, timedOut: false, matches: [], error: ""},
+        );
+        assert.equal(secondSize.leafCount, 2);
+        assert.equal(secondSize.shardCount, 1);
+        await flushMicrotasks();
+
+        const sizeThree = harness.nestedWorkers.map(
+            (helper, shardIndex) => {
+                const request = nextNestedRequest(
+                    helper, "find-helper-size");
+                assert.equal(request.leafCount, 3);
+                assert.equal(request.shardIndex, shardIndex);
+                assert.equal(request.shardCount, 3);
+                return request;
+            });
+        harness.nestedWorkers[2].send({
+            type: "find-helper-result",
+            jobId: sizeThree[2].jobId,
+            result: {
+                success: true,
+                timedOut: false,
+                matches: [
+                    {index: 2, expression: "middle"},
+                    {index: 5, expression: "same"},
+                ],
+                error: "",
+            },
+        });
+        harness.nestedWorkers[1].send({
+            type: "find-helper-result",
+            jobId: sizeThree[1].jobId,
+            result: {
+                success: true,
+                timedOut: false,
+                matches: [{index: 4, expression: "last"}],
+                error: "",
+            },
+        });
+        harness.nestedWorkers[0].send({
+            type: "find-helper-result",
+            jobId: sizeThree[0].jobId,
+            result: {
+                success: true,
+                timedOut: false,
+                matches: [
+                    {index: 6, expression: "same"},
+                    {index: 0, expression: "first"},
+                ],
+                error: "",
+            },
+        });
+        await evaluation;
+
+        const result = harness.messages.find(output =>
+            output.type === "result" && output.id === message.id);
+        assert.equal(result.result.success, true, result.result.error);
+        assert.equal(
+            result.result.output,
+            "?=first\n?=middle\n?=last\n?=same\n",
+            "global indexes must restore serial order before deduplication",
+        );
+        assert.equal(serialCalls, 0);
+        assert.equal(harness.nestedWorkers.every(
+            worker => worker.terminated), true);
+        assert.equal(harness.timers.size, 0);
+    });
+
+test("restricted Find bounds active size-three shards by candidate work",
+    async () => {
+        const harness = await createWorkerHarness(
+            {setList: () => ""},
+            {hardwareConcurrency: 100},
+        );
+        const message = restrictedFindEvaluationMessage({id: 521});
+        const evaluation = harness.send(message);
+        await flushMicrotasks();
+        assert.equal(harness.nestedWorkers.length, 8,
+            "the reusable pool is bounded independently of one size");
+        await readyAndRestoreFindHelpers(harness, "");
+        await prepareFindHelpers(harness, {catalogSize: 1});
+        for (const leafCount of [1, 2]) {
+            const request = answerNestedRequest(
+                harness.nestedWorkers[0],
+                "find-helper-size",
+                {success: true, timedOut: false, matches: [], error: ""},
+            );
+            assert.equal(request.leafCount, leafCount);
+            assert.equal(request.shardCount, 1);
+            await flushMicrotasks();
+        }
+
+        const active = harness.nestedWorkers.filter(worker =>
+            worker.messages.some(request =>
+                request.type === "find-helper-size" &&
+                request.leafCount === 3));
+        assert.equal(active.length, 2,
+            "one-bird size three has only two tree-shape work items");
+        assert.deepEqual(active.map(worker =>
+            nextNestedRequest(worker, "find-helper-size").shardCount),
+        [2, 2]);
+
+        await harness.send({type: "pause", id: message.id});
+        await evaluation;
+        assert.equal(harness.nestedWorkers.every(
+            worker => worker.terminated), true);
+    });
+
+test("restricted Find keeps completed sizes and discards a timed-out size",
+    async () => {
+        let currentTime = 0;
+        const harness = await createWorkerHarness(
+            {setList: () => ""},
+            {
+                hardwareConcurrency: 4,
+                now: () => currentTime,
+            },
+        );
+        const message = restrictedFindEvaluationMessage({
+            id: 522,
+            source: "find all among A B ?x = x",
+        });
+        const evaluation = harness.send(message);
+        await flushMicrotasks();
+        await readyAndRestoreFindHelpers(harness, "");
+        currentTime = 500;
+        await prepareFindHelpers(harness, {
+            allSizes: true,
+            catalogSize: 2,
+        });
+
+        const sizeOne = answerNestedRequest(
+            harness.nestedWorkers[0],
+            "find-helper-size",
+            {
+                success: true,
+                timedOut: false,
+                matches: [{index: 0, expression: "A"}],
+                error: "",
+            },
+        );
+        assert.equal(sizeOne.budget, 9500);
+        currentTime = 1000;
+        await flushMicrotasks();
+        const sizeTwo = answerNestedRequest(
+            harness.nestedWorkers[0],
+            "find-helper-size",
+            {
+                success: true,
+                timedOut: false,
+                matches: [
+                    {index: 0, expression: "A"},
+                    {index: 1, expression: "B"},
+                ],
+                error: "",
+            },
+        );
+        assert.equal(sizeTwo.budget, 9000);
+        currentTime = 1500;
+        await flushMicrotasks();
+
+        const sizeThree = harness.nestedWorkers.map(helper =>
+            nextNestedRequest(helper, "find-helper-size"));
+        assert.equal(sizeThree.every(request =>
+            request.leafCount === 3 &&
+            request.shardCount === 3 &&
+            request.budget === 8500), true);
+        harness.nestedWorkers[0].send({
+            type: "find-helper-result",
+            jobId: sizeThree[0].jobId,
+            result: {
+                success: true,
+                timedOut: false,
+                matches: [{index: 0, expression: "partial"}],
+                error: "",
+            },
+        });
+        harness.timers.runNext();
+        await evaluation;
+
+        const result = harness.messages.find(output =>
+            output.type === "result" && output.id === message.id);
+        assert.equal(result.result.output, "?=A\n?=B\n");
+        assert.equal(result.result.output.includes("partial"), false);
+        const resultCount = harness.messages.filter(output =>
+            output.type === "result" && output.id === message.id).length;
+        harness.nestedWorkers[1].send({
+            type: "find-helper-result",
+            jobId: sizeThree[1].jobId,
+            result: {
+                success: true,
+                timedOut: false,
+                matches: [{index: 1, expression: "stale"}],
+                error: "",
+            },
+        });
+        await flushMicrotasks();
+        assert.equal(harness.messages.filter(output =>
+            output.type === "result" && output.id === message.id).length,
+        resultCount, "late shard replies must be ignored");
+    });
+
+test("Pause terminates helpers even while one never becomes ready",
+    async () => {
+        const harness = await createWorkerHarness(
+            {setList: () => ""},
+            {hardwareConcurrency: 4},
+        );
+        const message = restrictedFindEvaluationMessage({id: 523});
+        const evaluation = harness.send(message);
+        await flushMicrotasks();
+        assert.equal(harness.nestedWorkers.length, 3);
+        harness.nestedWorkers[0].send({type: "find-helper-ready"});
+        harness.nestedWorkers[1].send({type: "find-helper-ready"});
+
+        await harness.send({type: "pause", id: message.id});
+        await evaluation;
+        assert.equal(harness.nestedWorkers.every(
+            worker => worker.terminated), true);
+        assert.equal(harness.messages.some(output =>
+            output.type === "paused" && output.id === message.id), true);
+        assert.equal(harness.messages.some(output =>
+            output.type === "result" && output.id === message.id), false);
+    });
+
+test("restricted Find resumes with a fresh helper pool and full window",
+    async () => {
+        const harness = await createWorkerHarness(
+            {setList: () => ""},
+            {hardwareConcurrency: 2},
+        );
+        const message = restrictedFindEvaluationMessage({id: 524});
+        const firstRun = harness.send(message);
+        await flushMicrotasks();
+        const firstHelper = harness.nestedWorkers[0];
+        await harness.send({type: "pause", id: message.id});
+        await firstRun;
+        assert.equal(firstHelper.terminated, true);
+
+        const resumed = harness.send({type: "resume", id: message.id});
+        await flushMicrotasks();
+        assert.equal(harness.nestedWorkers.length, 2);
+        const resumedHelper = harness.nestedWorkers[1];
+        assert.notStrictEqual(resumedHelper, firstHelper);
+        await readyAndRestoreFindHelpers({
+            ...harness,
+            nestedWorkers: [resumedHelper],
+        }, "");
+        assert.deepEqual(harness.timers.delays(), [10000],
+            "the resumed semantic search gets a fresh full window");
+        await prepareFindHelpers({
+            ...harness,
+            nestedWorkers: [resumedHelper],
+        }, {catalogSize: 1});
+        const sizeOne = answerNestedRequest(
+            resumedHelper,
+            "find-helper-size",
+            {
+                success: true,
+                timedOut: false,
+                matches: [{index: 0, expression: "A"}],
+                error: "",
+            },
+        );
+        assert.equal(sizeOne.budget, 10000);
+        await resumed;
+        const result = harness.messages.find(output =>
+            output.type === "result" && output.id === message.id);
+        assert.equal(result.result.output, "?=A\n");
+        assert.equal(resumedHelper.terminated, true);
+    });
+
+test("restricted Find falls back to the primary when nesting is unavailable",
+    async () => {
+        let serialCalls = 0;
+        const module = {
+            setList: () => "",
+            beginLimitedEval(source, id, limit, checkAtLimit) {
+                ++serialCalls;
+                assert.equal(source, "find among A ?x = x");
+                assert.equal(id, 525);
+                assert.equal(limit, 1000);
+                assert.equal(checkAtLimit, false);
+                return {
+                    success: true,
+                    definition: false,
+                    recoverWorker: false,
+                    output: "?=A\n",
+                    error: "",
+                    reductions: 0,
+                    limitReached: false,
+                };
+            },
+        };
+        const harness = await createWorkerHarness(module, {
+            nestedWorkersAvailable: false,
+        });
+        await harness.send(restrictedFindEvaluationMessage({
+            id: 525,
+            source: "find among A ?x = x",
+        }));
+        assert.equal(serialCalls, 1);
+        assert.equal(harness.nestedWorkers.length, 0);
+        assert.equal(harness.timers.scheduledDelays.includes(10000), false);
+        const mode = harness.messages.find(output =>
+            output.type === "find-pool-mode" && output.id === 525);
+        assert.deepEqual({pooled: mode.pooled, workers: mode.workers}, {
+            pooled: false,
+            workers: 0,
+        });
+        const result = harness.messages.find(output =>
+            output.type === "result" && output.id === 525);
+        assert.equal(result.result.output, "?=A\n");
+    });
+
+test("a Find helper failure stops the pool and reports one clean error",
+    async () => {
+        const harness = await createWorkerHarness(
+            {setList: () => ""},
+            {hardwareConcurrency: 2},
+        );
+        const message = restrictedFindEvaluationMessage({id: 526});
+        const evaluation = harness.send(message);
+        await flushMicrotasks();
+        await readyAndRestoreFindHelpers(harness, "");
+        await prepareFindHelpers(harness, {catalogSize: 1});
+        const pending = nextNestedRequest(
+            harness.nestedWorkers[0], "find-helper-size");
+        const errorEvent = harness.nestedWorkers[0].fail("shard exploded");
+        assert.equal(errorEvent.defaultPrevented, true);
+        await evaluation;
+
+        const results = harness.messages.filter(output =>
+            output.type === "result" && output.id === message.id);
+        assert.equal(results.length, 1);
+        assert.equal(results[0].result.success, false);
+        assert.equal(results[0].result.error, "shard exploded");
+        assert.equal(harness.nestedWorkers[0].terminated, true);
+        harness.nestedWorkers[0].send({
+            type: "find-helper-result",
+            jobId: pending.jobId,
+            result: {
+                success: true,
+                timedOut: false,
+                matches: [{index: 0, expression: "stale"}],
+                error: "",
+            },
+        });
+        await flushMicrotasks();
+        assert.equal(harness.messages.filter(output =>
+            output.type === "result" && output.id === message.id).length, 1);
+    });
+
+test("ordinary commands never create Find helpers", async () => {
+    const module = {
+        setList: () => "",
+        beginLimitedEval: () => ({
+            success: true,
+            definition: false,
+            recoverWorker: false,
+            output: "x\n",
+            error: "",
+            reductions: 1,
+            limitReached: false,
+        }),
+    };
+    const harness = await createWorkerHarness(module, {
+        hardwareConcurrency: 100,
+    });
+    await harness.send({
+        ...restrictedFindEvaluationMessage({id: 527, source: "Ix"}),
+        findAmong: false,
+    });
+    assert.equal(harness.nestedWorkers.length, 0);
+    assert.equal(harness.messages.some(output =>
+        output.type === "find-pool-mode"), false);
+    const result = harness.messages.find(output =>
+        output.type === "result" && output.id === 527);
+    assert.equal(result.result.output, "x\n");
 });
 
 test("built active and legacy browser APIs share the zero-redex notice",
@@ -289,6 +1245,32 @@ test("built browser APIs preserve commands, errors, reductions, and limits",
         assert.equal(legacyOrdinaryLimit.output, "");
         assert.equal(legacyOrdinaryLimit.reductions, 1);
         assert.equal(legacyOrdinaryLimit.limitReached, true);
+    });
+
+test("built Emscripten restricted Find keeps size-three command output",
+    async () => {
+        const module = await loadBuiltCombdslModule();
+        const definition = module.beginLimitedEval(
+            "set WasmFindLeaf = 100 I", 240, 1000, false);
+        assert.equal(definition.success, true, definition.error);
+        assert.equal(definition.definition, true);
+        assert.equal(definition.output, "");
+
+        const command =
+            "find among WasmFindLeaf ?x = " +
+            "WasmFindLeaf WasmFindLeaf WasmFindLeaf x";
+        const expected =
+            "?=WasmFindLeaf WasmFindLeaf WasmFindLeaf\n";
+        const active = module.beginLimitedEval(
+            command, 241, 1000, false);
+        assert.equal(active.success, true);
+        assert.equal(active.output, expected);
+        assert.equal(active.limitReached, false);
+
+        const legacy = module.parseEval(command, 242, false, 0);
+        assert.equal(legacy.success, true);
+        assert.equal(legacy.output, expected);
+        assert.equal(legacy.limitReached, false);
     });
 
 test("ordinary zero-redex evaluation reports no further reductions",

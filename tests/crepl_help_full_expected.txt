@@ -261,11 +261,16 @@ shorter boundary. S, K, I, Y, pre-defined birds, current user-defined names, and
 retained user revisions are accepted. Revisions of a redefined name use name@N;
 a removed singleton that was never redefined uses its bare name. Unlike the
 default catalog, an explicitly listed Y is allowed. A restricted search examines
-increasing composition sizes within one 10-second window. Only fully completed
-sizes are reported, and results from a size still in progress when time expires
-are discarded. Without "all", it stops at the first completed size with answers.
-With "all", it retains answers from every size completed within the same window.
-The output is otherwise unchanged, including the bounded no-match response.
+increasing composition sizes within one 10-second window. Native CREPL keeps
+sizes one and two serial, then reuses one grow-only worker pool for sizes three
+and above. Each worker owns a deterministic modulo shard; up to eight shards are
+activated, bounded by the machine's reported hardware threads and the candidate
+count, and indexed answers are merged in sequential-search order. Only fully
+completed sizes are reported, and results from a size still in progress when
+time expires are discarded. Without "all", it stops at the first completed size
+with answers. With "all", it retains answers from every size completed within
+the same window. The output is otherwise unchanged, including the bounded
+no-match response.
 
 Command Entry
 

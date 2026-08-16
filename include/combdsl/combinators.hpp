@@ -6627,6 +6627,35 @@ inline thread_local std::function<find_clock::time_point()>
 inline constexpr auto find_search_window =
     std::chrono::seconds{10};
 
+enum class catalog_find_candidate_observation_stage {
+    before_match,
+    after_match,
+};
+
+struct catalog_find_dispatch_observation {
+    std::size_t leaf_count;
+    bool parallel;
+    std::size_t worker_count;
+};
+
+struct catalog_find_candidate_observation {
+    std::size_t leaf_count;
+    std::size_t candidate_index;
+    catalog_find_candidate_observation_stage stage;
+};
+
+struct catalog_find_runtime_overrides {
+    std::optional<unsigned> reported_hardware_concurrency;
+    std::function<bool()> timeout_requested;
+    std::function<void(catalog_find_dispatch_observation)>
+        dispatch_observer;
+    std::function<void(catalog_find_candidate_observation)>
+        candidate_observer;
+};
+
+inline thread_local catalog_find_runtime_overrides
+    catalog_find_runtime_overrides_override;
+
 using compare_clock = std::chrono::steady_clock;
 
 inline thread_local std::function<compare_clock::time_point()>
@@ -6676,6 +6705,13 @@ enum class parser_definition_mode {
     inspect_definitions
 };
 
+struct parsed_catalog_find_command {
+    bool all_sizes;
+    std::vector<quoted_atomic> symbols;
+    quoted_expression target;
+    std::vector<quoted_expression> catalog;
+};
+
 struct parsed_input {
     quoted_expression expression;
     bool is_definition;
@@ -6684,6 +6720,8 @@ struct parsed_input {
     bool is_find;
     bool is_find_no_match;
     std::string replaced_definition;
+    std::optional<parsed_catalog_find_command>
+        catalog_find_command;
 };
 
 class quoted_expression_parser {
@@ -6794,7 +6832,8 @@ public:
             is_show_all_,
             is_find_command,
             is_find_no_match_,
-            std::move(replaced_definition_)};
+            std::move(replaced_definition_),
+            std::move(catalog_find_command_)};
     }
 
 private:
@@ -7980,6 +8019,15 @@ private:
         auto target = parse_expression();
         if (definition_mode_ ==
             parser_definition_mode::inspect_definitions) {
+            if (search_catalog) {
+                catalog_find_command_.emplace(
+                    parsed_catalog_find_command{
+                        all_sizes,
+                        std::move(symbols),
+                        target,
+                        std::move(catalog),
+                    });
+            }
             return target;
         }
 
@@ -9825,6 +9873,8 @@ private:
     bool is_show_all_ = false;
     bool is_find_no_match_ = false;
     std::string replaced_definition_;
+    std::optional<parsed_catalog_find_command>
+        catalog_find_command_;
 };
 
 [[nodiscard]] inline parsed_input parse_input(
@@ -11715,6 +11765,108 @@ for_each_catalog_candidate_of_size(
     return catalog_find_enumeration_status::completed;
 }
 
+struct catalog_find_shard_match {
+    std::size_t index;
+    quoted_expression expression;
+};
+
+struct catalog_find_shard_result {
+    std::vector<catalog_find_shard_match> matches;
+    bool timed_out = false;
+};
+
+// Enumerates the same post-pruning candidate stream in every shard so its
+// indexes are global and deterministic. Candidate construction stays lazy;
+// only candidates owned by this shard are normalized.
+[[nodiscard]] inline catalog_find_shard_result
+find_combinator_matches_among_normalized_size_shard_until(
+    std::span<quoted_atomic const> symbol_list,
+    quoted_expression const& normalized_expression,
+    std::span<quoted_expression const> catalog,
+    std::size_t leaf_count,
+    std::size_t shard_index,
+    std::size_t shard_count,
+    find_clock::time_point deadline) {
+    if (catalog.empty()) {
+        throw std::invalid_argument(
+            "combdsl::find among catalog cannot be empty");
+    }
+    if (leaf_count == 0) {
+        throw std::invalid_argument(
+            "combdsl::find among size must be greater than zero");
+    }
+    if (shard_count == 0 || shard_index >= shard_count) {
+        throw std::invalid_argument(
+            "combdsl::find among shard is out of range");
+    }
+
+    catalog_find_shard_result result;
+    auto const runtime_overrides =
+        catalog_find_runtime_overrides_override;
+    auto const timeout_requested = [&] {
+        return runtime_overrides.timeout_requested &&
+               runtime_overrides.timeout_requested();
+    };
+    if (timeout_requested() || find_clock_now() >= deadline) {
+        result.timed_out = true;
+        return result;
+    }
+
+    std::size_t next_candidate_index = 0;
+    auto const enumeration_status =
+        for_each_catalog_candidate_of_size(
+            leaf_count,
+            catalog,
+            deadline,
+            [&](quoted_expression candidate) {
+                if (timeout_requested()) {
+                    return false;
+                }
+                auto const candidate_index =
+                    next_candidate_index++;
+                if (candidate_index % shard_count != shard_index) {
+                    return true;
+                }
+                if (runtime_overrides.candidate_observer) {
+                    runtime_overrides.candidate_observer({
+                        leaf_count,
+                        candidate_index,
+                        catalog_find_candidate_observation_stage::
+                            before_match,
+                    });
+                }
+                auto const checked = check_normalized_match_until(
+                    candidate,
+                    symbol_list,
+                    normalized_expression,
+                    deadline);
+                if (runtime_overrides.candidate_observer) {
+                    runtime_overrides.candidate_observer({
+                        leaf_count,
+                        candidate_index,
+                        catalog_find_candidate_observation_stage::
+                            after_match,
+                    });
+                }
+                if (checked.timed_out || timeout_requested()) {
+                    return false;
+                }
+                if (checked.matches) {
+                    result.matches.push_back({
+                        candidate_index,
+                        std::move(candidate),
+                    });
+                }
+                return true;
+            });
+    if (enumeration_status ==
+            catalog_find_enumeration_status::timed_out ||
+        timeout_requested() || find_clock_now() >= deadline) {
+        result.timed_out = true;
+    }
+    return result;
+}
+
 #if !defined(__EMSCRIPTEN__)
 struct indexed_find_match {
     std::size_t index;
@@ -11723,6 +11875,13 @@ struct indexed_find_match {
 
 inline constexpr std::size_t native_find_worker_limit =
     std::numeric_limits<std::uint64_t>::digits;
+
+// Every restricted-Find shard walks the full candidate generator to preserve
+// global post-pruning indexes. Beyond eight workers that repeated enumeration
+// costs more than the additional match parallelism on typical machines. Keep
+// this in parity with Studio's helper-pool cap without restricting the general
+// fixed-catalog Find dispatcher.
+inline constexpr std::size_t native_catalog_find_worker_limit = 8;
 
 [[nodiscard]] inline constexpr std::size_t native_find_worker_count(
     std::size_t maximum_work_count,
@@ -11742,6 +11901,254 @@ inline constexpr std::size_t native_find_worker_limit =
             requested_worker_count,
             native_find_worker_limit));
 }
+
+[[nodiscard]] inline constexpr std::size_t
+native_catalog_find_maximum_work_count(
+    std::size_t leaf_count,
+    std::size_t catalog_size) noexcept {
+    if (leaf_count == 0 || catalog_size == 0) {
+        return 0;
+    }
+
+    auto saturating_multiply = [](std::size_t left,
+                                  std::size_t right) {
+        if (left >= native_catalog_find_worker_limit ||
+            right >= native_catalog_find_worker_limit ||
+            left > native_catalog_find_worker_limit / right) {
+            return native_catalog_find_worker_limit;
+        }
+        return left * right;
+    };
+
+    std::size_t labeling_count = 1;
+    if (catalog_size > 1) {
+        for (std::size_t leaf = 0;
+             leaf < leaf_count &&
+             labeling_count < native_catalog_find_worker_limit;
+             ++leaf) {
+            labeling_count = saturating_multiply(
+                labeling_count, catalog_size);
+        }
+    }
+
+    // The number of full binary-tree shapes with leaf_count leaves is
+    // Catalan(leaf_count - 1). The value reaches this function's cap at
+    // Catalan(4), so the recurrence cannot overflow before the loop stops.
+    std::size_t shape_count = 1;
+    for (std::size_t index = 1;
+         index < leaf_count &&
+         shape_count < native_catalog_find_worker_limit;
+         ++index) {
+        shape_count =
+            shape_count * (4 * index - 2) / (index + 1);
+        if (shape_count >= native_catalog_find_worker_limit) {
+            shape_count = native_catalog_find_worker_limit;
+        }
+    }
+    return saturating_multiply(shape_count, labeling_count);
+}
+
+// A restricted-Find search keeps this pool for its entire lifetime. Each
+// worker owns one deterministic modulo shard, and the pool grows only when a
+// later size has enough candidate work to use another worker. This avoids the
+// per-candidate mailbox handoff and the per-size thread startup cost of the
+// general Find dispatcher below.
+class native_catalog_find_static_shard_pool {
+public:
+    native_catalog_find_static_shard_pool(
+        std::span<quoted_atomic const> symbol_list,
+        quoted_expression const& normalized_expression,
+        std::span<quoted_expression const> catalog,
+        catalog_find_runtime_overrides runtime_overrides,
+        unsigned reported_hardware_concurrency)
+        : symbol_list_(symbol_list),
+          normalized_expression_(normalized_expression),
+          catalog_(catalog),
+          runtime_overrides_(std::move(runtime_overrides)),
+          maximum_worker_count_(native_find_worker_count(
+              native_catalog_find_worker_limit,
+              reported_hardware_concurrency)) {
+        slots_.reserve(maximum_worker_count_);
+        workers_.reserve(maximum_worker_count_);
+    }
+
+    native_catalog_find_static_shard_pool(
+        native_catalog_find_static_shard_pool const&) = delete;
+    native_catalog_find_static_shard_pool& operator=(
+        native_catalog_find_static_shard_pool const&) = delete;
+
+    ~native_catalog_find_static_shard_pool() {
+        shut_down();
+    }
+
+    [[nodiscard]] catalog_find_shard_result run_size(
+        std::size_t leaf_count,
+        std::size_t active_worker_count,
+        find_clock::time_point deadline) {
+        if (active_worker_count == 0 ||
+            active_worker_count > maximum_worker_count_) {
+            throw std::invalid_argument(
+                "combdsl::native find worker count is out of range");
+        }
+
+        ensure_worker_count(active_worker_count);
+        cancel_requested_.store(false);
+        for (std::size_t worker_index = 0;
+             worker_index < active_worker_count;
+             ++worker_index) {
+            auto& slot = *slots_[worker_index];
+            slot.leaf_count = leaf_count;
+            slot.shard_count = active_worker_count;
+            slot.deadline = deadline;
+            slot.result = {};
+            slot.failure = {};
+            slot.start.release();
+        }
+
+        for (std::size_t completed = 0;
+             completed < active_worker_count;
+             ++completed) {
+            completed_.acquire();
+        }
+
+        // Select failures by stable shard index rather than racing to publish
+        // whichever exception happened to arrive first.
+        for (std::size_t worker_index = 0;
+             worker_index < active_worker_count;
+             ++worker_index) {
+            if (slots_[worker_index]->failure) {
+                std::rethrow_exception(
+                    slots_[worker_index]->failure);
+            }
+        }
+
+        catalog_find_shard_result combined;
+        for (std::size_t worker_index = 0;
+             worker_index < active_worker_count;
+             ++worker_index) {
+            auto& shard = slots_[worker_index]->result;
+            combined.timed_out =
+                combined.timed_out || shard.timed_out;
+            combined.matches.insert(
+                combined.matches.end(),
+                std::make_move_iterator(shard.matches.begin()),
+                std::make_move_iterator(shard.matches.end()));
+        }
+        std::ranges::sort(
+            combined.matches,
+            {},
+            &catalog_find_shard_match::index);
+        return combined;
+    }
+
+private:
+    struct worker_slot {
+        std::size_t leaf_count = 0;
+        std::size_t shard_count = 0;
+        find_clock::time_point deadline;
+        catalog_find_shard_result result;
+        std::exception_ptr failure;
+        std::counting_semaphore<1> start{0};
+    };
+
+    void ensure_worker_count(std::size_t required_count) {
+        while (workers_.size() < required_count) {
+            auto const worker_index = workers_.size();
+            slots_.push_back(std::make_unique<worker_slot>());
+            try {
+                workers_.emplace_back(
+                    [this, worker_index] {
+                        worker_loop(worker_index);
+                    });
+            } catch (...) {
+                slots_.pop_back();
+                shut_down();
+                throw;
+            }
+        }
+    }
+
+    void worker_loop(std::size_t worker_index) noexcept {
+        auto& slot = *slots_[worker_index];
+        for (;;) {
+            slot.start.acquire();
+            if (stopping_.load()) {
+                return;
+            }
+
+            try {
+                auto worker_overrides = runtime_overrides_;
+                auto timeout_requested =
+                    std::move(worker_overrides.timeout_requested);
+                worker_overrides.timeout_requested =
+                    [this,
+                     timeout_requested =
+                         std::move(timeout_requested)] {
+                        return cancel_requested_.load() ||
+                               (timeout_requested &&
+                                timeout_requested());
+                    };
+
+                // Runtime overrides are thread-local because deterministic
+                // fake-clock searches stay serial. Explicitly install the
+                // caller's real-time hooks for this persistent worker task.
+                auto previous_overrides = std::move(
+                    catalog_find_runtime_overrides_override);
+                try {
+                    catalog_find_runtime_overrides_override =
+                        std::move(worker_overrides);
+                    slot.result =
+                        find_combinator_matches_among_normalized_size_shard_until(
+                            symbol_list_,
+                            normalized_expression_,
+                            catalog_,
+                            slot.leaf_count,
+                            worker_index,
+                            slot.shard_count,
+                            slot.deadline);
+                    catalog_find_runtime_overrides_override =
+                        std::move(previous_overrides);
+                } catch (...) {
+                    catalog_find_runtime_overrides_override =
+                        std::move(previous_overrides);
+                    throw;
+                }
+            } catch (...) {
+                slot.failure = std::current_exception();
+                cancel_requested_.store(true);
+            }
+            completed_.release();
+        }
+    }
+
+    void shut_down() noexcept {
+        if (stopping_.exchange(true)) {
+            return;
+        }
+        cancel_requested_.store(true);
+        for (std::size_t worker_index = 0;
+             worker_index < workers_.size();
+             ++worker_index) {
+            slots_[worker_index]->start.release();
+        }
+        for (auto& worker : workers_) {
+            if (worker.joinable()) {
+                worker.join();
+            }
+        }
+    }
+
+    std::span<quoted_atomic const> symbol_list_;
+    quoted_expression const& normalized_expression_;
+    std::span<quoted_expression const> catalog_;
+    catalog_find_runtime_overrides runtime_overrides_;
+    std::size_t maximum_worker_count_;
+    std::vector<std::unique_ptr<worker_slot>> slots_;
+    std::vector<std::jthread> workers_;
+    std::counting_semaphore<> completed_{0};
+    std::atomic<bool> cancel_requested_ = false;
+    std::atomic<bool> stopping_ = false;
+};
 
 template <class Work, class Generator, class Processor>
 inline void dispatch_native_find_work(
@@ -12302,38 +12709,141 @@ find_combinator_matches_among(
         return result;
     }
 
+    auto const runtime_overrides =
+        detail::catalog_find_runtime_overrides_override;
+    auto const timeout_requested = [&] {
+        return runtime_overrides.timeout_requested &&
+               runtime_overrides.timeout_requested();
+    };
+
+#if !defined(__EMSCRIPTEN__)
+    auto const reported_hardware_concurrency =
+        runtime_overrides.reported_hardware_concurrency
+            .value_or(std::thread::hardware_concurrency());
+    std::unique_ptr<
+        detail::native_catalog_find_static_shard_pool>
+        native_worker_pool;
+#endif
+
     for (std::size_t leaf_count = 1;; ++leaf_count) {
-        if (detail::find_clock_now() >= deadline) {
+        if (timeout_requested() ||
+            detail::find_clock_now() >= deadline) {
             result.timed_out = true;
             return result;
         }
         std::vector<quoted_expression> matches;
-        auto const enumeration_status =
-            detail::for_each_catalog_candidate_of_size(
-                leaf_count,
-                catalog,
-                deadline,
-                [&](quoted_expression candidate) {
-                    auto const checked =
-                        detail::check_normalized_match_until(
-                            candidate,
-                            symbol_list,
-                            *normalized_expression.expression,
-                            deadline);
-                    if (checked.timed_out) {
-                        return false;
-                    }
-                    if (checked.matches) {
-                        matches.push_back(std::move(candidate));
-                    }
-                    return true;
+        auto enumeration_status =
+            detail::catalog_find_enumeration_status::completed;
+        bool used_native_workers = false;
+
+#if !defined(__EMSCRIPTEN__)
+        // The clock override is deliberately thread-local. Keep its
+        // deterministic searches serial instead of letting native workers
+        // silently observe a different clock.
+        used_native_workers =
+            leaf_count >= 3 && !detail::find_clock_now_override;
+        if (used_native_workers) {
+            auto const maximum_work_count =
+                detail::native_catalog_find_maximum_work_count(
+                    leaf_count, catalog.size());
+            auto const worker_count =
+                detail::native_find_worker_count(
+                    maximum_work_count,
+                    reported_hardware_concurrency);
+            if (runtime_overrides.dispatch_observer) {
+                runtime_overrides.dispatch_observer({
+                    leaf_count,
+                    true,
+                    worker_count,
                 });
+            }
+
+            if (!native_worker_pool) {
+                native_worker_pool = std::make_unique<
+                    detail::native_catalog_find_static_shard_pool>(
+                        symbol_list,
+                        *normalized_expression.expression,
+                        catalog,
+                        runtime_overrides,
+                        reported_hardware_concurrency);
+            }
+            auto shard_result = native_worker_pool->run_size(
+                leaf_count, worker_count, deadline);
+
+            if (shard_result.timed_out ||
+                timeout_requested() ||
+                detail::find_clock_now() >= deadline) {
+                result.timed_out = true;
+                return result;
+            }
+
+            matches.reserve(shard_result.matches.size());
+            for (auto& match : shard_result.matches) {
+                matches.push_back(std::move(match.expression));
+            }
+        }
+#endif
+
+        if (!used_native_workers) {
+            if (runtime_overrides.dispatch_observer) {
+                runtime_overrides.dispatch_observer({
+                    leaf_count,
+                    false,
+                    0,
+                });
+            }
+            std::size_t next_candidate_index = 0;
+            enumeration_status =
+                detail::for_each_catalog_candidate_of_size(
+                    leaf_count,
+                    catalog,
+                    deadline,
+                    [&](quoted_expression candidate) {
+                        if (timeout_requested()) {
+                            return false;
+                        }
+                        auto const candidate_index =
+                            next_candidate_index++;
+                        if (runtime_overrides.candidate_observer) {
+                            runtime_overrides.candidate_observer({
+                                leaf_count,
+                                candidate_index,
+                                detail::
+                                    catalog_find_candidate_observation_stage::
+                                        before_match,
+                            });
+                        }
+                        auto const checked =
+                            detail::check_normalized_match_until(
+                                candidate,
+                                symbol_list,
+                                *normalized_expression.expression,
+                                deadline);
+                        if (runtime_overrides.candidate_observer) {
+                            runtime_overrides.candidate_observer({
+                                leaf_count,
+                                candidate_index,
+                                detail::
+                                    catalog_find_candidate_observation_stage::
+                                        after_match,
+                            });
+                        }
+                        if (checked.timed_out || timeout_requested()) {
+                            return false;
+                        }
+                        if (checked.matches) {
+                            matches.push_back(std::move(candidate));
+                        }
+                        return true;
+                    });
+        }
         if (enumeration_status ==
             detail::catalog_find_enumeration_status::timed_out) {
             result.timed_out = true;
             return result;
         }
-        if (detail::find_clock_now() >= deadline) {
+        if (timeout_requested() ||
+            detail::find_clock_now() >= deadline) {
             result.timed_out = true;
             return result;
         }

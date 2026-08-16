@@ -25,12 +25,16 @@
 #include <emscripten/emscripten.h>
 #include <emscripten/val.h>
 
+#include <algorithm>
+#include <chrono>
+#include <cmath>
 #include <cstddef>
 #include <exception>
 #include <optional>
 #include <sstream>
 #include <string>
 #include <utility>
+#include <vector>
 
 namespace {
 
@@ -78,6 +82,36 @@ struct definition_inspection_result {
     bool step_limit_command = false;
     bool step_limit_enabled = false;
     std::size_t step_limit = 0;
+    bool find_among = false;
+    bool find_all_sizes = false;
+    std::size_t find_catalog_size = 0;
+};
+
+struct find_among_shard_match {
+    std::size_t index;
+    std::string expression;
+};
+
+struct find_among_shard_result {
+    bool success;
+    bool timed_out;
+    std::vector<find_among_shard_match> matches;
+    std::string error;
+};
+
+struct find_among_preparation_result {
+    bool success;
+    bool timed_out;
+    bool searchable;
+    bool all_sizes;
+    std::size_t catalog_size;
+    std::string error;
+};
+
+struct prepared_find_among_state {
+    std::vector<combdsl::quoted_atomic> symbols;
+    combdsl::quoted_expression normalized_target;
+    std::vector<combdsl::quoted_expression> catalog;
 };
 
 std::optional<combdsl::quoted_expression> stepped_expression;
@@ -107,6 +141,7 @@ struct limited_evaluation_state {
 };
 
 std::optional<limited_evaluation_state> limited_evaluation;
+std::optional<prepared_find_among_state> prepared_find_among;
 
 [[nodiscard]] load_result load_set_list_input(
     std::string const& source,
@@ -143,7 +178,7 @@ std::optional<limited_evaluation_state> limited_evaluation;
             escaped_source,
             combdsl::detail::parser_definition_mode::
                 inspect_definitions);
-        return {
+        definition_inspection_result result{
             true,
             parsed.is_definition,
             parsed.is_display_only,
@@ -151,6 +186,14 @@ std::optional<limited_evaluation_state> limited_evaluation;
             parsed.is_find,
             std::move(parsed.replaced_definition),
             {}};
+        if (parsed.catalog_find_command) {
+            result.find_among = true;
+            result.find_all_sizes =
+                parsed.catalog_find_command->all_sizes;
+            result.find_catalog_size =
+                parsed.catalog_find_command->catalog.size();
+        }
+        return result;
     } catch (std::exception const& error) {
         return {
             false, false, false, false, false, {}, error.what()};
@@ -164,6 +207,157 @@ std::optional<limited_evaluation_state> limited_evaluation;
             {},
             "unknown definition inspection error"};
     }
+}
+
+[[nodiscard]] combdsl::detail::find_clock::time_point
+find_deadline_from_budget(double budget_milliseconds) {
+    if (!std::isfinite(budget_milliseconds) ||
+        budget_milliseconds < 0.0) {
+        throw std::invalid_argument(
+            "find among time budget must be finite and nonnegative");
+    }
+    auto const bounded_budget = std::min(
+        budget_milliseconds,
+        std::chrono::duration<double, std::milli>(
+            combdsl::detail::find_search_window)
+            .count());
+    return combdsl::detail::find_clock_now() +
+        std::chrono::duration_cast<
+            combdsl::detail::find_clock::duration>(
+            std::chrono::duration<double, std::milli>(
+                bounded_budget));
+}
+
+[[nodiscard]] find_among_preparation_result
+prepare_find_among_input(
+    std::string const& source,
+    double budget_milliseconds) {
+    prepared_find_among.reset();
+    try {
+        auto const deadline =
+            find_deadline_from_budget(budget_milliseconds);
+        auto escaped_source = combdsl::input_escape(source);
+        auto parsed = combdsl::detail::parse_input(
+            escaped_source,
+            combdsl::detail::parser_definition_mode::
+                inspect_definitions);
+        if (!parsed.catalog_find_command) {
+            throw std::invalid_argument(
+                "expected a find among command");
+        }
+
+        auto command =
+            std::move(*parsed.catalog_find_command);
+        auto const all_sizes = command.all_sizes;
+        auto const catalog_size = command.catalog.size();
+        auto normalized = combdsl::detail::
+            normalize_for_combinator_match_until(
+                std::move(command.target), deadline);
+        if (normalized.timed_out) {
+            return {
+                true,
+                true,
+                false,
+                all_sizes,
+                catalog_size,
+                {},
+            };
+        }
+        if (!normalized.expression) {
+            return {
+                true,
+                false,
+                false,
+                all_sizes,
+                catalog_size,
+                {},
+            };
+        }
+
+        prepared_find_among.emplace(prepared_find_among_state{
+            std::move(command.symbols),
+            std::move(*normalized.expression),
+            std::move(command.catalog),
+        });
+        return {
+            true,
+            false,
+            true,
+            all_sizes,
+            catalog_size,
+            {},
+        };
+    } catch (std::exception const& error) {
+        return {false, false, false, false, 0, error.what()};
+    } catch (...) {
+        return {
+            false,
+            false,
+            false,
+            false,
+            0,
+            "unknown find among preparation error",
+        };
+    }
+}
+
+[[nodiscard]] find_among_shard_result
+find_among_prepared_size_shard_input(
+    std::size_t leaf_count,
+    std::size_t shard_index,
+    std::size_t shard_count,
+    double budget_milliseconds) {
+    try {
+        auto const deadline =
+            find_deadline_from_budget(budget_milliseconds);
+        if (!prepared_find_among) {
+            throw std::invalid_argument(
+                "no find among command is prepared");
+        }
+        auto& command = *prepared_find_among;
+        auto shard = combdsl::detail::
+            find_combinator_matches_among_normalized_size_shard_until(
+                command.symbols,
+                command.normalized_target,
+                command.catalog,
+                leaf_count,
+                shard_index,
+                shard_count,
+                deadline);
+
+        std::vector<find_among_shard_match> matches;
+        if (shard.timed_out) {
+            return {true, true, std::move(matches), {}};
+        }
+        matches.reserve(shard.matches.size());
+        for (auto& match : shard.matches) {
+            std::ostringstream rendered;
+            match.expression.print_to(rendered);
+            matches.push_back({
+                match.index,
+                std::move(rendered).str(),
+            });
+        }
+        return {
+            true,
+            shard.timed_out,
+            std::move(matches),
+            {},
+        };
+    } catch (std::exception const& error) {
+        return {false, false, {}, error.what()};
+    } catch (...) {
+        return {
+            false,
+            false,
+            {},
+            "unknown find among shard error",
+        };
+    }
+}
+
+void reset_find_among() noexcept {
+    prepared_find_among.reset();
 }
 
 [[nodiscard]] combdsl::evaluation_progress_callback
@@ -847,10 +1041,48 @@ EMSCRIPTEN_BINDINGS(combdsl_browser) {
             &definition_inspection_result::step_limit_enabled)
         .field(
             "stepLimit",
-            &definition_inspection_result::step_limit);
+            &definition_inspection_result::step_limit)
+        .field(
+            "findAmong",
+            &definition_inspection_result::find_among)
+        .field(
+            "findAllSizes",
+            &definition_inspection_result::find_all_sizes)
+        .field(
+            "findCatalogSize",
+            &definition_inspection_result::find_catalog_size);
+
+    emscripten::value_object<find_among_shard_match>(
+        "FindAmongShardMatch")
+        .field("index", &find_among_shard_match::index)
+        .field("expression", &find_among_shard_match::expression);
+    emscripten::register_vector<find_among_shard_match>(
+        "FindAmongShardMatches");
+    emscripten::value_object<find_among_shard_result>(
+        "FindAmongShardResult")
+        .field("success", &find_among_shard_result::success)
+        .field("timedOut", &find_among_shard_result::timed_out)
+        .field("matches", &find_among_shard_result::matches)
+        .field("error", &find_among_shard_result::error);
+    emscripten::value_object<find_among_preparation_result>(
+        "FindAmongPreparationResult")
+        .field("success", &find_among_preparation_result::success)
+        .field("timedOut", &find_among_preparation_result::timed_out)
+        .field("searchable", &find_among_preparation_result::searchable)
+        .field("allSizes", &find_among_preparation_result::all_sizes)
+        .field(
+            "catalogSize",
+            &find_among_preparation_result::catalog_size)
+        .field("error", &find_among_preparation_result::error);
 
     emscripten::function(
         "inspectDefinition", &inspect_definition_input);
+    emscripten::function(
+        "prepareFindAmong", &prepare_find_among_input);
+    emscripten::function(
+        "findAmongPreparedSizeShard",
+        &find_among_prepared_size_shard_input);
+    emscripten::function("resetFindAmong", &reset_find_among);
     emscripten::function("parseEval", &parse_eval_input);
     emscripten::function(
         "beginLimitedEval", &begin_limited_eval_input);
