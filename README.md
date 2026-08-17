@@ -990,7 +990,7 @@ expression produces no output, while malformed or empty lines throw
 The `crepl` executable applies `input_escape` to each line before passing it to
 `parse_eval`, so ordinary quoted words and backslashes can be entered directly.
 When standard output is a terminal, it first prints
-`Combinator Read-Eval-Print Loop, version 2.12.1`. Long evaluations display
+`Combinator Read-Eval-Print Loop, version 2.12.3`. Long evaluations display
 the accumulated step count every 1,000 reductions by overwriting one status
 line; the line is cleared before evaluation output is printed. Its interactive
 prompt is `>`. Interactive input uses GNU Readline, so previous nonempty
@@ -998,7 +998,16 @@ commands other than `exit` and `quit` can be recalled with Up Arrow or
 Ctrl-P, including commands from earlier interactive sessions. A command that
 exactly matches the immediately preceding history entry is not added again,
 including when that preceding entry was loaded from an earlier session;
-whitespace differences remain distinct. Press Tab to
+whitespace differences remain distinct. With Readline's standard Emacs
+forward-delete binding, Ctrl-D removes a freshly recalled, untouched entry
+from the current history and its persistent file without ringing the terminal
+bell, then shows the next newer entry or restores the saved draft. An entry
+preloaded by Ctrl-O also counts as
+freshly recalled. Editing the entry or moving its cursor or mark disables
+removal for that recall, so Ctrl-D performs its configured forward-delete
+action instead. CREPL does not replace the Ctrl-D binding: custom inputrc and
+vi-mode bindings remain in effect, and Backspace and Ctrl-H retain their
+normal editing behavior. Press Tab to
 complete command words and supported
 options, including `captured` and `live` after `set` or `define`,
 `references captured`, `references live`, `compare ?`, `inspect`, and

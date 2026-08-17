@@ -24,6 +24,7 @@
 
 #include "web/load_set_list.hpp"
 
+#include <algorithm>
 #include <array>
 #include <cerrno>
 #include <csignal>
@@ -36,12 +37,15 @@
 #include <functional>
 #include <iomanip>
 #include <iostream>
+#include <limits>
 #include <optional>
 #include <sstream>
 #include <streambuf>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 #include <utility>
+#include <vector>
 
 #include <readline/history.h>
 #include <readline/readline.h>
@@ -52,15 +56,17 @@
 #include <process.h>
 #include <windows.h>
 #elif defined(__unix__) || defined(__APPLE__)
+#include <fcntl.h>
 #include <poll.h>
 #include <signal.h>
+#include <sys/file.h>
 #include <termios.h>
 #include <unistd.h>
 #endif
 
 namespace {
 
-constexpr std::string_view crepl_version = "2.12.1";
+constexpr std::string_view crepl_version = "2.12.3";
 constexpr std::string_view no_further_reductions_message =
     "No further reductions";
 
@@ -238,6 +244,7 @@ constexpr int persistent_history_limit = 500;
 constexpr std::string_view settings_header = "crepl-settings 1";
 
 struct crepl_persistence_paths {
+    std::filesystem::path directory;
     std::string history;
     std::filesystem::path settings;
 };
@@ -280,6 +287,7 @@ make_crepl_persistence_paths() noexcept {
         }
 
         return crepl_persistence_paths{
+            directory,
             (directory / "history").string(),
             directory / "settings"};
     } catch (...) {
@@ -287,33 +295,1005 @@ make_crepl_persistence_paths() noexcept {
     }
 }
 
+class scoped_history_operation_lock {
+public:
+    explicit scoped_history_operation_lock(
+        crepl_persistence_paths const& paths) noexcept {
+#if defined(__unix__) || defined(__APPLE__)
+        do {
+            descriptor_ = ::open(paths.directory.c_str(), O_RDONLY);
+        } while (descriptor_ < 0 && errno == EINTR);
+        int result = -1;
+        if (descriptor_ >= 0) {
+            do {
+                result = ::flock(descriptor_, LOCK_EX);
+            } while (result != 0 && errno == EINTR);
+        }
+        if (descriptor_ >= 0 && result != 0) {
+            ::close(descriptor_);
+            descriptor_ = -1;
+        }
+#else
+        static_cast<void>(paths);
+#endif
+    }
+
+    scoped_history_operation_lock(
+        scoped_history_operation_lock const&) = delete;
+    scoped_history_operation_lock& operator=(
+        scoped_history_operation_lock const&) = delete;
+
+    [[nodiscard]] bool acquired() const noexcept {
+#if defined(__unix__) || defined(__APPLE__)
+        return descriptor_ >= 0;
+#else
+        return true;
+#endif
+    }
+
+    ~scoped_history_operation_lock() {
+#if defined(__unix__) || defined(__APPLE__)
+        if (descriptor_ >= 0) {
+            ::flock(descriptor_, LOCK_UN);
+            ::close(descriptor_);
+        }
+#endif
+    }
+
+private:
+#if defined(__unix__) || defined(__APPLE__)
+    int descriptor_ = -1;
+#endif
+};
+
+[[nodiscard]] std::optional<std::filesystem::path>
+resolve_history_storage_path(
+    crepl_persistence_paths const& paths) noexcept {
+    try {
+        auto resolved = std::filesystem::path(paths.history);
+        for (int links = 0; links < 40; ++links) {
+            std::error_code error;
+            auto const status =
+                std::filesystem::symlink_status(resolved, error);
+            if (error == std::errc::no_such_file_or_directory) {
+                return resolved;
+            }
+            if (error) {
+                return std::nullopt;
+            }
+            if (!std::filesystem::is_symlink(status)) {
+                return resolved;
+            }
+            auto target = std::filesystem::read_symlink(resolved, error);
+            if (error) {
+                return std::nullopt;
+            }
+            if (target.is_relative()) {
+                target = resolved.parent_path() / target;
+            }
+            resolved = target.lexically_normal();
+        }
+    } catch (...) {
+    }
+    return std::nullopt;
+}
+
+[[nodiscard]] std::optional<std::vector<std::string>>
+read_persistent_history_lines(
+    crepl_persistence_paths const& paths) {
+    std::error_code error;
+    auto const exists = std::filesystem::exists(paths.history, error);
+    if (error) {
+        return std::nullopt;
+    }
+    if (!exists) {
+        return std::vector<std::string>{};
+    }
+
+    std::ifstream input(paths.history, std::ios::in | std::ios::binary);
+    if (!input) {
+        return std::nullopt;
+    }
+    std::vector<std::string> lines;
+    std::string line;
+    while (std::getline(input, line)) {
+        lines.push_back(std::move(line));
+    }
+    if (!input.eof()) {
+        return std::nullopt;
+    }
+    return lines;
+}
+
+[[nodiscard]] bool write_persistent_history_lines(
+    crepl_persistence_paths const& paths,
+    std::vector<std::string> const& lines) noexcept {
+    try {
+        auto const destination = resolve_history_storage_path(paths);
+        if (!destination) {
+            return false;
+        }
+        auto temporary = *destination;
+#if defined(_WIN32)
+        auto const process_id = _getpid();
+#else
+        auto const process_id = getpid();
+#endif
+        temporary += "." + std::to_string(process_id) + ".tmp";
+        {
+            std::ofstream output(
+                temporary,
+                std::ios::out | std::ios::binary | std::ios::trunc);
+            for (auto const& line : lines) {
+                output << line << '\n';
+            }
+            output.close();
+            if (!output) {
+                std::error_code ignored;
+                std::filesystem::remove(temporary, ignored);
+                return false;
+            }
+        }
+
+        std::error_code ignored;
+        std::filesystem::permissions(
+            temporary,
+            std::filesystem::perms::owner_read |
+                std::filesystem::perms::owner_write,
+            std::filesystem::perm_options::replace,
+            ignored);
+
+#if defined(_WIN32)
+        auto const installed = MoveFileExW(
+            temporary.c_str(),
+            destination->c_str(),
+            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH);
+        if (installed == 0) {
+            std::filesystem::remove(temporary, ignored);
+            return false;
+        }
+#else
+        std::filesystem::rename(
+            temporary, *destination, ignored);
+        if (ignored) {
+            std::filesystem::remove(temporary, ignored);
+            return false;
+        }
+#endif
+        return true;
+    } catch (...) {
+        return false;
+    }
+}
+
+template<typename Mutation>
+void mutate_persistent_history(
+    crepl_persistence_paths const& paths,
+    Mutation&& mutation) noexcept {
+    try {
+        scoped_history_operation_lock const lock(paths);
+        if (!lock.acquired()) {
+            return;
+        }
+        auto lines = read_persistent_history_lines(paths);
+        if (!lines || !std::invoke(mutation, *lines)) {
+            return;
+        }
+        static_cast<void>(write_persistent_history_lines(paths, *lines));
+    } catch (...) {
+    }
+}
+
+struct serialized_history_segment {
+    std::size_t entry = 0;
+    std::string_view line;
+};
+
+[[nodiscard]] std::vector<serialized_history_segment>
+serialize_session_history(
+    std::vector<std::string> const& entries) {
+    std::vector<serialized_history_segment> segments;
+    for (std::size_t entry = 0; entry < entries.size(); ++entry) {
+        auto const source = std::string_view(entries[entry]);
+        std::size_t start = 0;
+        while (true) {
+            auto const newline = source.find('\n', start);
+            if (newline == std::string_view::npos) {
+                segments.push_back(
+                    {entry, source.substr(start)});
+                break;
+            }
+            segments.push_back(
+                {entry, source.substr(start, newline - start)});
+            start = newline + 1;
+        }
+    }
+    return segments;
+}
+
+void append_serialized_history_entry(
+    std::vector<std::string>& lines,
+    std::string_view source) {
+    std::size_t start = 0;
+    while (true) {
+        auto const newline = source.find('\n', start);
+        if (newline == std::string_view::npos) {
+            lines.emplace_back(source.substr(start));
+            return;
+        }
+        lines.emplace_back(source.substr(start, newline - start));
+        start = newline + 1;
+    }
+}
+
+[[nodiscard]] bool is_gnu_history_timestamp(
+    std::string_view line) noexcept {
+    return line.size() >= 2 && line.front() == '#' &&
+        line[1] >= '0' && line[1] <= '9';
+}
+
+[[nodiscard]] bool uses_gnu_history_timestamps(
+    std::vector<std::string> const& disk_lines) noexcept {
+    return !disk_lines.empty() &&
+        is_gnu_history_timestamp(disk_lines.front());
+}
+
+struct persistent_history_alignment {
+    std::vector<std::optional<std::size_t>> disk_owners;
+    std::vector<bool> complete_entries;
+};
+
+struct persistent_history_match {
+    std::size_t segment = 0;
+    std::size_t disk = 0;
+};
+
+template<typename Matches>
+[[nodiscard]] std::optional<std::vector<persistent_history_match>>
+align_persistent_history_sequences(
+    std::size_t segment_size,
+    std::size_t disk_size,
+    Matches&& matches) {
+    constexpr std::size_t maximum_edit_distance = 1024;
+    constexpr std::size_t maximum_match_attempts = 32 * 1024 * 1024;
+
+    // Common concurrent changes are pure appends or pure removals.  Match
+    // those in linear time before applying the bounded general diff, choosing
+    // the earliest possible duplicate on each side just as the prior LCS did.
+    if (segment_size <= disk_size) {
+        std::vector<persistent_history_match> result;
+        result.reserve(segment_size);
+        std::size_t disk = 0;
+        for (std::size_t segment = 0;
+             segment < segment_size;
+             ++segment) {
+            while (disk < disk_size &&
+                   !std::invoke(matches, segment, disk)) {
+                ++disk;
+            }
+            if (disk == disk_size) {
+                result.clear();
+                break;
+            }
+            result.push_back({segment, disk});
+            ++disk;
+        }
+        if (result.size() == segment_size) {
+            return result;
+        }
+    }
+    if (disk_size <= segment_size) {
+        std::vector<persistent_history_match> result;
+        result.reserve(disk_size);
+        std::size_t segment = 0;
+        for (std::size_t disk = 0; disk < disk_size; ++disk) {
+            while (segment < segment_size &&
+                   !std::invoke(matches, segment, disk)) {
+                ++segment;
+            }
+            if (segment == segment_size) {
+                result.clear();
+                break;
+            }
+            result.push_back({segment, disk});
+            ++segment;
+        }
+        if (result.size() == disk_size) {
+            return result;
+        }
+    }
+
+    if (segment_size >
+            static_cast<std::size_t>(
+                std::numeric_limits<std::ptrdiff_t>::max()) ||
+        disk_size >
+            static_cast<std::size_t>(
+                std::numeric_limits<std::ptrdiff_t>::max())) {
+        return std::nullopt;
+    }
+    auto const length_difference = segment_size > disk_size
+        ? segment_size - disk_size
+        : disk_size - segment_size;
+    if (length_difference > maximum_edit_distance) {
+        return std::nullopt;
+    }
+
+    auto const distance_limit = std::min(
+        maximum_edit_distance,
+        segment_size <=
+                std::numeric_limits<std::size_t>::max() - disk_size
+            ? segment_size + disk_size
+            : maximum_edit_distance);
+    auto const offset = static_cast<std::ptrdiff_t>(distance_limit + 1);
+    std::vector<std::ptrdiff_t> furthest(
+        2 * distance_limit + 3, -1);
+    furthest[static_cast<std::size_t>(offset + 1)] = 0;
+    std::vector<std::vector<std::ptrdiff_t>> trace;
+    trace.reserve(distance_limit + 1);
+    std::size_t match_attempts = 0;
+    std::optional<std::size_t> final_distance;
+
+    for (std::size_t distance = 0;
+         distance <= distance_limit;
+         ++distance) {
+        trace.push_back(furthest);
+        auto const signed_distance =
+            static_cast<std::ptrdiff_t>(distance);
+        for (auto diagonal = -signed_distance;
+             diagonal <= signed_distance;
+             diagonal += 2) {
+            auto const diagonal_index =
+                static_cast<std::size_t>(offset + diagonal);
+            std::ptrdiff_t segment = 0;
+            if (diagonal == -signed_distance ||
+                (diagonal != signed_distance &&
+                 furthest[diagonal_index - 1] <
+                     furthest[diagonal_index + 1])) {
+                segment = furthest[diagonal_index + 1];
+            } else {
+                segment = furthest[diagonal_index - 1] + 1;
+            }
+            auto disk = segment - diagonal;
+            while (segment >= 0 && disk >= 0 &&
+                   static_cast<std::size_t>(segment) < segment_size &&
+                   static_cast<std::size_t>(disk) < disk_size) {
+                if (++match_attempts > maximum_match_attempts) {
+                    return std::nullopt;
+                }
+                if (!std::invoke(
+                        matches,
+                        static_cast<std::size_t>(segment),
+                        static_cast<std::size_t>(disk))) {
+                    break;
+                }
+                ++segment;
+                ++disk;
+            }
+            furthest[diagonal_index] = segment;
+            if (static_cast<std::size_t>(segment) >= segment_size &&
+                static_cast<std::size_t>(disk) >= disk_size) {
+                final_distance = distance;
+                break;
+            }
+        }
+        if (final_distance) {
+            break;
+        }
+    }
+    if (!final_distance) {
+        return std::nullopt;
+    }
+
+    std::vector<persistent_history_match> result;
+    result.reserve(std::min(segment_size, disk_size));
+    auto segment = static_cast<std::ptrdiff_t>(segment_size);
+    auto disk = static_cast<std::ptrdiff_t>(disk_size);
+    for (auto distance = *final_distance; distance > 0; --distance) {
+        auto const& previous = trace[distance];
+        auto const signed_distance =
+            static_cast<std::ptrdiff_t>(distance);
+        auto const diagonal = segment - disk;
+        auto const diagonal_index =
+            static_cast<std::size_t>(offset + diagonal);
+        auto const previous_diagonal =
+            diagonal == -signed_distance ||
+                (diagonal != signed_distance &&
+                 previous[diagonal_index - 1] <
+                     previous[diagonal_index + 1])
+            ? diagonal + 1
+            : diagonal - 1;
+        auto const previous_segment = previous[
+            static_cast<std::size_t>(offset + previous_diagonal)];
+        auto const previous_disk =
+            previous_segment - previous_diagonal;
+        while (segment > previous_segment && disk > previous_disk) {
+            result.push_back(
+                {static_cast<std::size_t>(segment - 1),
+                 static_cast<std::size_t>(disk - 1)});
+            --segment;
+            --disk;
+        }
+        segment = previous_segment;
+        disk = previous_disk;
+    }
+    while (segment > 0 && disk > 0) {
+        result.push_back(
+            {static_cast<std::size_t>(segment - 1),
+             static_cast<std::size_t>(disk - 1)});
+        --segment;
+        --disk;
+    }
+    std::reverse(result.begin(), result.end());
+    return result;
+}
+
+template<typename Matches>
+[[nodiscard]] std::vector<persistent_history_match>
+align_persistent_history_entry_blocks(
+    std::vector<serialized_history_segment> const& segments,
+    std::vector<std::string> const& disk_lines,
+    std::vector<std::size_t> const& disk_content,
+    Matches&& matches) {
+    constexpr std::size_t maximum_match_attempts = 32 * 1024 * 1024;
+    std::unordered_map<std::string_view, std::vector<std::size_t>>
+        occurrences;
+    occurrences.reserve(disk_content.size());
+    for (std::size_t disk = 0; disk < disk_content.size(); ++disk) {
+        auto const persisted =
+            std::string_view(disk_lines[disk_content[disk]]);
+        occurrences[persisted].push_back(disk);
+        if (!persisted.empty() && persisted.back() == '\r') {
+            occurrences[persisted.substr(0, persisted.size() - 1)]
+                .push_back(disk);
+        }
+    }
+
+    std::vector<persistent_history_match> result;
+    result.reserve(std::min(segments.size(), disk_content.size()));
+    std::size_t disk_cursor = 0;
+    std::size_t match_attempts = 0;
+    for (std::size_t first = 0; first < segments.size();) {
+        auto const owner = segments[first].entry;
+        auto last = first + 1;
+        while (last < segments.size() &&
+               segments[last].entry == owner) {
+            ++last;
+        }
+        auto const segment_count = last - first;
+        auto const found = occurrences.find(segments[first].line);
+        if (found != occurrences.end()) {
+            auto candidate = std::lower_bound(
+                found->second.begin(),
+                found->second.end(),
+                disk_cursor);
+            for (; candidate != found->second.end(); ++candidate) {
+                if (*candidate > disk_content.size() ||
+                    segment_count > disk_content.size() - *candidate) {
+                    break;
+                }
+                auto const first_disk_line = disk_content[*candidate];
+                auto complete = true;
+                for (std::size_t offset = 0;
+                     offset < segment_count;
+                     ++offset) {
+                    if (++match_attempts > maximum_match_attempts) {
+                        return result;
+                    }
+                    if (disk_content[*candidate + offset] !=
+                            first_disk_line + offset ||
+                        !std::invoke(
+                            matches, first + offset, *candidate + offset)) {
+                        complete = false;
+                        break;
+                    }
+                }
+                if (!complete) {
+                    continue;
+                }
+                for (std::size_t offset = 0;
+                     offset < segment_count;
+                     ++offset) {
+                    result.push_back(
+                        {first + offset, *candidate + offset});
+                }
+                disk_cursor = *candidate + segment_count;
+                break;
+            }
+        }
+        first = last;
+    }
+    return result;
+}
+
+[[nodiscard]] std::optional<persistent_history_alignment>
+align_session_history_with_disk(
+    std::vector<std::string> const& session_entries,
+    std::vector<std::string> const& disk_lines) {
+    auto const segments = serialize_session_history(session_entries);
+    auto const segment_size = segments.size();
+    auto const timestamps = uses_gnu_history_timestamps(disk_lines);
+    std::vector<std::size_t> disk_content;
+    disk_content.reserve(disk_lines.size());
+    for (std::size_t index = 0; index < disk_lines.size(); ++index) {
+        if (!timestamps ||
+            !is_gnu_history_timestamp(disk_lines[index])) {
+            disk_content.push_back(index);
+        }
+    }
+    auto const segment_matches_disk =
+        [&segments, &disk_lines, &disk_content](
+            std::size_t segment,
+            std::size_t disk) {
+            auto const session = segments[segment].line;
+            auto const& persisted = disk_lines[disk_content[disk]];
+            return session == persisted ||
+                (!persisted.empty() && persisted.back() == '\r' &&
+                 session == std::string_view(persisted).substr(
+                     0, persisted.size() - 1));
+        };
+    auto matches = align_persistent_history_sequences(
+        segment_size,
+        disk_content.size(),
+        segment_matches_disk);
+    if (!matches) {
+        matches = align_persistent_history_entry_blocks(
+            segments,
+            disk_lines,
+            disk_content,
+            segment_matches_disk);
+    }
+
+    persistent_history_alignment alignment{
+        std::vector<std::optional<std::size_t>>(disk_lines.size()),
+        std::vector<bool>(session_entries.size(), false)};
+    std::vector<std::size_t> expected_segments(
+        session_entries.size());
+    std::vector<std::size_t> matched_segments(
+        session_entries.size());
+    std::vector<std::optional<std::size_t>> last_matched_disk_line(
+        session_entries.size());
+    std::vector<bool> contiguous_entries(
+        session_entries.size(), true);
+    for (auto const& segment : segments) {
+        ++expected_segments[segment.entry];
+    }
+
+    for (auto const& match : *matches) {
+        auto const owner = segments[match.segment].entry;
+        auto const disk_line = disk_content[match.disk];
+        if (last_matched_disk_line[owner] &&
+            disk_line != *last_matched_disk_line[owner] + 1) {
+            contiguous_entries[owner] = false;
+        }
+        last_matched_disk_line[owner] = disk_line;
+        alignment.disk_owners[disk_line] = owner;
+        ++matched_segments[owner];
+    }
+
+    for (std::size_t entry = 0; entry < session_entries.size(); ++entry) {
+        alignment.complete_entries[entry] =
+            matched_segments[entry] == expected_segments[entry] &&
+            contiguous_entries[entry];
+    }
+    for (auto& owner : alignment.disk_owners) {
+        if (owner && !alignment.complete_entries[*owner]) {
+            owner.reset();
+        }
+    }
+    return alignment;
+}
+
+struct persistent_history_record {
+    std::size_t start = 0;
+    std::size_t end = 0;
+    std::optional<std::size_t> owner;
+};
+
+[[nodiscard]] std::vector<persistent_history_record>
+make_persistent_history_records(
+    std::vector<std::string> const& disk_lines,
+    persistent_history_alignment const& alignment) {
+    std::vector<persistent_history_record> records;
+    auto const timestamps = uses_gnu_history_timestamps(disk_lines);
+    std::optional<std::size_t> pending_prefix;
+
+    for (std::size_t index = 0; index < disk_lines.size(); ++index) {
+        auto const owner = alignment.disk_owners[index];
+        if (timestamps && is_gnu_history_timestamp(disk_lines[index])) {
+            if (!pending_prefix) {
+                pending_prefix = index;
+            }
+            continue;
+        }
+
+        // When owner is empty, plain Readline files have no multiline
+        // boundary for concurrent lines, so keep the raw run opaque. This can
+        // defer exact cap convergence until a clean later session.
+        if (!pending_prefix && !records.empty() &&
+            records.back().owner == owner &&
+            records.back().end == index) {
+            records.back().end = index + 1;
+        } else {
+            records.push_back(
+                {pending_prefix.value_or(index), index + 1, owner});
+        }
+        pending_prefix.reset();
+    }
+    return records;
+}
+
+void cap_persistent_history_records(
+    std::vector<std::string>& disk_lines,
+    std::vector<persistent_history_record> const& records) {
+    auto const limit = static_cast<std::size_t>(persistent_history_limit);
+    if (records.size() <= limit) {
+        return;
+    }
+    auto const first_retained = records[records.size() - limit].start;
+    disk_lines.erase(
+        disk_lines.begin(), disk_lines.begin() + first_retained);
+}
+
 void load_persistent_history(
     crepl_persistence_paths const& paths) noexcept {
     stifle_history(persistent_history_limit);
+    scoped_history_operation_lock const lock(paths);
+    if (!lock.acquired()) {
+        return;
+    }
     read_history(paths.history.c_str());
 }
 
 void append_persistent_history(
-    crepl_persistence_paths const& paths) noexcept {
-    auto result = append_history(1, paths.history.c_str());
-    if (result != 0) {
-        result = write_history(paths.history.c_str());
+    crepl_persistence_paths const& paths,
+    std::vector<std::string> const& session_entries,
+    std::string_view source) noexcept {
+    mutate_persistent_history(
+        paths,
+        [&session_entries, source](std::vector<std::string>& lines) {
+            append_serialized_history_entry(lines, source);
+            auto const alignment = align_session_history_with_disk(
+                session_entries, lines);
+            if (!alignment) {
+                return false;
+            }
+            cap_persistent_history_records(
+                lines,
+                make_persistent_history_records(lines, *alignment));
+            return true;
+        });
+}
+
+void remove_persistent_history_entry(
+    crepl_persistence_paths const& paths,
+    std::vector<std::string> const& session_lines,
+    std::size_t session_index) noexcept {
+    mutate_persistent_history(
+        paths,
+        [&session_lines, session_index](
+            std::vector<std::string>& disk_lines) {
+            if (session_index >= session_lines.size()) {
+                return false;
+            }
+            auto const alignment = align_session_history_with_disk(
+                session_lines, disk_lines);
+            if (!alignment ||
+                !alignment->complete_entries[session_index]) {
+                return false;
+            }
+            auto const records = make_persistent_history_records(
+                disk_lines, *alignment);
+            std::vector<bool> remove(disk_lines.size(), false);
+            auto removed_entry = false;
+            for (auto const& record : records) {
+                if (record.owner && *record.owner == session_index) {
+                    std::fill(
+                        remove.begin() + record.start,
+                        remove.begin() + record.end,
+                        true);
+                    removed_entry = true;
+                }
+            }
+            if (!removed_entry) {
+                return false;
+            }
+            std::vector<std::string> retained;
+            retained.reserve(disk_lines.size());
+            for (std::size_t index = 0; index < disk_lines.size(); ++index) {
+                if (!remove[index]) {
+                    retained.push_back(std::move(disk_lines[index]));
+                }
+            }
+            disk_lines = std::move(retained);
+            return true;
+        });
+}
+
+struct readline_history_recall_state {
+    enum class bell_style {
+        audible,
+        visible,
+    };
+
+    crepl_persistence_paths const* persistence = nullptr;
+    rl_getc_func_t* underlying_getc = nullptr;
+    rl_voidfunc_t* underlying_redisplay = nullptr;
+    std::string line;
+    std::size_t input_serial = 0;
+    std::size_t observed_input_serial = 0;
+    int latest_input_character = EOF;
+    int history_position = 0;
+    int point = 0;
+    int end = 0;
+    int mark = 0;
+    bool mark_active = false;
+    std::vector<std::string> canonical_history;
+    std::optional<int> pristine_history_position;
+    std::optional<bell_style> suppressed_bell_style;
+    bool have_snapshot = false;
+};
+
+readline_history_recall_state readline_history_recall;
+
+void capture_canonical_readline_history() {
+    auto& canonical = readline_history_recall.canonical_history;
+    canonical.clear();
+    canonical.reserve(static_cast<std::size_t>(history_length));
+    auto const* entries = history_list();
+    for (int index = 0; index < history_length; ++index) {
+        canonical.emplace_back(
+            entries[index] != nullptr && entries[index]->line != nullptr
+            ? entries[index]->line
+            : "");
     }
-    if (result == 0) {
-        history_truncate_file(
-            paths.history.c_str(), persistent_history_limit);
+}
+
+void remember_canonical_readline_history(std::string_view source) {
+    auto& canonical = readline_history_recall.canonical_history;
+    canonical.emplace_back(source);
+    if (canonical.size() > static_cast<std::size_t>(history_length)) {
+        canonical.erase(
+            canonical.begin(),
+            canonical.begin() +
+                (canonical.size() -
+                 static_cast<std::size_t>(history_length)));
     }
 }
 
 [[nodiscard]] bool last_history_entry_matches(
     std::string_view source) noexcept {
-    if (history_length == 0) {
+    auto const& canonical =
+        readline_history_recall.canonical_history;
+    return !canonical.empty() && source == canonical.back();
+}
+
+[[nodiscard]] std::string current_readline_line() {
+    return rl_line_buffer == nullptr
+        ? std::string{}
+        : std::string(
+            rl_line_buffer, static_cast<std::size_t>(rl_end));
+}
+
+[[nodiscard]] bool readline_buffer_matches_history_position(
+    int position) noexcept {
+    auto const& canonical = readline_history_recall.canonical_history;
+    if (position < 0 || position >= history_length ||
+        static_cast<std::size_t>(position) >= canonical.size() ||
+        rl_line_buffer == nullptr) {
         return false;
     }
-    auto const* entry =
-        history_get(history_base + history_length - 1);
-    return entry != nullptr && entry->line != nullptr &&
-        source == entry->line;
+    return std::string_view(
+               rl_line_buffer, static_cast<std::size_t>(rl_end)) ==
+        canonical[static_cast<std::size_t>(position)];
+}
+
+void snapshot_readline_editor() {
+    auto& state = readline_history_recall;
+    state.line = current_readline_line();
+    state.history_position = where_history();
+    state.point = rl_point;
+    state.end = rl_end;
+    state.mark = rl_mark;
+    state.mark_active = rl_mark_active_p() != 0;
+    state.have_snapshot = true;
+}
+
+void restore_readline_bell_style() noexcept {
+    auto& state = readline_history_recall;
+    if (!state.suppressed_bell_style) {
+        return;
+    }
+    auto const* style =
+        *state.suppressed_bell_style ==
+                readline_history_recall_state::bell_style::visible
+        ? "visible"
+        : "audible";
+    if (rl_variable_bind("bell-style", style) == 0) {
+        state.suppressed_bell_style.reset();
+    }
+}
+
+void suppress_pristine_history_delete_bell(int character) {
+    auto& state = readline_history_recall;
+    if (character != 4 ||
+        RL_ISSTATE(RL_STATE_READCMD) == 0 ||
+        RL_ISSTATE(RL_STATE_MOREINPUT) != 0 ||
+        rl_key_sequence_length != 0 ||
+        !state.have_snapshot ||
+        !state.pristine_history_position) {
+        return;
+    }
+
+    auto const position = where_history();
+    auto const unchanged_editor =
+        position == *state.pristine_history_position &&
+        position == state.history_position &&
+        current_readline_line() == state.line &&
+        rl_point == state.point && rl_end == state.end &&
+        rl_mark == state.mark &&
+        (rl_mark_active_p() != 0) == state.mark_active &&
+        readline_buffer_matches_history_position(position);
+    if (!unchanged_editor) {
+        return;
+    }
+
+    int binding_type = ISFUNC;
+    constexpr char ctrl_d[] = {'\004'};
+    auto* const binding = rl_function_of_keyseq_len(
+        ctrl_d, 1, rl_get_keymap(), &binding_type);
+    if (binding_type != ISFUNC || binding != rl_delete) {
+        return;
+    }
+
+    // rl_delete rings at end-of-line before the post-dispatch observer can
+    // replace the recalled entry.  Silence only that known native dispatch;
+    // the configured binding and every other use of Readline's bell remain
+    // untouched.
+    auto const* style = rl_variable_value("bell-style");
+    if (style == nullptr || std::strcmp(style, "none") == 0) {
+        return;
+    }
+    auto const original_style =
+        std::strcmp(style, "visible") == 0
+        ? readline_history_recall_state::bell_style::visible
+        : readline_history_recall_state::bell_style::audible;
+    if (rl_variable_bind("bell-style", "none") == 0) {
+        state.suppressed_bell_style = original_style;
+    }
+}
+
+void remove_pristine_readline_history_entry(int position) {
+    auto& state = readline_history_recall;
+    auto const previous_history_length = history_length;
+    auto const canonical_position = static_cast<std::size_t>(position);
+
+    // Discard any temporary edit/undo chain Readline attached to this
+    // canonical entry before it is detached from the history list.
+    if (rl_undo_list != nullptr) {
+        rl_revert_line(1, 0);
+    }
+
+    // Let Readline reveal its own next entry or saved live draft before
+    // removing the selected entry from the underlying history list.
+    rl_get_next_history(1, 4);
+    auto const replacement_is_history =
+        position + 1 < previous_history_length;
+
+    auto* removed = remove_history(position);
+    if (removed == nullptr) {
+        rl_get_previous_history(1, 4);
+        return;
+    }
+    auto* removed_undo = static_cast<UNDO_LIST*>(
+        free_history_entry(removed));
+    if (removed_undo != nullptr) {
+        auto* active_undo = rl_undo_list;
+        if (active_undo == removed_undo) {
+            active_undo = nullptr;
+        }
+        rl_undo_list = removed_undo;
+        rl_free_undo_list();
+        rl_undo_list = active_undo;
+    }
+
+    if (state.persistence != nullptr) {
+        remove_persistent_history_entry(
+            *state.persistence,
+            state.canonical_history,
+            canonical_position);
+    }
+    state.canonical_history.erase(
+        state.canonical_history.begin() + canonical_position);
+
+    history_set_pos(
+        replacement_is_history ? position : history_length);
+    rl_point = rl_end;
+    state.pristine_history_position =
+        replacement_is_history &&
+        readline_buffer_matches_history_position(position)
+        ? std::optional{position}
+        : std::nullopt;
+}
+
+void observe_readline_after_dispatch() {
+    auto& state = readline_history_recall;
+    auto const position = where_history();
+    auto const line = current_readline_line();
+    auto const mark_active = rl_mark_active_p() != 0;
+
+    if (!state.have_snapshot) {
+        state.pristine_history_position =
+            readline_buffer_matches_history_position(position)
+            ? std::optional{position}
+            : std::nullopt;
+        snapshot_readline_editor();
+        state.observed_input_serial = state.input_serial;
+        return;
+    }
+
+    if (position != state.history_position) {
+        state.pristine_history_position =
+            readline_buffer_matches_history_position(position)
+            ? std::optional{position}
+            : std::nullopt;
+    } else if (state.pristine_history_position &&
+               (position != *state.pristine_history_position ||
+                line != state.line || rl_point != state.point ||
+                rl_end != state.end || rl_mark != state.mark ||
+                mark_active != state.mark_active)) {
+        state.pristine_history_position.reset();
+    }
+
+    auto const new_input =
+        state.input_serial != state.observed_input_serial;
+    auto const native_forward_delete_ctrl_d =
+        new_input && state.latest_input_character == 4 &&
+        rl_last_func == rl_delete && rl_executing_key == 4 &&
+        rl_key_sequence_length == 1 &&
+        rl_executing_keyseq != nullptr &&
+        static_cast<unsigned char>(rl_executing_keyseq[0]) == 4;
+    if (native_forward_delete_ctrl_d &&
+        state.pristine_history_position &&
+        position == *state.pristine_history_position &&
+        readline_buffer_matches_history_position(position)) {
+        remove_pristine_readline_history_entry(position);
+    }
+
+    state.observed_input_serial = state.input_serial;
+    snapshot_readline_editor();
+}
+
+int crepl_readline_getc(std::FILE* stream) {
+    auto& state = readline_history_recall;
+    restore_readline_bell_style();
+    auto const character = state.underlying_getc(stream);
+    state.latest_input_character = character;
+    ++state.input_serial;
+    suppress_pristine_history_delete_bell(character);
+    return character;
+}
+
+void crepl_readline_redisplay() {
+    if (rl_dispatching == 0) {
+        restore_readline_bell_style();
+        observe_readline_after_dispatch();
+    }
+    readline_history_recall.underlying_redisplay();
+}
+
+void prepare_readline_history_recall() {
+    auto& state = readline_history_recall;
+    restore_readline_bell_style();
+    state.line.clear();
+    state.observed_input_serial = state.input_serial;
+    state.latest_input_character = EOF;
+    state.history_position = where_history();
+    state.point = 0;
+    state.end = 0;
+    state.mark = 0;
+    state.mark_active = false;
+    state.pristine_history_position.reset();
+    state.have_snapshot = false;
 }
 
 void load_persistent_filenames(
@@ -2591,12 +3571,22 @@ int main(int argc, char* argv[]) {
 
     std::optional<crepl_persistence_paths> persistence;
     if (interactive_input) {
+        rl_initialize();
         using_history();
         persistence = make_crepl_persistence_paths();
         if (persistence) {
             load_persistent_history(*persistence);
             load_persistent_filenames(*persistence);
         }
+        capture_canonical_readline_history();
+        readline_history_recall.persistence = persistence
+            ? &*persistence
+            : nullptr;
+        readline_history_recall.underlying_getc = rl_getc_function;
+        readline_history_recall.underlying_redisplay =
+            rl_redisplay_function;
+        rl_getc_function = crepl_readline_getc;
+        rl_redisplay_function = crepl_readline_redisplay;
         rl_attempted_completion_function = crepl_attempted_completion;
     }
     std::string source;
@@ -2605,7 +3595,9 @@ int main(int argc, char* argv[]) {
         handle_pending_terminal_resize();
 #endif
         if (interactive_input) {
+            prepare_readline_history_recall();
             char *line = readline(interactive_output ? ">" : "");
+            restore_readline_bell_style();
             if (line == nullptr) {
                 break;
             }
@@ -2627,8 +3619,12 @@ int main(int argc, char* argv[]) {
         if (interactive_input && !source.empty() &&
             !last_history_entry_matches(source)) {
             add_history(source.c_str());
+            remember_canonical_readline_history(source);
             if (persistence) {
-                append_persistent_history(*persistence);
+                append_persistent_history(
+                    *persistence,
+                    readline_history_recall.canonical_history,
+                    source);
             }
         }
 
