@@ -410,6 +410,122 @@ test("built Studio Wasm routes and reloads equals-prefixed basis names",
         assert.equal(restoredEqualsBar.output, "xzy\n");
     });
 
+test("built Studio Wasm routes and reloads ampersand-prefixed basis names",
+    async () => {
+        const module = await loadBuiltCombdslModule();
+        const malformed = module.inspectDefinition("set & 3 C");
+        assert.equal(malformed.success, false);
+        assert.match(
+            malformed.error,
+            /Parse error at position 7: expected '='/,
+        );
+        const missingAssignment = module.inspectDefinition("set && 3 C");
+        assert.equal(missingAssignment.success, false);
+        assert.match(
+            missingAssignment.error,
+            /Parse error at position 8: expected '='/,
+        );
+        const adjacentAssignment = module.inspectDefinition("set &= 3 C");
+        assert.equal(adjacentAssignment.success, false);
+        assert.match(
+            adjacentAssignment.error,
+            /Parse error at position 8: expected '='/,
+        );
+        const unspacedAssignment = module.inspectDefinition("set &bar=3 C");
+        assert.equal(unspacedAssignment.success, false);
+        assert.match(
+            unspacedAssignment.error,
+            /Parse error at position 12: expected '='/,
+        );
+
+        let requestId = 320;
+        for (const source of [
+            "set & = 3 C",
+            "set &bar = 3 C",
+            "define & bar = rab",
+            "define &bar = rab",
+            "set &foo=bar = 1 I",
+            "set A&B=1 I",
+        ]) {
+            const inspection = module.inspectDefinition(source);
+            assert.equal(inspection.success, true, source);
+            assert.equal(inspection.definition, true, source);
+            assert.equal(inspection.displayOnly, false, source);
+            applyBuiltDefinition(module, source, ++requestId);
+        }
+
+        const showInspection = module.inspectDefinition("show &");
+        assert.equal(showInspection.success, true);
+        assert.equal(showInspection.definition, false);
+        assert.equal(showInspection.displayOnly, true);
+
+        const ampersand = module.parseEval("&xyz", ++requestId, false, 0);
+        assert.equal(ampersand.success, true, ampersand.error);
+        assert.equal(ampersand.output, "zyx\n");
+        const ampersandBar = module.parseEval(
+            "&bar x y z", ++requestId, false, 0);
+        assert.equal(ampersandBar.success, true, ampersandBar.error);
+        assert.equal(ampersandBar.output, "xzy\n");
+        const punctuated = module.parseEval(
+            "&foo=bar x", ++requestId, false, 0);
+        assert.equal(punctuated.success, true, punctuated.error);
+        assert.equal(punctuated.output, "x\n");
+        const ordinaryAmpersand = module.parseEval(
+            "A&B x", ++requestId, false, 0);
+        assert.equal(ordinaryAmpersand.success, true,
+            ordinaryAmpersand.error);
+        assert.equal(ordinaryAmpersand.output, "x\n");
+
+        const findInspection = module.inspectDefinition(
+            "find among &foo=bar ?x=x");
+        assert.equal(findInspection.success, true, findInspection.error);
+        assert.equal(findInspection.find, true);
+        assert.equal(findInspection.findAmong, true);
+        assert.equal(findInspection.findCatalogSize, 1);
+
+        const compared = module.parseEval(
+            "compare ?x &foo=bar x = x",
+            ++requestId, false, 0);
+        assert.equal(compared.success, true, compared.error);
+        assert.equal(compared.output, "both reduce to: xx\n");
+
+        const setList = module.setList();
+        assert.equal(
+            setList,
+            "references captured\n" +
+            "set & = 3 C\n" +
+            "set &bar = 3 C\n" +
+            "define & bar = rab\n" +
+            "set &foo=bar = 1 I\n" +
+            "set A&B = 1 I",
+        );
+
+        const restored = await loadBuiltCombdslModule();
+        const load = restored.loadSetList(setList, "ampersand names");
+        assert.equal(load.success, true, load.error);
+        assert.equal(load.loaded, 6);
+        const restoredAmpersand = restored.parseEval(
+            "&xyz", ++requestId, false, 0);
+        assert.equal(restoredAmpersand.success, true,
+            restoredAmpersand.error);
+        assert.equal(restoredAmpersand.output, "zyx\n");
+        const restoredAmpersandBar = restored.parseEval(
+            "&bar x y z", ++requestId, false, 0);
+        assert.equal(restoredAmpersandBar.success, true,
+            restoredAmpersandBar.error);
+        assert.equal(restoredAmpersandBar.output, "xzy\n");
+        const restoredPunctuated = restored.parseEval(
+            "&foo=bar x", ++requestId, false, 0);
+        assert.equal(restoredPunctuated.success, true,
+            restoredPunctuated.error);
+        assert.equal(restoredPunctuated.output, "x\n");
+        const restoredOrdinaryAmpersand = restored.parseEval(
+            "A&B x", ++requestId, false, 0);
+        assert.equal(restoredOrdinaryAmpersand.success, true,
+            restoredOrdinaryAmpersand.error);
+        assert.equal(restoredOrdinaryAmpersand.output, "x\n");
+    });
+
 test("built inspection identifies only restricted Find metadata",
     async () => {
         const module = await loadBuiltCombdslModule();

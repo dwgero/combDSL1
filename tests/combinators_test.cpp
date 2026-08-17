@@ -10726,6 +10726,167 @@ int main() {
          },
          "111111");
 
+    test("the C++ basis API accepts a name beginning with ampersand",
+         basis("&CppApi", 1, I), "&CppApi");
+    test_parse_failure(
+        "set does not mistake an ampersand name for its assignment",
+        "set & 3 C", 6, "expected '='");
+    test_parse_failure(
+        "a longer leading ampersand token still needs an assignment",
+        "set && 3 C", 7, "expected '='");
+    test_parse_failure(
+        "an adjacent equals remains part of a lone ampersand name",
+        "set &= 3 C", 7, "expected '='");
+    test_parse_failure(
+        "a leading ampersand name needs whitespace before assignment",
+        "set &bar=3 C", 11, "expected '='");
+    test("ordinary ampersand names retain optional assignment spacing",
+         parse("set A&B=1 I"), "A&B");
+    test("an ordinary internal-ampersand name evaluates normally",
+         [] { parse_eval("A&B x"); }, "x\n");
+    test("set accepts ampersand as a basis name",
+         parse("set & = 3 C"), "&");
+    test("show accepts ampersand as a basis name",
+         parse("show &"), "arity:3 C");
+    test("an ampersand basis is self-delimiting before symbols",
+         parse("& x y z"), "&xyz");
+    test("an ampersand basis evaluates from compact expression syntax",
+         [] { parse_eval("&xyz"); }, "xzy\n");
+    test("set accepts a longer name beginning with ampersand",
+         parse("set &bar = 3 C"), "&bar");
+    test("show accepts a longer name beginning with ampersand",
+         parse("show &bar"), "arity:3 C");
+    test("a lowercase-ending ampersand name prints with a safe boundary",
+         parse("&bar x y z"), "&bar xyz");
+    test("a longer ampersand name evaluates through that boundary",
+         [] { parse_eval("&bar x y z"); }, "xzy\n");
+    test("define distinguishes an ampersand name from its symbol list",
+         parse("define & bar = rab"), "&");
+    test("the ampersand define binds each symbol after the name",
+         [] { parse_eval("&xyz"); }, "zyx\n");
+    test("compact define retains the one-character ampersand grammar",
+         parse("define &bar = rab"), "&");
+    test("compact ampersand define does not replace the longer name",
+         parse("show &bar"), "arity:3 C");
+    test("show reports the ampersand define's arity",
+         [] {
+             std::ostringstream shown;
+             parse("show &").print_to(shown);
+             std::cout << shown.str().starts_with("arity:3 ");
+         },
+         "1");
+    test("the ampersand name retains both distinct revisions",
+         [] {
+             std::ostringstream revisions;
+             parse("revisions &").print_to(revisions);
+             auto const value = revisions.str();
+             std::cout
+                 << value.starts_with("&@1 arity:3 C [captured]\n")
+                 << (value.find("&@2 arity:3 ") != std::string::npos)
+                 << value.ends_with("[captured] [current]");
+         },
+         "111");
+    test("set preserves a later equals byte in an ampersand name",
+         parse("set &foo=bar = 1 I"), "&foo=bar");
+    test("show preserves the ampersand name's interior equals",
+         parse("show &foo=bar"), "arity:1 I");
+    test("an ampersand name with an interior equals round trips",
+         parse("&foo=bar x"), "&foo=bar x");
+    test("the interior-equals ampersand name evaluates normally",
+         [] { parse_eval("&foo=bar x"); }, "x\n");
+    test("set preserves a later ampersand byte in an ampersand name",
+         parse("set &foo&bar = 1 I"), "&foo&bar");
+    test("the interior-ampersand name evaluates normally",
+         [] { parse_eval("&foo&bar x"); }, "x\n");
+    test("find among resolves the whole interior-equals ampersand name",
+         [] {
+             auto parsed = combdsl::detail::parse_input(
+                 "find among &foo=bar ?x=x",
+                 combdsl::detail::parser_definition_mode::
+                     inspect_definitions);
+             std::cout
+                 << parsed.is_find
+                 << parsed.catalog_find_command.has_value()
+                 << (parsed.catalog_find_command &&
+                     parsed.catalog_find_command->catalog.size() == 1);
+         },
+         "111");
+    test("compare accepts a bare ampersand name containing equals on the left",
+         parse("compare ?x &foo=bar x = x"),
+         "both reduce to: xx");
+    test("revisions accepts the complete interior-equals ampersand name",
+         parse("revisions &foo=bar"),
+         "&foo=bar arity:1 I [captured] [current]");
+    test("captured setup accepts ampersand as a body reference",
+         parse("set captured AmpCaptured = 3 &"),
+         "AmpCaptured");
+    test("live setup accepts ampersand as a body reference",
+         parse("set live AmpLive = 3 &"), "AmpLive");
+    test("usedby reports a direct ampersand-name dependency",
+         parse("usedby AmpCaptured"),
+         "AmpCaptured directly uses: &");
+    test("dependson accepts ampersand as its queried name",
+         parse("dependson &"),
+         "& is directly depended on by: AmpCaptured AmpLive");
+    test("set can redefine ampersand after a define",
+         parse("set & = 3 C"), "&");
+    test("a captured ampersand reference retains the define revision",
+         [] { parse_eval("AmpCaptured xyz"); }, "zyx\n");
+    test("a live ampersand reference follows the set revision",
+         [] { parse_eval("AmpLive xyz"); }, "xzy\n");
+    test("remove accepts ampersand as a basis name",
+         parse("remove &"), "&");
+    test_parse_failure(
+        "show treats a removed ampersand name as removed",
+        "show &", 5, "& is not a defined name");
+    test("a captured ampersand reference survives removal",
+         [] { parse_eval("AmpCaptured xyz"); }, "zyx\n");
+    test("a live ampersand reference retains its removed target",
+         [] { parse_eval("AmpLive xyz"); }, "xzy\n");
+    test("an explicit removed ampersand revision remains usable",
+         [] { parse_eval("&@3xyz"); }, "xzy\n");
+    test("set can restore an ampersand name after removal",
+         parse("set & = 3 I"), "&");
+    test("show reports the restored ampersand definition",
+         parse("show &"), "arity:3 I");
+    test("a live ampersand reference follows the restored revision",
+         [] { parse_eval("AmpLive xyz"); }, "xyz\n");
+    test("a captured ampersand reference remains frozen after restoration",
+         [] { parse_eval("AmpCaptured xyz"); }, "zyx\n");
+    test("remove accepts the full interior-ampersand name",
+         parse("remove &foo&bar"), "&foo&bar");
+    test("a removed singleton interior-ampersand name remains parseable",
+         [] { parse_eval("&foo&bar x"); }, "x\n");
+    test("remove accepts the full interior-equals ampersand name",
+         parse("remove &foo=bar"), "&foo=bar");
+    test_parse_failure(
+        "show treats the interior-equals ampersand name as removed",
+        "show &foo=bar", 5,
+        "&foo=bar is not a defined name");
+    test("a removed singleton interior-equals ampersand name remains parseable",
+         [] { parse_eval("&foo=bar x"); }, "x\n");
+    test("the set list preserves unambiguous ampersand-name commands",
+         [] {
+             auto const definitions = set_list();
+             std::cout
+                 << (definitions.find("set & = 3 C") !=
+                     std::string::npos)
+                 << (definitions.find("set &bar = 3 C") !=
+                     std::string::npos)
+                 << (definitions.find("define & bar = rab") !=
+                     std::string::npos)
+                 << (definitions.find("set &foo=bar = 1 I") !=
+                     std::string::npos)
+                 << (definitions.find("set &foo&bar = 1 I") !=
+                     std::string::npos)
+                 << (definitions.find("set A&B = 1 I") !=
+                     std::string::npos)
+                 << (definitions.find("remove &") !=
+                     std::string::npos)
+                 << definitions.ends_with("remove &foo=bar");
+         },
+         "11111111");
+
     std::cout << tests_run << " test(s) run, "
               << test_failures << " failed\n";
 

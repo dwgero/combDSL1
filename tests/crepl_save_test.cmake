@@ -204,6 +204,142 @@ if(NOT equals_load_error STREQUAL "")
         "${equals_load_error}")
 endif()
 
+set(ampersand_file
+    "${CREPL_WORKING_DIRECTORY}/ampersand definitions.cmb")
+set(ampersand_input
+    "${CREPL_WORKING_DIRECTORY}/ampersand-save-input.cmb")
+file(REMOVE "${ampersand_file}")
+file(WRITE "${ampersand_input}"
+    "set & = 3 C\n"
+    "set &bar = 3 C\n"
+    "define & bar = rab\n"
+    "set &foo=bar = 1 I\n"
+    "set A&B=1 I\n"
+    "&xyz\n"
+    "&bar x y z\n"
+    "&foo=bar x\n"
+    "A&B x\n"
+    "save ampersand definitions.cmb\n"
+    "exit\n")
+execute_process(
+    COMMAND "${CREPL_EXECUTABLE}"
+    INPUT_FILE "${ampersand_input}"
+    WORKING_DIRECTORY "${CREPL_WORKING_DIRECTORY}"
+    OUTPUT_VARIABLE ampersand_output
+    ERROR_VARIABLE ampersand_error
+    RESULT_VARIABLE ampersand_result
+    TIMEOUT 10
+)
+if(NOT ampersand_result EQUAL 0)
+    message(FATAL_ERROR
+        "ampersand-name save exited with ${ampersand_result}\n"
+        "stderr:\n${ampersand_error}")
+endif()
+set(expected_ampersand_output
+    "zyx\nxzy\nx\nx\nSaved ampersand definitions.cmb\n")
+if(NOT ampersand_output STREQUAL expected_ampersand_output)
+    message(FATAL_ERROR
+        "unexpected ampersand-name CREPL output\n"
+        "expected:\n${expected_ampersand_output}"
+        "actual:\n${ampersand_output}")
+endif()
+if(NOT ampersand_error STREQUAL "")
+    message(FATAL_ERROR
+        "unexpected ampersand-name CREPL error:\n${ampersand_error}")
+endif()
+file(READ "${ampersand_file}" ampersand_contents)
+string(CONCAT expected_ampersand_contents
+    "references captured\n"
+    "set & = 3 C\n"
+    "set &bar = 3 C\n"
+    "define & bar = rab\n"
+    "set &foo=bar = 1 I\n"
+    "set A&B = 1 I")
+if(NOT ampersand_contents STREQUAL expected_ampersand_contents)
+    message(FATAL_ERROR
+        "unexpected saved ampersand-name definitions\n"
+        "expected:\n${expected_ampersand_contents}\n"
+        "actual:\n${ampersand_contents}\n")
+endif()
+
+set(ampersand_load_input
+    "${CREPL_WORKING_DIRECTORY}/ampersand-load-input.cmb")
+file(WRITE "${ampersand_load_input}"
+    "load ampersand definitions.cmb\n"
+    "&xyz\n"
+    "&bar x y z\n"
+    "&foo=bar x\n"
+    "A&B x\n"
+    "exit\n")
+execute_process(
+    COMMAND "${CREPL_EXECUTABLE}"
+    INPUT_FILE "${ampersand_load_input}"
+    WORKING_DIRECTORY "${CREPL_WORKING_DIRECTORY}"
+    OUTPUT_VARIABLE ampersand_load_output
+    ERROR_VARIABLE ampersand_load_error
+    RESULT_VARIABLE ampersand_load_result
+    TIMEOUT 10
+)
+if(NOT ampersand_load_result EQUAL 0)
+    message(FATAL_ERROR
+        "ampersand-name load exited with ${ampersand_load_result}\n"
+        "stderr:\n${ampersand_load_error}")
+endif()
+set(expected_ampersand_load_output
+    "Loaded ampersand definitions.cmb\nzyx\nxzy\nx\nx\n")
+if(NOT ampersand_load_output STREQUAL expected_ampersand_load_output)
+    message(FATAL_ERROR
+        "unexpected reloaded ampersand-name CREPL output\n"
+        "expected:\n${expected_ampersand_load_output}"
+        "actual:\n${ampersand_load_output}")
+endif()
+if(NOT ampersand_load_error STREQUAL "")
+    message(FATAL_ERROR
+        "unexpected reloaded ampersand-name CREPL error:\n"
+        "${ampersand_load_error}")
+endif()
+
+set(malformed_ampersand_input
+    "${CREPL_WORKING_DIRECTORY}/malformed-ampersand-input.cmb")
+file(WRITE "${malformed_ampersand_input}"
+    "set & 3 C\n"
+    "set &= 3 C\n"
+    "set &bar=3 C\n"
+    "exit\n")
+execute_process(
+    COMMAND "${CREPL_EXECUTABLE}"
+    INPUT_FILE "${malformed_ampersand_input}"
+    WORKING_DIRECTORY "${CREPL_WORKING_DIRECTORY}"
+    OUTPUT_VARIABLE malformed_ampersand_output
+    ERROR_VARIABLE malformed_ampersand_error
+    RESULT_VARIABLE malformed_ampersand_result
+    TIMEOUT 10
+)
+if(NOT malformed_ampersand_result EQUAL 0)
+    message(FATAL_ERROR
+        "malformed ampersand-name command exited with "
+        "${malformed_ampersand_result}")
+endif()
+if(NOT malformed_ampersand_output STREQUAL "")
+    message(FATAL_ERROR
+        "malformed ampersand-name command produced output:\n"
+        "${malformed_ampersand_output}")
+endif()
+string(CONCAT expected_malformed_ampersand_error
+    "Parse error at position 7: expected '='\n"
+    "Parse error at position 8: expected '='\n"
+    "Parse error at position 12: expected '='\n")
+if(NOT malformed_ampersand_error STREQUAL
+        expected_malformed_ampersand_error)
+    message(FATAL_ERROR
+        "unexpected malformed ampersand-name error\n"
+        "expected:\n"
+        "Parse error at position 7: expected '='\n"
+        "Parse error at position 8: expected '='\n"
+        "Parse error at position 12: expected '='\n"
+        "actual:\n${malformed_ampersand_error}")
+endif()
+
 set(malformed_equals_input
     "${CREPL_WORKING_DIRECTORY}/malformed-equals-input.cmb")
 file(WRITE "${malformed_equals_input}"

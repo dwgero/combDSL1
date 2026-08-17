@@ -447,12 +447,13 @@ primitive meanings. `parse_eval`, `read_parse_eval`, `parse_and_step`, and
 stored expression, and produce no output for the declaration itself. A
 malformed declaration does not register its name.
 
-An equals sign may begin a basis name. For such a name, whitespace must
-separate the name from the assignment `=`; every later `=` before that
-whitespace remains part of the name. Thus `set = = 3 C` defines the name `=`, and
-`set =bar = 3 C` defines the name `=bar`, while `set = 3 C` is a parse error
-because it has no second `=`. In `define = bar = rab`, the name is `=` and
-`bar` is the symbol list.
+An equals sign or ampersand may begin a basis name. For such a name, whitespace
+must separate the name from the assignment `=`; every later `=` before that
+whitespace remains part of the name. Thus `set = = 3 C` and `set & = 3 C`
+define the names `=` and `&`, while `set =bar = 3 C` and `set &bar = 3 C`
+define the names `=bar` and `&bar`. `set = 3 C` and `set & 3 C` are parse
+errors because they have no assignment `=`. In `define = bar = rab` and
+`define & bar = rab`, the names are `=` and `&`, and `bar` is the symbol list.
 
 At the start of a line, preceded by optional whitespace,
 `define [captured | live]` followed by whitespace creates a named basis
@@ -997,7 +998,7 @@ expression produces no output, while malformed or empty lines throw
 The `crepl` executable applies `input_escape` to each line before passing it to
 `parse_eval`, so ordinary quoted words and backslashes can be entered directly.
 When standard output is a terminal, it first prints
-`Combinator Read-Eval-Print Loop, version 2.12.4`. Long evaluations display
+`Combinator Read-Eval-Print Loop, version 2.12.5`. Long evaluations display
 the accumulated step count every 1,000 reductions by overwriting one status
 line; the line is cleared before evaluation output is printed. Its interactive
 prompt is `>`. Interactive input uses GNU Readline, so previous nonempty

@@ -341,20 +341,25 @@ test("documents compact restricted Find catalogs in Studio", () => {
         html,
         /longest valid bird name or revision is taken from/);
     assert.match(html, /A basis name cannot begin with <code>\\<\/code>/);
-    assert.match(html, /<code>\)<\/code>, <code>\(<\/code>, or <code>\?<\/code>/);
+    assert.match(html, /<code>\?<\/code>, cannot end/);
     assert.match(html, /cannot end\s+with <code>@<\/code>/);
+    assert.match(html, /cannot contain\s+<code>\)<\/code> or <code>\(<\/code> anywhere/);
     assert.match(html, /introduces parser command\s+markers/);
 });
 
-test("documents leading-equals basis names in Studio", () => {
+test("documents leading-equals and ampersand basis names in Studio", () => {
     const html = readFileSync(
         new URL("../web/index.html", import.meta.url), "utf8");
 
-    assert.match(html, /An equals sign may begin a basis name/);
+    assert.match(html, /An equals sign or ampersand may begin a basis name/);
     assert.match(html, /set = = 3 C/);
     assert.match(html, /set =bar = 3 C/);
     assert.match(html, /set = 3 C/);
     assert.match(html, /define = bar = rab/);
+    assert.match(html, /set &amp; = 3 C/);
+    assert.match(html, /set &amp;bar = 3 C/);
+    assert.match(html, /set &amp; 3 C/);
+    assert.match(html, /define &amp; bar = rab/);
 });
 
 test("completes unambiguous abstract command forms", () => {

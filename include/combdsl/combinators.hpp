@@ -8470,11 +8470,11 @@ private:
     [[nodiscard]] std::pair<std::string_view, std::size_t>
     parse_definition_basis_name_token() {
         auto const name_position = position_;
-        auto const begins_with_equals =
-            !at_end() && current() == '=';
+        auto const begins_with_equals_or_ampersand =
+            !at_end() && (current() == '=' || current() == '&');
         while (!at_end() &&
                !is_basis_token_delimiter(position_) &&
-               (begins_with_equals || current() != '=')) {
+               (begins_with_equals_or_ampersand || current() != '=')) {
             ++position_;
         }
         if (position_ == name_position) {

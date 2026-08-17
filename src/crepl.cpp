@@ -66,7 +66,7 @@
 
 namespace {
 
-constexpr std::string_view crepl_version = "2.12.4";
+constexpr std::string_view crepl_version = "2.12.5";
 constexpr std::string_view no_further_reductions_message =
     "No further reductions";
 
@@ -2002,16 +2002,19 @@ void print_help_full(std::ostream& output) {
     output << "define Exyzwv = xy(zwv)\n\n";
     write_wrapped_paragraph(
         output,
-        "A basis name cannot begin with \\, \", ), (, or ?, and can't end with @");
+        "A basis name can't begin with \\, \", or ?, can't end with @, "
+        "and can't contain ) or ( anywhere.");
     output.put('\n');
     write_wrapped_paragraph(
         output,
-        "An equals sign may begin a basis name. For such a name, whitespace "
-        "must separate the name from the assignment =; every later = before "
-        "that whitespace remains part of the name. Thus 'set = = 3 C' "
-        "defines the name '=', and 'set =bar = 3 C' defines the name "
-        "'=bar', while 'set = 3 C' is a parse error because it has no second "
-        "'='. In 'define = bar = rab', the name is '=' and 'bar' is the "
+        "An equals sign or ampersand may begin a basis name. For such a name, "
+        "whitespace must separate the name from the assignment =; every "
+        "later = before that whitespace remains part of the name. Thus "
+        "'set = = 3 C' and 'set & = 3 C' define the names '=' and '&', while "
+        "'set =bar = 3 C' and 'set &bar = 3 C' define the names '=bar' and "
+        "'&bar'. 'set = 3 C' and 'set & 3 C' are parse errors because they "
+        "have no assignment =. In 'define = bar = rab' and "
+        "'define & bar = rab', the names are '=' and '&', and 'bar' is the "
         "symbol list.");
     output.put('\n');
     write_wrapped_paragraph(
