@@ -388,9 +388,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             color: #c33;
         }
     </style>
-    <script src="./evaluation_watchdog.js?v=2.12.3" defer></script>
-    <script src="./input_history.js?v=2.12.3" defer></script>
-    <script src="./app.js?v=2.12.3" defer></script>
+    <script src="./evaluation_watchdog.js?v=2.12.4" defer></script>
+    <script src="./input_history.js?v=2.12.4" defer></script>
+    <script src="./app.js?v=2.12.4" defer></script>
 </head>
 <body>
     <main aria-labelledby="studio-title">
@@ -620,8 +620,20 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             be omitted. For example, to add the Eagle bird:<br>
             <code>define Exyzwv = xy(zwv)</code>
             <br><br>
-            A basis name cannot begin with <code>?</code> because
-            <code>?</code> introduces parser command markers.
+            A basis name cannot begin with <code>\</code>, <code>"</code>,
+            <code>)</code>, <code>(</code>, or <code>?</code>, and cannot end
+            with <code>@</code>. The <code>?</code> introduces parser command
+            markers.
+            <br><br>
+            An equals sign may begin a basis name. For such a name, whitespace
+            must separate the name from the assignment <code>=</code>; every
+            later <code>=</code> before that whitespace remains part of the
+            name. Thus <code>set = = 3 C</code> defines the name
+            <code>=</code>, and <code>set =bar = 3 C</code> defines the name
+            <code>=bar</code>, while <code>set = 3 C</code> is a parse error
+            because it has no second <code>=</code>. In
+            <code>define = bar = rab</code>, the name is <code>=</code> and
+            <code>bar</code> is the symbol list.
             <br><br>
             The optional <code>captured</code> or <code>live</code> modifier
             on <code>set</code> and <code>define</code> overrides the current
@@ -1033,7 +1045,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             data-dialog-initial-focus>About</h2>
         <div class="license-text">
             <!-- Keep this version and the app.js cache key in sync. -->
-            <p>Combinator Studio, version 2.12.3<br>
+            <p>Combinator Studio, version 2.12.4<br>
                 Part of the C++ Combinator DSL<br>
                 Copyright (C) 2026  David W. Gero</p>
             <p>This program is free software: you can redistribute it and/or modify

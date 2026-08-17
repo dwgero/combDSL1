@@ -1,72 +1,80 @@
-Commands:
+Commands (items in brackets [] are optional):
 about                                 | display copyright and redistribution information
-abstract [steps | ministeps] ?<symbols> = <expression>
-                                      | display combinator abstraction
+abstract [steps | ministeps]          | compute combinators such that applying <xyz...> to them
+    ?<xyz...> = <expression>          |     reduces to <expression>
 basis step [on | off]                 | names are converted to their stored expressions as a step
 birds                                 | display the pre-defined bird combinators
 colorize [on | off]                   | add colors to arguments while stepping
-compare ?<symbols> <left> = <right>   | compare applied normal forms within time limits
-define [captured | live] <name> [<xyz...>] = <expression>
-                                      | compute and store combinators such that
-                                      | <name> [<xyz...>] reduces to <expression>
-dependson [all] <name> | depends-on [all] <name> | depends on [all] <name>
-                                      | display direct and optional indirect users
+compare ?<xyz...> <left> = <right>    | compare applied normal forms within time limits
+define [captured | live] <name>       | compute and store combinators such that
+    [<xyz...>] = <expression>         |     <name> [<xyz...>] reduces to <expression>
+dependson  [all] <name>               | display direct and optional indirect definitions that
+depends-on [all] <name>               |     depend on <name>
+depends on [all] <name>               |
 exit                                  | end the program
-find [all] [<num> | among <bird>...] ?<symbols> = <expression>
-                                      | find matching bird forms
+find [all] [<num> | among <birds...>] | search for shortest combinator strings such that applying
+    ?<xyz...> = <expression>          |     <xyz...> to them reduces to <expression>
 help [brief | full]                   | display help information
-inspect <expression>                  | describe an expression without evaluating it
+inspect <expression>                  | display info about <expression> without evaluating it
 key step [on | off]                   | after each step, wait for a keypress to continue
 load <filename>                       | load a set-list journal from a file
 quit                                  | end the program
-references <captured | live>          | capture name references or follow later changes
+references <captured | live>          | by default, capture name references at define time
+                                      |     or follow later changes to them
 remove <name>                         | remove a user-defined combinator name
 revisions <name>                      | display every retained revision of <name>
 save <filename>                       | save the set-list journal to a file
-set [captured | live] <name> = [arity] <expression>
-                                      | store <expression> as <name> with arity <arity> or 0
-show <name | name@N | all>            | display one revision or the entire set list
+set [captured | live] <name>          | store <expression> as <name> with arity <arity> or 0
+    = [arity] <expression>            |
+show <name[@<num>] | all>             | display one revision of <name> or the entire set list
 single step [on | off]                | display each step of the reduction without pause
 step limit <off | num>                | limit ordinary and Single Step evaluations
-usedby [all] <name> | used-by [all] <name> | used by [all] <name>
-                                      | display direct and optional indirect dependencies
-usedby path [between] <name1> [and] <name2>
-used-by path [between] <name1> [and] <name2>
-used by path [between] <name1> [and] <name2>
-                                      | display the shortest labeled dependency path
-Commands:
+usedby  [all] <name>                  | display direct and optional indirect definitions that
+used-by [all] <name>                  |     <name> uses
+used by [all] <name>                  |
+usedby  path [between] <name1>        | display the dependency path between <name1> and <name2>
+    [and] <name2>                     |
+used-by path [between] <name1>        |
+    [and] <name2>                     |
+used by path [between] <name1>        |
+    [and] <name2>                     |
+Commands (items in brackets [] are optional):
 about                                 | display copyright and redistribution information
-abstract [steps | ministeps] ?<symbols> = <expression>
-                                      | display combinator abstraction
+abstract [steps | ministeps]          | compute combinators such that applying <xyz...> to them
+    ?<xyz...> = <expression>          |     reduces to <expression>
 basis step [on | off]                 | names are converted to their stored expressions as a step
 birds                                 | display the pre-defined bird combinators
 colorize [on | off]                   | add colors to arguments while stepping
-compare ?<symbols> <left> = <right>   | compare applied normal forms within time limits
-define [captured | live] <name> [<xyz...>] = <expression>
-                                      | compute and store combinators such that
-                                      | <name> [<xyz...>] reduces to <expression>
-dependson [all] <name> | depends-on [all] <name> | depends on [all] <name>
-                                      | display direct and optional indirect users
+compare ?<xyz...> <left> = <right>    | compare applied normal forms within time limits
+define [captured | live] <name>       | compute and store combinators such that
+    [<xyz...>] = <expression>         |     <name> [<xyz...>] reduces to <expression>
+dependson  [all] <name>               | display direct and optional indirect definitions that
+depends-on [all] <name>               |     depend on <name>
+depends on [all] <name>               |
 exit                                  | end the program
-find [all] [<num> | among <bird>...] ?<symbols> = <expression>
-                                      | find matching bird forms
+find [all] [<num> | among <birds...>] | search for shortest combinator strings such that applying
+    ?<xyz...> = <expression>          |     <xyz...> to them reduces to <expression>
 help [brief | full]                   | display help information
-inspect <expression>                  | describe an expression without evaluating it
+inspect <expression>                  | display info about <expression> without evaluating it
 key step [on | off]                   | after each step, wait for a keypress to continue
 load <filename>                       | load a set-list journal from a file
 quit                                  | end the program
-references <captured | live>          | capture name references or follow later changes
+references <captured | live>          | by default, capture name references at define time
+                                      |     or follow later changes to them
 remove <name>                         | remove a user-defined combinator name
 revisions <name>                      | display every retained revision of <name>
 save <filename>                       | save the set-list journal to a file
-set [captured | live] <name> = [arity] <expression>
-                                      | store <expression> as <name> with arity <arity> or 0
-show <name | name@N | all>            | display one revision or the entire set list
+set [captured | live] <name>          | store <expression> as <name> with arity <arity> or 0
+    = [arity] <expression>            |
+show <name[@<num>] | all>             | display one revision of <name> or the entire set list
 single step [on | off]                | display each step of the reduction without pause
 step limit <off | num>                | limit ordinary and Single Step evaluations
-usedby [all] <name> | used-by [all] <name> | used by [all] <name>
-                                      | display direct and optional indirect dependencies
-usedby path [between] <name1> [and] <name2>
-used-by path [between] <name1> [and] <name2>
-used by path [between] <name1> [and] <name2>
-                                      | display the shortest labeled dependency path
+usedby  [all] <name>                  | display direct and optional indirect definitions that
+used-by [all] <name>                  |     <name> uses
+used by [all] <name>                  |
+usedby  path [between] <name1>        | display the dependency path between <name1> and <name2>
+    [and] <name2>                     |
+used-by path [between] <name1>        |
+    [and] <name2>                     |
+used by path [between] <name1>        |
+    [and] <name2>                     |

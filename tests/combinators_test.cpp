@@ -4773,7 +4773,9 @@ int main() {
             define_source.rfind(name),
             detail);
     }
-    test_parse_failure("set requires a basis name", "set = I", 4);
+    test_parse_failure(
+        "set requires a second equals after an equals name",
+        "set = I", 6, "expected '='");
     test_parse_failure("set requires an equals sign", "set NoEq I", 9);
     test_parse_failure("set requires an expression", "set Empty = \t", 13);
     test("a lone integer after set equals is a numeric body",
@@ -4838,7 +4840,8 @@ int main() {
     test_parse_failure("trailing set error does not register its name",
                        "Ptail", 0);
     test_parse_failure(
-        "define requires a basis name", "define = x", 7);
+        "define requires an assignment equals after an equals name",
+        "define = x", 10, "expected '='");
     test("define accepts an empty symbol list before equals",
          parse("define NoArgs = x"), "NoArgs");
     test("show exposes the empty-symbol definition",
@@ -10583,6 +10586,145 @@ int main() {
                  << ' ' << rendered.str();
          },
          "1 x g");
+
+    test("the C++ basis API accepts a name beginning with equals",
+         basis("=CppApi", 1, I), "=CppApi");
+    test_parse_failure(
+        "set does not mistake its assignment equals for a basis name",
+        "set = 3 C", 6, "expected '='");
+    test_parse_failure(
+        "a leading equals token still needs a separate assignment equals",
+        "set == 3 C", 7, "expected '='");
+    test("set accepts equals as a basis name",
+         parse("set = = 3 C"), "=");
+    test("show accepts equals as a basis name",
+         parse("show ="), "arity:3 C");
+    test("an equals basis is self-delimiting before symbols",
+         parse("= x y z"), "=xyz");
+    test("an equals basis evaluates from compact expression syntax",
+         [] { parse_eval("=xyz"); }, "xzy\n");
+    test("set accepts a longer name beginning with equals",
+         parse("set =bar = 3 C"), "=bar");
+    test("show accepts a longer name beginning with equals",
+         parse("show =bar"), "arity:3 C");
+    test("a lowercase-ending equals name prints with a safe boundary",
+         parse("=bar x y z"), "=bar xyz");
+    test("a longer equals name evaluates through that boundary",
+         [] { parse_eval("=bar x y z"); }, "xzy\n");
+    test("define distinguishes an equals name from its symbol list",
+         parse("define = bar = rab"), "=");
+    test("the equals define binds each symbol after the name",
+         [] { parse_eval("=xyz"); }, "zyx\n");
+    test("show reports the equals define's arity",
+         [] {
+             std::ostringstream shown;
+             parse("show =").print_to(shown);
+             std::cout << shown.str().starts_with("arity:3 ");
+         },
+         "1");
+    test("the equals name retains both revisions",
+         [] {
+             std::ostringstream revisions;
+             parse("revisions =").print_to(revisions);
+             auto const value = revisions.str();
+             std::cout
+                 << value.starts_with("=@1 arity:3 C [captured]\n")
+                 << (value.find("=@2 arity:3 ") != std::string::npos)
+                 << value.ends_with("[captured] [current]");
+         },
+         "111");
+    test("set preserves later equals bytes in a leading-equals name",
+         parse("set =foo=bar = 1 I"), "=foo=bar");
+    test("show preserves later equals bytes in that name",
+         parse("show =foo=bar"), "arity:1 I");
+    test("a leading-equals name with an interior equals round trips",
+         parse("=foo=bar x"), "=foo=bar x");
+    test("the interior-equals name evaluates normally",
+         [] { parse_eval("=foo=bar x"); }, "x\n");
+    test("find among resolves the whole interior-equals name",
+         [] {
+             auto parsed = combdsl::detail::parse_input(
+                 "find among =foo=bar ?x=x",
+                 combdsl::detail::parser_definition_mode::
+                     inspect_definitions);
+             std::cout
+                 << parsed.is_find
+                 << parsed.catalog_find_command.has_value()
+                 << (parsed.catalog_find_command &&
+                     parsed.catalog_find_command->catalog.size() == 1);
+         },
+         "111");
+    test("compare accepts a leading-equals basis on a parenthesized left side",
+         [] {
+             static_cast<void>(parse(
+                 "compare ?x (=foo=bar x) = x"));
+             std::cout << "accepted";
+         },
+         "accepted");
+    test("revisions accepts the full interior-equals name",
+         parse("revisions =foo=bar"),
+         "=foo=bar arity:1 I [captured] [current]");
+    test("captured setup accepts equals as a body reference",
+         parse("set captured EqualCaptured = 3 ="),
+         "EqualCaptured");
+    test("live setup accepts equals as a body reference",
+         parse("set live EqualLive = 3 ="), "EqualLive");
+    test("usedby reports a direct equals-name dependency",
+         parse("usedby EqualCaptured"),
+         "EqualCaptured directly uses: =");
+    test("dependson accepts equals as its queried name",
+         parse("dependson ="),
+         "= is directly depended on by: EqualCaptured EqualLive");
+    test("set can redefine equals after a define",
+         parse("set = = 3 C"), "=");
+    test("a captured equals reference retains the define revision",
+         [] { parse_eval("EqualCaptured xyz"); }, "zyx\n");
+    test("a live equals reference follows the set revision",
+         [] { parse_eval("EqualLive xyz"); }, "xzy\n");
+    test("remove accepts equals as a basis name",
+         parse("remove ="), "=");
+    test_parse_failure(
+        "show treats a removed equals name as removed",
+        "show =", 5, "= is not a defined name");
+    test("a captured equals reference survives removal",
+         [] { parse_eval("EqualCaptured xyz"); }, "zyx\n");
+    test("a live equals reference retains its removed target",
+         [] { parse_eval("EqualLive xyz"); }, "xzy\n");
+    test("an explicit removed equals revision remains usable",
+         [] { parse_eval("=@3xyz"); }, "xzy\n");
+    test("set can restore an equals name after removal",
+         parse("set = = 3 I"), "=");
+    test("show reports the restored equals definition",
+         parse("show ="), "arity:3 I");
+    test("a live equals reference follows the restored revision",
+         [] { parse_eval("EqualLive xyz"); }, "xyz\n");
+    test("a captured equals reference remains frozen after restoration",
+         [] { parse_eval("EqualCaptured xyz"); }, "zyx\n");
+    test("remove accepts the full interior-equals name",
+         parse("remove =foo=bar"), "=foo=bar");
+    test_parse_failure(
+        "show treats the interior-equals name as removed",
+        "show =foo=bar", 5,
+        "=foo=bar is not a defined name");
+    test("a removed singleton interior-equals name remains parseable",
+         [] { parse_eval("=foo=bar x"); }, "x\n");
+    test("the set list preserves unambiguous equals-name commands",
+         [] {
+             auto const definitions = set_list();
+             std::cout
+                 << (definitions.find("set = = 3 C") !=
+                     std::string::npos)
+                 << (definitions.find("set =bar = 3 C") !=
+                     std::string::npos)
+                 << (definitions.find("define = bar = rab") !=
+                     std::string::npos)
+                 << (definitions.find("set =foo=bar = 1 I") !=
+                     std::string::npos)
+                 << (definitions.find("remove =") !=
+                     std::string::npos)
+                 << definitions.ends_with("remove =foo=bar");
+         },
+         "111111");
 
     std::cout << tests_run << " test(s) run, "
               << test_failures << " failed\n";

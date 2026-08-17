@@ -17,10 +17,10 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include <combdsl/combinators.hpp>
-#include <combdsl/color_step_ansi.hpp>
+#include "combdsl/combinators.hpp"
+#include "combdsl/color_step_ansi.hpp"
 
-#include <fmt/color.h>
+#include "fmt/color.h"
 
 #include "web/load_set_list.hpp"
 
@@ -47,8 +47,8 @@
 #include <utility>
 #include <vector>
 
-#include <readline/history.h>
-#include <readline/readline.h>
+#include "readline/history.h"
+#include "readline/readline.h"
 
 #if defined(_WIN32)
 #include <conio.h>
@@ -66,7 +66,7 @@
 
 namespace {
 
-constexpr std::string_view crepl_version = "2.12.3";
+constexpr std::string_view crepl_version = "2.12.4";
 constexpr std::string_view no_further_reductions_message =
     "No further reductions";
 
@@ -1850,42 +1850,46 @@ void write_wrapped_paragraph(
 
 void print_help_brief(std::ostream& output) {
     output <<
-        "Commands:\n"
+        "Commands (items in brackets [] are optional):\n"
         "about                                 | display copyright and redistribution information\n"
-        "abstract [steps | ministeps] ?<symbols> = <expression>\n"
-        "                                      | display combinator abstraction\n"
+        "abstract [steps | ministeps]          | compute combinators such that applying <xyz...> to them\n"
+        "    ?<xyz...> = <expression>          |     reduces to <expression>\n"
         "basis step [on | off]                 | names are converted to their stored expressions as a step\n"
         "birds                                 | display the pre-defined bird combinators\n"
         "colorize [on | off]                   | add colors to arguments while stepping\n"
-        "compare ?<symbols> <left> = <right>   | compare applied normal forms within time limits\n"
-        "define [captured | live] <name> [<xyz...>] = <expression>\n"
-        "                                      | compute and store combinators such that\n"
-        "                                      | <name> [<xyz...>] reduces to <expression>\n"
-        "dependson [all] <name> | depends-on [all] <name> | depends on [all] <name>\n"
-        "                                      | display direct and optional indirect users\n"
+        "compare ?<xyz...> <left> = <right>    | compare applied normal forms within time limits\n"
+        "define [captured | live] <name>       | compute and store combinators such that\n"
+        "    [<xyz...>] = <expression>         |     <name> [<xyz...>] reduces to <expression>\n"
+        "dependson  [all] <name>               | display direct and optional indirect definitions that\n"
+        "depends-on [all] <name>               |     depend on <name>\n"
+        "depends on [all] <name>               |\n"
         "exit                                  | end the program\n"
-        "find [all] [<num> | among <bird>...] ?<symbols> = <expression>\n"
-        "                                      | find matching bird forms\n"
+        "find [all] [<num> | among <birds...>] | search for shortest combinator strings such that applying\n"
+        "    ?<xyz...> = <expression>          |     <xyz...> to them reduces to <expression>\n"
         "help [brief | full]                   | display help information\n"
-        "inspect <expression>                  | describe an expression without evaluating it\n"
+        "inspect <expression>                  | display info about <expression> without evaluating it\n"
         "key step [on | off]                   | after each step, wait for a keypress to continue\n"
         "load <filename>                       | load a set-list journal from a file\n"
         "quit                                  | end the program\n"
-        "references <captured | live>          | capture name references or follow later changes\n"
+        "references <captured | live>          | by default, capture name references at define time\n"
+        "                                      |     or follow later changes to them\n"
         "remove <name>                         | remove a user-defined combinator name\n"
         "revisions <name>                      | display every retained revision of <name>\n"
         "save <filename>                       | save the set-list journal to a file\n"
-        "set [captured | live] <name> = [arity] <expression>\n"
-        "                                      | store <expression> as <name> with arity <arity> or 0\n"
-        "show <name | name@N | all>            | display one revision or the entire set list\n"
+        "set [captured | live] <name>          | store <expression> as <name> with arity <arity> or 0\n"
+        "    = [arity] <expression>            |\n"
+        "show <name[@<num>] | all>             | display one revision of <name> or the entire set list\n"
         "single step [on | off]                | display each step of the reduction without pause\n"
         "step limit <off | num>                | limit ordinary and Single Step evaluations\n"
-        "usedby [all] <name> | used-by [all] <name> | used by [all] <name>\n"
-        "                                      | display direct and optional indirect dependencies\n"
-        "usedby path [between] <name1> [and] <name2>\n"
-        "used-by path [between] <name1> [and] <name2>\n"
-        "used by path [between] <name1> [and] <name2>\n"
-        "                                      | display the shortest labeled dependency path\n";
+        "usedby  [all] <name>                  | display direct and optional indirect definitions that\n"
+        "used-by [all] <name>                  |     <name> uses\n"
+        "used by [all] <name>                  |\n"
+        "usedby  path [between] <name1>        | display the dependency path between <name1> and <name2>\n"
+        "    [and] <name2>                     |\n"
+        "used-by path [between] <name1>        |\n"
+        "    [and] <name2>                     |\n"
+        "used by path [between] <name1>        |\n"
+        "    [and] <name2>                     |\n";
     output.flush();
 }
 
@@ -1917,8 +1921,7 @@ void print_help_full(std::ostream& output) {
         "already in normal form",
         "When a submitted expression has no available reduction, ordinary "
         "evaluation, Single Step, and Key Step print \"No further "
-        "reductions\". Key Step completes without displaying the keypress "
-        "prompt or waiting for a keypress.");
+        "reductions\".");
     print_help_topic(
         output,
         "basis step [on | off]",
@@ -1937,8 +1940,7 @@ void print_help_full(std::ostream& output) {
         "evaluation after num reduction steps at a time. Key Step ignores "
         "the limit. With redirected input, evaluation stops at the limit. "
         "The limit is off at startup, and an explicit off or num is required. "
-        "An expression that reaches normal form on exactly the limiting step "
-        "completes normally. In an interactive session, reaching the limit "
+        "In an interactive session, reaching the limit "
         "pauses the evaluation. Press Enter to reset the count and continue "
         "the same evaluation, or press q or Q to cancel it. The number must "
         "be greater than zero. "
@@ -1993,15 +1995,24 @@ void print_help_full(std::ostream& output) {
         "computes a series of combinators that will reproduce the "
         "combinator_expression. With no symbols, it stores an arity-zero "
         "basis directly. An all-lowercase token immediately before '=' is "
-        "the complete basis name, as in \"define foo=x\". For a "
+        "assumed to be the basis name, as in \"define foo=x\". For a "
         "one-character name that does not begin with a lowercase ASCII "
-        "letter, the space before symbols may be omitted. For example, to "
-        "add the Eagle bird:");
+        "letter, the space before symbols may be omitted. For example, if "
+        "the Eagle bird wasn't already defined, it could be added by:");
     output << "define Exyzwv = xy(zwv)\n\n";
     write_wrapped_paragraph(
         output,
-        "A basis name cannot begin with ? because ? introduces parser "
-        "command markers.");
+        "A basis name cannot begin with \\, \", ), (, or ?, and can't end with @");
+    output.put('\n');
+    write_wrapped_paragraph(
+        output,
+        "An equals sign may begin a basis name. For such a name, whitespace "
+        "must separate the name from the assignment =; every later = before "
+        "that whitespace remains part of the name. Thus 'set = = 3 C' "
+        "defines the name '=', and 'set =bar = 3 C' defines the name "
+        "'=bar', while 'set = 3 C' is a parse error because it has no second "
+        "'='. In 'define = bar = rab', the name is '=' and 'bar' is the "
+        "symbol list.");
     output.put('\n');
     write_wrapped_paragraph(
         output,
@@ -2035,9 +2046,9 @@ void print_help_full(std::ostream& output) {
     write_wrapped_paragraph(
         output,
         "A redefinition is rejected when resolving its live references "
-        "would make the resulting definition graph circular. A frozen or "
+        "would make the resulting definition graph circular. A captured or "
         "version-qualified reference cannot create a cycle by itself, "
-        "although a frozen revision can contain live references. Recursive "
+        "although a captured revision can contain live references. Recursive "
         "\"define\" remains allowed.");
     output << '\n'
            << "references <captured | live>\n";
@@ -2061,11 +2072,11 @@ void print_help_full(std::ostream& output) {
         "saved. If there is none, the saved set list begins with \"references "
         "captured\". Later \"references\" commands remain in chronological order.");
     output << '\n'
-           << "show <name | name@N | all>\n";
+           << "show <name[@<num>] | all>\n";
     write_wrapped_paragraph(
         output,
         "The show command displays the arity and combinators stored for the "
-        "current name, while \"show name@N\" displays that exact immutable "
+        "current name, while \"show name@<num>\" displays that exact immutable "
         "revision. For example, \"show E\" for the Eagle bird would display "
         "\"arity:5 BDD\". The \"show all\" form displays the entire saved set "
         "list, or \"Nothing to show\" when it is empty. Because that list is "

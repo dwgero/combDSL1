@@ -10,8 +10,7 @@ reduction step. Pressing the letter Q or q exits the reduction immediately.
 
 already in normal form
 When a submitted expression has no available reduction, ordinary evaluation,
-Single Step, and Key Step print "No further reductions". Key Step completes
-without displaying the keypress prompt or waiting for a keypress.
+Single Step, and Key Step print "No further reductions".
 
 basis step [on | off]
 Changes how "single step" and "key step" handle named bases defined by compound
@@ -25,11 +24,10 @@ step limit <off | num>
 Pauses each subsequent ordinary or Single Step interactive evaluation after num
 reduction steps at a time. Key Step ignores the limit. With redirected input,
 evaluation stops at the limit. The limit is off at startup, and an explicit off
-or num is required. An expression that reaches normal form on exactly the
-limiting step completes normally. In an interactive session, reaching the limit
-pauses the evaluation. Press Enter to reset the count and continue the same
-evaluation, or press q or Q to cancel it. The number must be greater than zero.
-The setting is not written to saved set-list journals.
+or num is required. In an interactive session, reaching the limit pauses the
+evaluation. Press Enter to reset the count and continue the same evaluation, or
+press q or Q to cancel it. The number must be greater than zero. The setting is
+not written to saved set-list journals.
 
 colorize [on | off]
 When "single step" or "key step" is active, it highlights the first, second,
@@ -63,13 +61,21 @@ define [captured | live] <name> [<symbol_list>] = <combinator_expression>
 The "define" form accepts zero or more symbols (lower case letters) after the
 name, infers the arity from their count, and computes a series of combinators
 that will reproduce the combinator_expression. With no symbols, it stores an
-arity-zero basis directly. An all-lowercase token immediately before '=' is the
-complete basis name, as in "define foo=x". For a one-character name that does
-not begin with a lowercase ASCII letter, the space before symbols may be
-omitted. For example, to add the Eagle bird:
+arity-zero basis directly. An all-lowercase token immediately before '=' is
+assumed to be the basis name, as in "define foo=x". For a one-character name
+that does not begin with a lowercase ASCII letter, the space before symbols may
+be omitted. For example, if the Eagle bird wasn't already defined, it could be
+added by:
 define Exyzwv = xy(zwv)
 
-A basis name cannot begin with ? because ? introduces parser command markers.
+A basis name cannot begin with \, ", ), (, or ?, and can't end with @
+
+An equals sign may begin a basis name. For such a name, whitespace must separate
+the name from the assignment =; every later = before that whitespace remains
+part of the name. Thus 'set = = 3 C' defines the name '=', and 'set =bar = 3 C'
+defines the name '=bar', while 'set = 3 C' is a parse error because it has no
+second '='. In 'define = bar = rab', the name is '=' and 'bar' is the symbol
+list.
 
 The optional "captured" or "live" modifier on set and define overrides the
 reference mode for that command only, without changing the mode for later input.
@@ -93,8 +99,8 @@ may preserve an explicitly entered name@1; show all and save expose that same
 journal.
 
 A redefinition is rejected when resolving its live references would make the
-resulting definition graph circular. A frozen or version-qualified reference
-cannot create a cycle by itself, although a frozen revision can contain live
+resulting definition graph circular. A captured or version-qualified reference
+cannot create a cycle by itself, although a captured revision can contain live
 references. Recursive "define" remains allowed.
 
 references <captured | live>
@@ -114,13 +120,13 @@ Before the first saved set, define, or remove, only the last explicit
 "references captured". Later "references" commands remain in chronological
 order.
 
-show <name | name@N | all>
+show <name[@<num>] | all>
 The show command displays the arity and combinators stored for the current name,
-while "show name@N" displays that exact immutable revision. For example, "show
-E" for the Eagle bird would display "arity:5 BDD". The "show all" form displays
-the entire saved set list, or "Nothing to show" when it is empty. Because that
-list is replayable source history, it may preserve an explicitly entered name@1
-token.
+while "show name@<num>" displays that exact immutable revision. For example,
+"show E" for the Eagle bird would display "arity:5 BDD". The "show all" form
+displays the entire saved set list, or "Nothing to show" when it is empty.
+Because that list is replayable source history, it may preserve an explicitly
+entered name@1 token.
 
 revisions <name>
 Displays every retained immutable revision of the unversioned name in ascending

@@ -350,6 +350,66 @@ const applyBuiltDefinition = (module, source, requestId) => {
     assert.equal(result.output, "", source);
 };
 
+test("built Studio Wasm routes and reloads equals-prefixed basis names",
+    async () => {
+        const module = await loadBuiltCombdslModule();
+        const malformed = module.inspectDefinition("set = 3 C");
+        assert.equal(malformed.success, false);
+        assert.match(
+            malformed.error,
+            /Parse error at position 7: expected '='/,
+        );
+
+        let requestId = 280;
+        for (const source of [
+            "set = = 3 C",
+            "set =bar = 3 C",
+            "define = bar = rab",
+        ]) {
+            const inspection = module.inspectDefinition(source);
+            assert.equal(inspection.success, true, source);
+            assert.equal(inspection.definition, true, source);
+            assert.equal(inspection.displayOnly, false, source);
+            applyBuiltDefinition(module, source, ++requestId);
+        }
+
+        const showInspection = module.inspectDefinition("show =");
+        assert.equal(showInspection.success, true);
+        assert.equal(showInspection.definition, false);
+        assert.equal(showInspection.displayOnly, true);
+
+        const equals = module.parseEval("=xyz", ++requestId, false, 0);
+        assert.equal(equals.success, true, equals.error);
+        assert.equal(equals.output, "zyx\n");
+        const equalsBar = module.parseEval(
+            "=bar x y z", ++requestId, false, 0);
+        assert.equal(equalsBar.success, true, equalsBar.error);
+        assert.equal(equalsBar.output, "xzy\n");
+
+        const setList = module.setList();
+        assert.equal(
+            setList,
+            "references captured\n" +
+            "set = = 3 C\n" +
+            "set =bar = 3 C\n" +
+            "define = bar = rab",
+        );
+
+        const restored = await loadBuiltCombdslModule();
+        const load = restored.loadSetList(setList, "equals names");
+        assert.equal(load.success, true, load.error);
+        assert.equal(load.loaded, 4);
+        const restoredEquals = restored.parseEval(
+            "=xyz", ++requestId, false, 0);
+        assert.equal(restoredEquals.success, true, restoredEquals.error);
+        assert.equal(restoredEquals.output, "zyx\n");
+        const restoredEqualsBar = restored.parseEval(
+            "=bar x y z", ++requestId, false, 0);
+        assert.equal(restoredEqualsBar.success, true,
+            restoredEqualsBar.error);
+        assert.equal(restoredEqualsBar.output, "xzy\n");
+    });
+
 test("built inspection identifies only restricted Find metadata",
     async () => {
         const module = await loadBuiltCombdslModule();
