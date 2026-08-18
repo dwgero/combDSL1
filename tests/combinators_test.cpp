@@ -785,9 +785,9 @@ int main() {
     const auto zero_arity_basis = basis("Qzero", 0, K);
     const auto fifth_argument_projection =
         basis("Fifth", 5, K(K(K(K(I)))));
-    auto seven_character_basis = basis("1234567", 1, I);
+    auto seven_character_basis = basis("123456x", 1, I);
     auto fifteen_character_basis =
-        basis("123456789012345", 1, I);
+        basis("A12345678901234", 1, I);
     std::string copied_basis_name = "Alias";
     auto copied_name_basis = basis(copied_basis_name, 1, I);
     copied_basis_name.assign("other");
@@ -2603,6 +2603,50 @@ int main() {
          basis("Cpp?Question", 1, I), "Cpp?Question");
     test("the C++ basis API accepts an ending question mark",
          basis("CppQuestion?", 1, I), "CppQuestion?");
+    auto const numeric_name_registry_before =
+        combdsl::detail::registered_parser_lookup_snapshot();
+    constexpr std::string_view invalid_numeric_basis_names[] = {
+        "0", "000", "123456789012345"};
+    for (auto const name : invalid_numeric_basis_names) {
+        auto title = std::string(
+            "the C++ basis API rejects numeric-only name ");
+        title += name;
+        test(title,
+             [name] {
+                 try {
+                     static_cast<void>(basis(name, 1, I));
+                 } catch (std::invalid_argument const& error) {
+                     std::cout << error.what();
+                 }
+             },
+             "combdsl::basis names cannot be non-negative integer literals");
+    }
+    test("the C++ basis API validates a visible numeric prefix before null",
+         [] {
+             try {
+                 static_cast<void>(basis(
+                     std::string_view("7\0suffix", 8), 1, I));
+             } catch (std::invalid_argument const& error) {
+                 std::cout << error.what();
+             }
+         },
+         "combdsl::basis names cannot be non-negative integer literals");
+    test("rejected C++ numeric names never enter the parser registry",
+         [&] {
+             auto const after =
+                 combdsl::detail::registered_parser_lookup_snapshot();
+             std::cout
+                 << (after.bases.size() ==
+                     numeric_name_registry_before.bases.size())
+                 << (after.versions.size() ==
+                     numeric_name_registry_before.versions.size())
+                 << (after.live_bindings.size() ==
+                     numeric_name_registry_before.live_bindings.size())
+                 << !after.bases.contains("0")
+                 << !after.bases.contains("000")
+                 << !after.bases.contains("123456789012345");
+         },
+         "111111");
     auto const leading_question_registry_before =
         combdsl::detail::registered_parser_lookup_snapshot();
     auto const leading_question_history_before = set_list();
@@ -4312,6 +4356,37 @@ int main() {
     test("basis ending UTF-8 prints compactly before a symbol",
          parse("Utf\xE2\x97\x8F" "x"),
          "Utf\xE2\x97\x8F" "x");
+    const auto plus_integer_name_basis = basis("+4", 1, I);
+    const auto minus_integer_name_basis = basis("-4", 1, I);
+    const auto decimal_name_basis = basis("4.0", 1, I);
+    const auto exponent_name_basis = basis("4e2", 1, I);
+    const auto mixed_numeric_name_basis = basis("4x", 1, I);
+    const auto unicode_digit_name_basis =
+        basis("\xD9\xA7", 1, I);
+    test("the C++ basis API retains a plus-prefixed numeric name",
+         plus_integer_name_basis, "+4");
+    test("the C++ basis API retains a minus-prefixed numeric name",
+         minus_integer_name_basis, "-4");
+    test("the C++ basis API retains a decimal-looking name",
+         decimal_name_basis, "4.0");
+    test("the C++ basis API retains an exponent-looking name",
+         exponent_name_basis, "4e2");
+    test("the C++ basis API retains a mixed alphanumeric name",
+         mixed_numeric_name_basis, "4x");
+    test("the C++ basis API retains a non-ASCII digit name",
+         unicode_digit_name_basis, "\xD9\xA7");
+    test("an exact plus-prefixed basis name remains usable",
+         single_step(parse("+4 x")), "x");
+    test("an exact minus-prefixed basis name remains usable",
+         single_step(parse("-4 x")), "x");
+    test("an exact decimal-looking basis name remains usable",
+         single_step(parse("4.0 x")), "x");
+    test("an exact exponent-looking basis name remains usable",
+         single_step(parse("4e2 x")), "x");
+    test("an exact mixed alphanumeric basis name remains usable",
+         single_step(parse("4x x")), "x");
+    test("an exact non-ASCII digit basis name remains usable",
+         single_step(parse("\xD9\xA7 x")), "x");
     test("parse escaped backslash inside word",
          parse("\\\"a\\\\b\\\""), "a\\b");
     test("parse UTF-8 escaped word",
@@ -4387,12 +4462,16 @@ int main() {
     test("parse separated V4", single_step(parse("V4 x y z")), "V4xyz");
     test("parse V4 without a trailing delimiter",
          parse("V4x"), "V4x");
-    test("registered all-digit basis wins over a numeric literal",
+    test("seven digits remain a numeric literal",
          parse("1234567"), "1234567");
+    test("a leading-zero spelling remains a numeric literal",
+         parse("0000000"), "0");
+    test("fifteen digits remain a numeric literal",
+         parse("123456789012345"), "123456789012345");
     test("maximum-length digit-ending basis prints compactly",
-         parse("123456789012345x"), "123456789012345x");
+         parse("A12345678901234x"), "A12345678901234x");
     test("maximum-length digit-ending basis needs no delimiter",
-         single_step(parse("123456789012345x")), "x");
+         single_step(parse("A12345678901234x")), "x");
     static_cast<void>(basis("Long1", 1, K));
     static_cast<void>(basis("Long12", 1, I));
     test("longest eligible basis prefix wins",
@@ -4402,9 +4481,9 @@ int main() {
     test("exact longer basis wins over an eligible prefix",
          single_step(parse("Exact1x")), "I");
     test("basis automatically registers seven-character name",
-         single_step(parse("1234567 x")), "x");
+         single_step(parse("123456x x")), "x");
     test("basis automatically registers fifteen-character name",
-         single_step(parse("123456789012345 x")), "x");
+         single_step(parse("A12345678901234 x")), "x");
     test("basis registration copies mutable name",
          single_step(parse("Alias x")), "x");
     test("basis step exposes registered basis definition",
@@ -4773,6 +4852,93 @@ int main() {
             define_source.rfind(name),
             detail);
     }
+    constexpr std::string_view numeric_basis_name_error =
+        "combdsl::basis names cannot be non-negative integer literals";
+    auto const numeric_command_registry_before =
+        combdsl::detail::registered_parser_lookup_snapshot();
+    auto const numeric_command_history_before = set_list();
+    test_parse_failure(
+        "set rejects zero as a basis name",
+        "set 0 = I", 4, numeric_basis_name_error);
+    test_parse_failure(
+        "set rejects a leading-zero basis name",
+        "set 000 = I", 4, numeric_basis_name_error);
+    test_parse_failure(
+        "set rejects a fifteen-digit basis name",
+        "set 123456789012345 = I", 4, numeric_basis_name_error);
+    test_parse_failure(
+        "define rejects zero as a basis name",
+        "define 0 = I", 7, numeric_basis_name_error);
+    test_parse_failure(
+        "define rejects a leading-zero basis name",
+        "define 000 x = x", 7, numeric_basis_name_error);
+    test_parse_failure(
+        "define rejects a fifteen-digit basis name",
+        "define 123456789012345 x = x", 7,
+        numeric_basis_name_error);
+    test_parse_failure(
+        "compact define rejects its numeric one-character name",
+        "define 7x = x", 7, numeric_basis_name_error);
+    test_parse_failure(
+        "remove rejects a numeric-only basis name",
+        "remove 0", 7, numeric_basis_name_error);
+    test_parse_failure(
+        "revisions rejects a numeric-only basis name",
+        "revisions 000", 10, numeric_basis_name_error);
+    test_parse_failure(
+        "dependson rejects a numeric-only basis name",
+        "dependson 123456789012345", 10,
+        numeric_basis_name_error);
+    test_parse_failure(
+        "usedby rejects a numeric-only basis name",
+        "usedby 0", 7, numeric_basis_name_error);
+    test_parse_failure(
+        "dependency paths reject a numeric-only first name",
+        "usedby path 0 AllRoot", 12, numeric_basis_name_error);
+    test_parse_failure(
+        "show keeps numeric text as a non-mutating name lookup",
+        "show 0", 5, "0 is not a defined name");
+    test("numeric-name command failures roll back every registry change",
+         [&] {
+             auto const after =
+                 combdsl::detail::registered_parser_lookup_snapshot();
+             std::cout
+                 << (after.bases.size() ==
+                     numeric_command_registry_before.bases.size())
+                 << (after.versions.size() ==
+                     numeric_command_registry_before.versions.size())
+                 << (after.live_bindings.size() ==
+                     numeric_command_registry_before.live_bindings.size())
+                 << !after.bases.contains("0")
+                 << !after.bases.contains("000")
+                 << !after.bases.contains("123456789012345")
+                 << (set_list() == numeric_command_history_before);
+         },
+         "1111111");
+    test("set retains a plus-prefixed numeric-looking name",
+         parse("set +5 = 1 I"), "+5");
+    test("set retains a minus-prefixed numeric-looking name",
+         parse("set -5 = 1 I"), "-5");
+    test("set retains a decimal-looking name",
+         parse("set 5.0 = 1 I"), "5.0");
+    test("set retains an exponent-looking name",
+         parse("set 5e2 = 1 I"), "5e2");
+    test("set retains a mixed alphanumeric name",
+         parse("set 5x = 1 I"), "5x");
+    test("a plus-prefixed numeric-looking name evaluates",
+         single_step(parse("+5 x")), "x");
+    test("a minus-prefixed numeric-looking name evaluates",
+         single_step(parse("-5 x")), "x");
+    test("a decimal-looking name evaluates",
+         single_step(parse("5.0 x")), "x");
+    test("an exponent-looking name evaluates",
+         single_step(parse("5e2 x")), "x");
+    test("a mixed alphanumeric name evaluates",
+         single_step(parse("5x x")), "x");
+    test("define retains a mixed name when symbols are separated",
+         parse("define 7x y = y"), "7x");
+    test("the separated mixed-name define evaluates",
+         single_step(parse("7x z")), "z");
     test_parse_failure(
         "set requires a second equals after an equals name",
         "set = I", 6, "expected '='");
@@ -6019,7 +6185,6 @@ int main() {
              static_cast<void>(parse("set CompactBang! = 2 A"));
              static_cast<void>(parse("set Compact1 = 2 A"));
              static_cast<void>(parse("set lowerbird = 2 A"));
-             static_cast<void>(parse("set 7 = 2 A"));
              static_cast<void>(parse("set CompactQuest? = 2 A"));
              static_cast<void>(parse("set CompactRemoved = 2 A"));
              static_cast<void>(parse("set CompactLive = 2 A"));
@@ -6046,9 +6211,10 @@ int main() {
     test("find among parses adjacent lowercase user names",
          parse("find among KlowerbirdA ?xy = x(yx)"),
          "?=lowerbird\n?=A");
-    test("find among gives a registered digit-only name precedence",
-         parse("find among K7A ?xy = x(yx)"),
-         "?=7\n?=A");
+    test_parse_failure(
+        "find among does not treat an integer as a basis name",
+        "find among 7 ?xy = x(yx)", 11,
+        "7 is not a defined name");
     test("find among retains question marks inside an exact bird name",
          parse("find among CompactQuest? ?xy = x(yx)"),
          "?=CompactQuest?");
@@ -6061,7 +6227,7 @@ int main() {
     test("find among accepts a leading-zero revision next to another bird",
          parse("find among CompactLong@0001A ?xy = x(yx)"),
          "?=CompactLong\n?=A");
-    test("find among retains a valid revision before many digit birds",
+    test("find among retains a valid revision before many adjacent birds",
          [] {
              std::size_t clock_calls = 0;
              find_clock_override_reset reset;
@@ -6071,7 +6237,7 @@ int main() {
              };
              auto source = std::string(
                  "find all among CompactLong@1");
-             source.append(30, '7');
+             source.append(30, 'A');
              source += "A ?x = x";
              auto const parsed = combdsl::detail::parse_input(
                  source,
@@ -9775,9 +9941,9 @@ int main() {
                                : "changed");
          },
          "restored");
-    test("seven-character basis", seven_character_basis, "1234567");
+    test("seven-character basis", seven_character_basis, "123456x");
     test("fifteen-character basis",
-         fifteen_character_basis, "123456789012345");
+         fifteen_character_basis, "A12345678901234");
     test("zero-arity basis without arguments", zero_arity_basis, "Qzero");
     test("zero-arity basis with one argument",
          zero_arity_basis(x), "Kx");
@@ -10326,6 +10492,20 @@ int main() {
     check(overlong_basis_rejected);
     auto preserved_pointer = std::move(preserved_expression)(0);
     check(*preserved_pointer == 29);
+
+    auto numeric_name_preserved_expression =
+        K(std::make_unique<int>(31));
+    bool numeric_basis_rejected = false;
+    try {
+        static_cast<void>(basis(
+            "7", 1, std::move(numeric_name_preserved_expression)));
+    } catch (std::invalid_argument const&) {
+        numeric_basis_rejected = true;
+    }
+    check(numeric_basis_rejected);
+    auto numeric_name_preserved_pointer =
+        std::move(numeric_name_preserved_expression)(0);
+    check(*numeric_name_preserved_pointer == 31);
 
     bool empty_basis_rejected = false;
     try {

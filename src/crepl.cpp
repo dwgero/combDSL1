@@ -66,7 +66,7 @@
 
 namespace {
 
-constexpr std::string_view crepl_version = "2.12.5";
+constexpr std::string_view crepl_version = "2.12.6";
 constexpr std::string_view no_further_reductions_message =
     "No further reductions";
 
@@ -2003,7 +2003,8 @@ void print_help_full(std::ostream& output) {
     write_wrapped_paragraph(
         output,
         "A basis name can't begin with \\, \", or ?, can't end with @, "
-        "and can't contain ) or ( anywhere.");
+        "can't contain ) or ( anywhere, and can't be a non-negative integer "
+        "literal.");
     output.put('\n');
     write_wrapped_paragraph(
         output,

@@ -388,9 +388,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             color: #c33;
         }
     </style>
-    <script src="./evaluation_watchdog.js?v=2.12.5" defer></script>
-    <script src="./input_history.js?v=2.12.5" defer></script>
-    <script src="./app.js?v=2.12.5" defer></script>
+    <script src="./evaluation_watchdog.js?v=2.12.6" defer></script>
+    <script src="./input_history.js?v=2.12.6" defer></script>
+    <script src="./app.js?v=2.12.6" defer></script>
 </head>
 <body>
     <main aria-labelledby="studio-title">
@@ -621,9 +621,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             <code>define Exyzwv = xy(zwv)</code>
             <br><br>
             A basis name cannot begin with <code>\</code>, <code>"</code>, or
-            <code>?</code>, cannot end with <code>@</code>, and cannot contain
-            <code>)</code> or <code>(</code> anywhere. The <code>?</code>
-            introduces parser command markers.
+            <code>?</code>, cannot end with <code>@</code>, cannot contain
+            <code>)</code> or <code>(</code> anywhere, and cannot be a
+            non-negative integer literal. The <code>?</code> introduces parser
+            command markers.
             <br><br>
             An equals sign or ampersand may begin a basis name. For such a
             name, whitespace must separate the name from the assignment
@@ -1048,7 +1049,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             data-dialog-initial-focus>About</h2>
         <div class="license-text">
             <!-- Keep this version and the app.js cache key in sync. -->
-            <p>Combinator Studio, version 2.12.5<br>
+            <p>Combinator Studio, version 2.12.6<br>
                 Part of the C++ Combinator DSL<br>
                 Copyright (C) 2026  David W. Gero</p>
             <p>This program is free software: you can redistribute it and/or modify

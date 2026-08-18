@@ -569,6 +569,20 @@ private:
                 "combdsl::basis names cannot end with @");
         }
 
+        // At no more than 15 bytes, every all-decimal name is in the
+        // std::int64_t range accepted by the expression parser.
+        bool is_nonnegative_integer = true;
+        for (std::size_t index = 0; index < length; ++index) {
+            if (name[index] < '0' || name[index] > '9') {
+                is_nonnegative_integer = false;
+                break;
+            }
+        }
+        if (is_nonnegative_integer) {
+            throw std::invalid_argument(
+                "combdsl::basis names cannot be non-negative integer literals");
+        }
+
         return name.substr(0, length);
     }
 

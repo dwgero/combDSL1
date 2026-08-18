@@ -344,7 +344,8 @@ test("documents compact restricted Find catalogs in Studio", () => {
     assert.match(html, /<code>\?<\/code>, cannot end/);
     assert.match(html, /cannot end\s+with <code>@<\/code>/);
     assert.match(html, /cannot contain\s+<code>\)<\/code> or <code>\(<\/code> anywhere/);
-    assert.match(html, /introduces parser command\s+markers/);
+    assert.match(html, /cannot be a\s+non-negative integer literal/);
+    assert.match(html, /introduces\s+parser\s+command\s+markers/);
 });
 
 test("documents leading-equals and ampersand basis names in Studio", () => {

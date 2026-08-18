@@ -220,8 +220,12 @@ character terminates the copied name. Because leading whitespace and
 parentheses and `?` belong to the parser grammar, names cannot begin with one of
 those characters or with a double quote. A name also cannot begin with a single
 or doubled backslash, though a doubled backslash may occur later in the name.
-A visible name cannot end in `@`. A visible name longer than 15 bytes throws
-`std::length_error`; an invalid name throws `std::invalid_argument`.
+A visible name cannot end in `@` or consist entirely of ASCII decimal digits:
+non-negative integer literal spellings such as `0`, `42`, and `00042` are
+reserved for integer values. Names such as `+4`, `-4`, `4.0`, `4e2`, and `4x`
+remain valid.
+A visible name longer than 15 bytes throws `std::length_error`; an invalid name
+throws `std::invalid_argument`.
 
 Every successful `basis(...)` call also registers that name with the text
 parser. User-defined names may be redefined.
@@ -998,7 +1002,7 @@ expression produces no output, while malformed or empty lines throw
 The `crepl` executable applies `input_escape` to each line before passing it to
 `parse_eval`, so ordinary quoted words and backslashes can be entered directly.
 When standard output is a terminal, it first prints
-`Combinator Read-Eval-Print Loop, version 2.12.5`. Long evaluations display
+`Combinator Read-Eval-Print Loop, version 2.12.6`. Long evaluations display
 the accumulated step count every 1,000 reductions by overwriting one status
 line; the line is cleared before evaluation output is printed. Its interactive
 prompt is `>`. Interactive input uses GNU Readline, so previous nonempty

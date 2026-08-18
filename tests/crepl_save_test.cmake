@@ -371,3 +371,166 @@ if(NOT malformed_equals_error STREQUAL
         "expected:\nParse error at position 7: expected '='\n"
         "actual:\n${malformed_equals_error}")
 endif()
+
+set(numeric_file
+    "${CREPL_WORKING_DIRECTORY}/numeric-like definitions.cmb")
+set(numeric_input
+    "${CREPL_WORKING_DIRECTORY}/numeric-name-save-input.cmb")
+file(REMOVE "${numeric_file}")
+file(WRITE "${numeric_input}"
+    "set +8 = 1 I\n"
+    "set -8 = 1 I\n"
+    "set 8.0 = 1 I\n"
+    "set 8e2 = 1 I\n"
+    "set 8x = 1 I\n"
+    "set 0 = I\n"
+    "set 000 = I\n"
+    "set 123456789012345 = I\n"
+    "define 0 = I\n"
+    "remove 0\n"
+    "revisions 000\n"
+    "dependson 123456789012345\n"
+    "show 0\n"
+    "save numeric-like definitions.cmb\n"
+    "exit\n")
+execute_process(
+    COMMAND "${CREPL_EXECUTABLE}"
+    INPUT_FILE "${numeric_input}"
+    WORKING_DIRECTORY "${CREPL_WORKING_DIRECTORY}"
+    OUTPUT_VARIABLE numeric_output
+    ERROR_VARIABLE numeric_error
+    RESULT_VARIABLE numeric_result
+    TIMEOUT 10
+)
+if(NOT numeric_result EQUAL 0)
+    message(FATAL_ERROR
+        "numeric-name save exited with ${numeric_result}\n"
+        "stderr:\n${numeric_error}")
+endif()
+if(NOT numeric_output STREQUAL
+        "Saved numeric-like definitions.cmb\n")
+    message(FATAL_ERROR
+        "unexpected numeric-name CREPL output\n"
+        "expected:\nSaved numeric-like definitions.cmb\n"
+        "actual:\n${numeric_output}")
+endif()
+string(CONCAT expected_numeric_error
+    "Parse error at position 5: combdsl::basis names cannot be "
+    "non-negative integer literals\n"
+    "Parse error at position 5: combdsl::basis names cannot be "
+    "non-negative integer literals\n"
+    "Parse error at position 5: combdsl::basis names cannot be "
+    "non-negative integer literals\n"
+    "Parse error at position 8: combdsl::basis names cannot be "
+    "non-negative integer literals\n"
+    "Parse error at position 8: combdsl::basis names cannot be "
+    "non-negative integer literals\n"
+    "Parse error at position 11: combdsl::basis names cannot be "
+    "non-negative integer literals\n"
+    "Parse error at position 11: combdsl::basis names cannot be "
+    "non-negative integer literals\n"
+    "Parse error at position 6: 0 is not a defined name\n")
+if(NOT numeric_error STREQUAL expected_numeric_error)
+    message(FATAL_ERROR
+        "unexpected numeric-name CREPL error\n"
+        "expected:\n${expected_numeric_error}"
+        "actual:\n${numeric_error}")
+endif()
+file(READ "${numeric_file}" numeric_contents)
+string(CONCAT expected_numeric_contents
+    "references captured\n"
+    "set +8 = 1 I\n"
+    "set -8 = 1 I\n"
+    "set 8.0 = 1 I\n"
+    "set 8e2 = 1 I\n"
+    "set 8x = 1 I")
+if(NOT numeric_contents STREQUAL expected_numeric_contents)
+    message(FATAL_ERROR
+        "unexpected saved numeric-like definitions\n"
+        "expected:\n${expected_numeric_contents}\n"
+        "actual:\n${numeric_contents}\n")
+endif()
+
+set(numeric_load_input
+    "${CREPL_WORKING_DIRECTORY}/numeric-name-load-input.cmb")
+file(WRITE "${numeric_load_input}"
+    "load numeric-like definitions.cmb\n"
+    "+8 x\n"
+    "-8 x\n"
+    "8.0 x\n"
+    "8e2 x\n"
+    "8x x\n"
+    "exit\n")
+execute_process(
+    COMMAND "${CREPL_EXECUTABLE}"
+    INPUT_FILE "${numeric_load_input}"
+    WORKING_DIRECTORY "${CREPL_WORKING_DIRECTORY}"
+    OUTPUT_VARIABLE numeric_load_output
+    ERROR_VARIABLE numeric_load_error
+    RESULT_VARIABLE numeric_load_result
+    TIMEOUT 10
+)
+if(NOT numeric_load_result EQUAL 0)
+    message(FATAL_ERROR
+        "numeric-like name load exited with ${numeric_load_result}\n"
+        "stderr:\n${numeric_load_error}")
+endif()
+if(NOT numeric_load_output STREQUAL
+        "Loaded numeric-like definitions.cmb\nx\nx\nx\nx\nx\n")
+    message(FATAL_ERROR
+        "unexpected reloaded numeric-like name output\n"
+        "actual:\n${numeric_load_output}")
+endif()
+if(NOT numeric_load_error STREQUAL "")
+    message(FATAL_ERROR
+        "unexpected reloaded numeric-like name error:\n"
+        "${numeric_load_error}")
+endif()
+
+set(invalid_numeric_file
+    "${CREPL_WORKING_DIRECTORY}/invalid numeric definitions.cmb")
+file(WRITE "${invalid_numeric_file}"
+    "set LoadBefore = 1 K\n"
+    "set 000 = I\n"
+    "set LoadAfter = 1 I\n")
+set(invalid_numeric_load_input
+    "${CREPL_WORKING_DIRECTORY}/invalid-numeric-load-input.cmb")
+file(WRITE "${invalid_numeric_load_input}"
+    "set LoadNumericKeep = 1 I\n"
+    "load invalid numeric definitions.cmb\n"
+    "LoadNumericKeep x\n"
+    "show LoadBefore\n"
+    "show LoadAfter\n"
+    "exit\n")
+execute_process(
+    COMMAND "${CREPL_EXECUTABLE}"
+    INPUT_FILE "${invalid_numeric_load_input}"
+    WORKING_DIRECTORY "${CREPL_WORKING_DIRECTORY}"
+    OUTPUT_VARIABLE invalid_numeric_load_output
+    ERROR_VARIABLE invalid_numeric_load_error
+    RESULT_VARIABLE invalid_numeric_load_result
+    TIMEOUT 10
+)
+if(NOT invalid_numeric_load_result EQUAL 0)
+    message(FATAL_ERROR
+        "invalid numeric-name load exited with "
+        "${invalid_numeric_load_result}")
+endif()
+if(NOT invalid_numeric_load_output STREQUAL "x\n")
+    message(FATAL_ERROR
+        "numeric-name load did not roll back atomically\n"
+        "actual output:\n${invalid_numeric_load_output}")
+endif()
+string(CONCAT expected_invalid_numeric_load_error
+    "Parse error in file invalid numeric definitions.cmb on line 2 at "
+    "position 5: combdsl::basis names cannot be non-negative integer literals\n"
+    "Errors are preventing any changes from being made\n"
+    "Parse error at position 6: LoadBefore is not a defined name\n"
+    "Parse error at position 6: LoadAfter is not a defined name\n")
+if(NOT invalid_numeric_load_error STREQUAL
+        expected_invalid_numeric_load_error)
+    message(FATAL_ERROR
+        "unexpected invalid numeric-name load error\n"
+        "expected:\n${expected_invalid_numeric_load_error}"
+        "actual:\n${invalid_numeric_load_error}")
+endif()

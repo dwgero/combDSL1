@@ -68,8 +68,8 @@ be omitted. For example, if the Eagle bird wasn't already defined, it could be
 added by:
 define Exyzwv = xy(zwv)
 
-A basis name can't begin with \, ", or ?, can't end with @, and can't contain )
-or ( anywhere.
+A basis name can't begin with \, ", or ?, can't end with @, can't contain ) or (
+anywhere, and can't be a non-negative integer literal.
 
 An equals sign or ampersand may begin a basis name. For such a name, whitespace
 must separate the name from the assignment =; every later = before that

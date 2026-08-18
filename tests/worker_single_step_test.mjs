@@ -526,6 +526,123 @@ test("built Studio Wasm routes and reloads ampersand-prefixed basis names",
         assert.equal(restoredOrdinaryAmpersand.output, "x\n");
     });
 
+test("built Studio Wasm rejects integer basis names without mutation",
+    async () => {
+        const module = await loadBuiltCombdslModule();
+        const numericNameError =
+            /combdsl::basis names cannot be non-negative integer literals/;
+        for (const [source, position] of [
+            ["set 0 = I", 5],
+            ["set 000 = I", 5],
+            ["set 123456789012345 = I", 5],
+            ["define 0 = I", 8],
+            ["define 000 x = x", 8],
+            ["define 7x = x", 8],
+            ["remove 0", 8],
+            ["revisions 000", 11],
+            ["dependson 123456789012345", 11],
+            ["usedby 0", 8],
+        ]) {
+            const inspection = module.inspectDefinition(source);
+            assert.equal(inspection.success, false, source);
+            assert.match(inspection.error, numericNameError, source);
+            assert.match(
+                inspection.error,
+                new RegExp(`Parse error at position ${position}:`),
+                source,
+            );
+        }
+
+        let requestId = 360;
+        const validDefinitions = [
+            "set +8 = 1 I",
+            "set -8 = 1 I",
+            "set 8.0 = 1 I",
+            "set 8e2 = 1 I",
+            "set 8x = 1 I",
+            "set \u0667 = 1 I",
+            "define 7x y = y",
+        ];
+        for (const source of validDefinitions) {
+            const inspection = module.inspectDefinition(source);
+            assert.equal(inspection.success, true, source);
+            assert.equal(inspection.definition, true, source);
+            applyBuiltDefinition(module, source, ++requestId);
+        }
+
+        for (const source of ["+8 x", "-8 x", "8.0 x", "8e2 x", "8x x",
+            "\u0667 x", "7x x"]) {
+            const result = module.parseEval(
+                source, ++requestId, false, 0);
+            assert.equal(result.success, true, result.error);
+            assert.equal(result.output, "x\n", source);
+        }
+
+        for (const source of ["0", "000", "123456789012345"]) {
+            const numeric = module.parseEval(
+                source, ++requestId, false, 0);
+            assert.equal(numeric.success, true, numeric.error);
+            assert.equal(numeric.output, noFurtherReductions, source);
+        }
+        const compared = module.parseEval(
+            "compare ?x K 000 = K 0", ++requestId, false, 0);
+        assert.equal(compared.success, true, compared.error);
+        assert.equal(compared.output, "both reduce to: 0\n");
+        const numericFindTarget = module.inspectDefinition(
+            "find 1 ?x = 0");
+        assert.equal(numericFindTarget.success, true,
+            numericFindTarget.error);
+        assert.equal(numericFindTarget.find, true);
+        const numericCatalog = module.inspectDefinition(
+            "find among 7 ?x = x");
+        assert.equal(numericCatalog.success, false);
+        assert.match(numericCatalog.error, /7 is not a defined name/);
+
+        const show = module.inspectDefinition("show 0");
+        assert.equal(show.success, false);
+        assert.match(show.error, /0 is not a defined name/);
+        const expectedSetList =
+            "references captured\n" +
+            "set +8 = 1 I\n" +
+            "set -8 = 1 I\n" +
+            "set 8.0 = 1 I\n" +
+            "set 8e2 = 1 I\n" +
+            "set 8x = 1 I\n" +
+            "set \u0667 = 1 I\n" +
+            "define 7x y = y";
+        assert.equal(module.setList(), expectedSetList);
+
+        const invalidLoad = module.loadSetList(
+            "set LoadedBeforeNumeric = 1 K\n" +
+            "set 000 = I\n" +
+            "set LoadedAfterNumeric = 1 I\n",
+            "numeric names",
+        );
+        assert.equal(invalidLoad.success, false);
+        assert.equal(invalidLoad.loaded, 0);
+        assert.match(invalidLoad.error, numericNameError);
+        assert.match(invalidLoad.error, /on line 2 at position 5/);
+        assert.equal(module.setList(), expectedSetList,
+            "a rejected load must restore the complete registry and journal");
+        for (const name of ["LoadedBeforeNumeric", "LoadedAfterNumeric"]) {
+            const absent = module.inspectDefinition(`show ${name}`);
+            assert.equal(absent.success, false, name);
+            assert.match(absent.error, /is not a defined name/, name);
+        }
+
+        const restored = await loadBuiltCombdslModule();
+        const load = restored.loadSetList(expectedSetList, "numeric-like names");
+        assert.equal(load.success, true, load.error);
+        assert.equal(load.loaded, 8);
+        for (const source of ["+8 x", "-8 x", "8.0 x", "8e2 x", "8x x",
+            "\u0667 x", "7x x"]) {
+            const result = restored.parseEval(
+                source, ++requestId, false, 0);
+            assert.equal(result.success, true, result.error);
+            assert.equal(result.output, "x\n", source);
+        }
+    });
+
 test("built inspection identifies only restricted Find metadata",
     async () => {
         const module = await loadBuiltCombdslModule();
