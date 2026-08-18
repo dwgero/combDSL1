@@ -2570,13 +2570,14 @@ test("gives compare a longer watchdog window on start and rearm", () => {
     }
 });
 
-test("routes literal-backslash inspect without escape-only canonical output",
+test("routes the quoted canonical form for literal-backslash inspect",
     () => {
         const harness = createHarness();
         const source = harness.element("source");
         const worker = harness.workers[0];
         const command = "inspect \\";
         const report =
+            "canonical: \"\\\"\n" +
             "free symbols: none\n" +
             "references: none\n" +
             "next reduction: none [normal form]\n";
@@ -2626,7 +2627,7 @@ test("routes literal-backslash inspect without escape-only canonical output",
             `${command}\n${report.trimEnd()}`,
         );
         assert.equal(
-            outputEntry.textContent.includes("canonical:"), false);
+            outputEntry.textContent.includes("canonical: \"\\\""), true);
         assert.equal(outputEntry.dataset.compactAfter, "true");
     });
 

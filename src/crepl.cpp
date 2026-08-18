@@ -66,7 +66,7 @@
 
 namespace {
 
-constexpr std::string_view crepl_version = "2.12.6";
+constexpr std::string_view crepl_version = "2.12.7";
 constexpr std::string_view no_further_reductions_message =
     "No further reductions";
 
@@ -2002,7 +2002,7 @@ void print_help_full(std::ostream& output) {
     output << "define Exyzwv = xy(zwv)\n\n";
     write_wrapped_paragraph(
         output,
-        "A basis name can't begin with \\, \", or ?, can't end with @, "
+        "A basis name can't begin with \" or ?, can't end with @, "
         "can't contain ) or ( anywhere, and can't be a non-negative integer "
         "literal.");
     output.put('\n');
@@ -2017,6 +2017,19 @@ void print_help_full(std::ostream& output) {
         "have no assignment =. In 'define = bar = rab' and "
         "'define & bar = rab', the names are '=' and '&', and 'bar' is the "
         "symbol list.");
+    output.put('\n');
+    write_wrapped_paragraph(
+        output,
+        "A backslash may also begin a basis name. 'set \\ = 3 C' and "
+        "'set \\foo = 1 I' define the names '\\' and '\\foo'; "
+        "'define \\ bar = rab' defines '\\' with the symbol list 'bar'. "
+        "An exact registered backslash-prefixed name takes precedence over "
+        "the literal-backslash operand. Use the quoted raw word '\"\\\"' "
+        "for that literal. CREPL input escaping makes each visible "
+        "backslash occupy two bytes of the 15-byte stored-name limit. "
+        "Parsed backslash names display their doubled stored spelling with "
+        "safe operand separators; saved definitions use the visible "
+        "one-backslash spelling.");
     output.put('\n');
     write_wrapped_paragraph(
         output,

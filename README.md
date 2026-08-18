@@ -104,8 +104,11 @@ text parser.
 
 Raw string literals, C strings, `std::string`, and `std::string_view` operands
 are automatically copied into callable symbolic string expressions. They
-print without quotes or angle brackets. Names longer than one byte use the
-same spacing rules as multi-character basis names:
+normally print without quotes or angle brackets. A parser-representable raw
+value beginning with a backslash instead prints inside raw-word quotes so it
+cannot be mistaken for a registered backslash-prefixed basis name. Names
+longer than one byte use the same spacing rules as multi-character basis
+names:
 
 ```cpp
 x("word")();              // x word
@@ -216,16 +219,23 @@ name compact on its left.
 
 Basis names are copied into the expression and may contain up to 15
 bytes. Names cannot be empty or begin with a null character; a later null
-character terminates the copied name. Because leading whitespace and
-parentheses and `?` belong to the parser grammar, names cannot begin with one of
-those characters or with a double quote. A name also cannot begin with a single
-or doubled backslash, though a doubled backslash may occur later in the name.
-A visible name cannot end in `@` or consist entirely of ASCII decimal digits:
+character terminates the copied name. Because leading whitespace,
+parentheses, and `?` belong to the parser grammar, names cannot begin with one
+of those characters or with a double quote. A visible name cannot end in `@`
+or consist entirely of ASCII decimal digits:
 non-negative integer literal spellings such as `0`, `42`, and `00042` are
 reserved for integer values. Names such as `+4`, `-4`, `4.0`, `4e2`, and `4x`
 remain valid.
 A visible name longer than 15 bytes throws `std::length_error`; an invalid name
 throws `std::invalid_argument`.
+
+A backslash may begin a basis name. The low-level C++ API stores exactly the
+bytes supplied to `basis`, so `basis("\\", ...)` creates a one-byte name for
+direct raw-parser input. CREPL and Studio first call `input_escape`; each
+visible backslash therefore becomes two stored parser bytes. A C++ basis meant
+to match the visible frontend name `\` is written `basis("\\\\", ...)`, and
+that visible backslash consumes two of the 15 available bytes. The direct
+one-byte and frontend two-byte names are distinct.
 
 Every successful `basis(...)` call also registers that name with the text
 parser. User-defined names may be redefined.
@@ -458,6 +468,21 @@ define the names `=` and `&`, while `set =bar = 3 C` and `set &bar = 3 C`
 define the names `=bar` and `&bar`. `set = 3 C` and `set & 3 C` are parse
 errors because they have no assignment `=`. In `define = bar = rab` and
 `define & bar = rab`, the names are `=` and `&`, and `bar` is the symbol list.
+
+A backslash may also begin a CREPL or Studio basis name. `set \ = 3 C` and
+`set \foo = 1 I` define the names `\` and `\foo`; `define \ bar = rab`
+defines `\` with the symbol list `bar`. An exact registered
+backslash-prefixed name takes precedence over the literal-backslash operand.
+To enter that literal after a collision, use the quoted raw word consisting of
+a double quote, one backslash, and a double quote:
+
+```text
+"\"
+```
+
+CREPL/Studio-defined backslash names retain their doubled stored spelling when they
+print as expressions, with safe separators on both sides. Saved definitions
+use the visible one-backslash spelling and reload through `input_escape`.
 
 At the start of a line, preceded by optional whitespace,
 `define [captured | live]` followed by whitespace creates a named basis
@@ -1002,7 +1027,7 @@ expression produces no output, while malformed or empty lines throw
 The `crepl` executable applies `input_escape` to each line before passing it to
 `parse_eval`, so ordinary quoted words and backslashes can be entered directly.
 When standard output is a terminal, it first prints
-`Combinator Read-Eval-Print Loop, version 2.12.6`. Long evaluations display
+`Combinator Read-Eval-Print Loop, version 2.12.7`. Long evaluations display
 the accumulated step count every 1,000 reductions by overwriting one status
 line; the line is cleared before evaluation output is printed. Its interactive
 prompt is `>`. Interactive input uses GNU Readline, so previous nonempty
@@ -1220,7 +1245,7 @@ symbol, so compact primitive and symbol expressions such as `SKIx` remain
 valid.
 
 In escaped parser input, the two characters `\"` open or close one raw word,
-and `\\` represents one backslash. This input:
+and `\\` normally represents one backslash. This input:
 
 ```text
 x \"word\" y \"mid\\dle\" z
@@ -1228,13 +1253,17 @@ x \"word\" y \"mid\\dle\" z
 
 parses and prints as `x word y mid\dle z`. Spaces, parentheses, UTF-8 bytes,
 and other ordinary bytes between the word delimiters are content rather than
-parser syntax. Outside a word, `\\` is a one-character symbolic backslash
-operand. A doubled backslash may also occur later in a registered basis name,
-where registered-name matching consumes it as part of that name. If that name
-ends outside `a` through `z`, an adjacent operand may follow without a
-delimiter. Any other sequence beginning with a backslash is rejected, as are
-empty or unterminated words. A word whose spelling matches a primitive or
-registered basis remains raw.
+parser syntax. Outside a word, an exact registered backslash-prefixed name or
+valid registered-name prefix takes precedence over the escape meaning. When no
+such name matches, `\\` is a one-character symbolic backslash operand. In
+ordinary CREPL and Studio input, use the visible quoted raw word shown above to
+force that literal after a name collision. Registered slash-leading names use
+safe separators when printed; a doubled backslash may also occur later in a
+registered name. A raw `\"` always remains the word delimiter. Any other
+unmatched sequence beginning with a backslash is rejected, as are empty or
+unterminated words. A word whose spelling matches a primitive or registered
+basis remains raw. Raw words can contain further backslashes and newlines but
+cannot represent an embedded double quote.
 
 Malformed or empty input throws `combdsl::parse_error`. Its `position()` is the
 zero-based byte position of the error; an error at the end of input reports the

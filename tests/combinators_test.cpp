@@ -2958,8 +2958,9 @@ int main() {
          "  Q1 [pre-defined]\n"
          "  Q3 [pre-defined]\n"
          "next reduction: Q1x 42 Q3 [Q1 at root]");
-    test("inspect omits canonical for an input-escaped backslash",
+    test("inspect quotes a canonical input-escaped backslash",
          parse(input_escape("inspect \\")),
+         R"(canonical: "\")" "\n"
          "free symbols: none\n"
          "references: none\n"
          "next reduction: none [normal form]");
@@ -4323,12 +4324,45 @@ int main() {
          parse("x(\\\"word\\\"y)"), "x(word y)");
     test("parse escaped word preserves parser characters",
          parse(input_escape("x \"a b()\" y")), "x a b() y");
+    const auto unregistered_literal_backslash =
+        parse(input_escape(R"(\)"));
+    const auto unregistered_literal_backslash_application =
+        parse(input_escape(R"(\foo)"));
     test("parse escaped backslash as an operand",
-         parse("\\\\"), "\\");
+         unregistered_literal_backslash, R"("\")");
     test("parse escaped backslash between symbols",
-         parse("x\\\\y"), "x\\y");
+         parse("x\\\\y"), R"(x"\"y)");
     test("unregistered double backslash remains an operand",
-         single_step(parse("\\\\x")), "\\x");
+         single_step(parse("\\\\x")), R"("\"x)");
+    test("an unregistered visible backslash remains a raw operand",
+         [] {
+             auto const parsed = parse(input_escape(R"(\)"));
+             std::cout <<
+                 combdsl::detail::same_parser_definition_expression(
+                     parsed, quote(std::string_view(R"(\)")));
+         },
+         "1");
+    test("the quoted visible backslash spells the same raw operand",
+         [] {
+             auto const parsed = parse(input_escape(R"("\")"));
+             std::cout <<
+                 combdsl::detail::same_parser_definition_expression(
+                     parsed, quote(std::string_view(R"(\)")));
+         },
+         "1");
+    test("a raw value beginning with backslash prints quoted",
+         quote(std::string_view(R"(\foo)")), R"("\foo")");
+    test("a printed raw backslash value round trips through input escape",
+         [&unregistered_literal_backslash] {
+             std::ostringstream rendered;
+             unregistered_literal_backslash.print_to(rendered);
+             auto const reparsed = parse(input_escape(rendered.str()));
+             std::cout <<
+                 combdsl::detail::same_parser_definition_expression(
+                     unregistered_literal_backslash, reparsed)
+                 << ' ' << rendered.str();
+         },
+         R"(1 "\")");
     const auto embedded_double_backslash_basis =
         basis("A\\\\B", 1, I);
     test("double backslash inside basis name",
@@ -5081,24 +5115,19 @@ int main() {
         trailing_define_close.find(')'));
     test_parse_failure(
         "trailing define error does not register its name", "PTailD", 0);
-    test("basis name beginning with single backslash rejected",
-         [] {
-             try {
-                 static_cast<void>(basis("\\bad", 1, I));
-             } catch (std::invalid_argument const&) {
-                 std::cout << "invalid";
-             }
-         },
-         "invalid");
-    test("basis name beginning with double backslash rejected",
-         [] {
-             try {
-                 static_cast<void>(basis("\\\\bad", 1, I));
-             } catch (std::invalid_argument const&) {
-                 std::cout << "invalid";
-             }
-         },
-         "invalid");
+    const auto leading_single_backslash_cpp_basis =
+        basis(R"(\CppApi)", 1, I);
+    const auto leading_double_backslash_cpp_basis =
+        basis(R"(\\CppEscapedApi)", 1, I);
+    test("the C++ basis API accepts a leading single backslash",
+         leading_single_backslash_cpp_basis, R"(\CppApi)");
+    test("a raw parser input resolves that exact C++ backslash name",
+         single_step(parse(R"(\CppApi x)")), "x");
+    test("the C++ basis API accepts a leading double backslash",
+         leading_double_backslash_cpp_basis, R"(\\CppEscapedApi)");
+    test("frontend escaping resolves a doubled C++ backslash name",
+         single_step(parse(input_escape(R"(\CppEscapedApi x)"))),
+         "x");
     test("basis name beginning with double quote rejected",
          [] {
              try {
@@ -11066,6 +11095,259 @@ int main() {
                  << definitions.ends_with("remove &foo=bar");
          },
          "11111111");
+
+    test("set accepts a visible backslash as a basis name",
+         parse(input_escape(R"(set \ = 3 C)")), R"(\\)");
+    test("show accepts the bare backslash basis name",
+         parse(input_escape(R"(show \)")), "arity:3 C");
+    test("the bare backslash basis has exact precedence over the raw value",
+         single_step(parse(input_escape(R"(\ x y z)")), true),
+         "Cxyz");
+    test("the bare backslash basis evaluates normally",
+         [] { parse_eval(input_escape(R"(\ x y z)")); }, "xzy\n");
+    test("set accepts a longer visible backslash-prefixed name",
+         parse(input_escape(R"(set \foo = 1 I)")), R"(\\foo)");
+    test("show accepts the longer backslash-prefixed name",
+         parse(input_escape(R"(show \foo)")), "arity:1 I");
+    test("an exact longer backslash name wins over the bare name prefix",
+         single_step(parse(input_escape(R"(\foo x)")), true),
+         "Ix");
+    test("a lowercase-ending backslash name prints with a safe boundary",
+         parse(input_escape(R"(\foo x)")), R"(\\foo x)");
+    test("the longer backslash-prefixed name evaluates normally",
+         [] { parse_eval(input_escape(R"(\foo x)")); }, "x\n");
+    test("define distinguishes a bare backslash name from its symbols",
+         parse(input_escape(R"(define \ bar = rab)")), R"(\\)");
+    test("the backslash define binds every symbol after the name",
+         [] { parse_eval(input_escape(R"(\ x y z)")); }, "zyx\n");
+    test("the bare backslash name retains set and define revisions",
+         [] {
+             std::ostringstream revisions;
+             parse(input_escape(R"(revisions \)"))
+                 .print_to(revisions);
+             auto const value = revisions.str();
+             std::cout
+                 << value.starts_with(
+                        R"(\@1 arity:3 C [captured])" "\n")
+                 << (value.find(R"(\@2 arity:3 )") !=
+                     std::string::npos)
+                 << value.ends_with("[captured] [current]");
+         },
+         "111");
+    test("inspect recognizes the exact backslash-prefixed reference",
+         [] {
+             std::ostringstream inspected;
+             parse(input_escape(R"(inspect \foo x)"))
+                 .print_to(inspected);
+             auto const value = inspected.str();
+             std::cout
+                 << (value.find(R"(  \\foo [captured])") !=
+                     std::string::npos)
+                 << (value.find("free symbols: x") !=
+                     std::string::npos);
+         },
+         "11");
+    test("find among resolves an exact backslash-prefixed catalog name",
+         [] {
+             auto parsed = combdsl::detail::parse_input(
+                 input_escape(R"(find among \foo ?x=x)"),
+                 combdsl::detail::parser_definition_mode::
+                     inspect_definitions);
+             std::cout
+                 << parsed.is_find
+                 << parsed.catalog_find_command.has_value()
+                 << (parsed.catalog_find_command &&
+                     parsed.catalog_find_command->catalog.size() == 1);
+         },
+         "111");
+    test("compare accepts a backslash-prefixed basis",
+         parse(input_escape(R"(compare ?x \foo x = x)")),
+         "both reduce to: xx");
+    test("captured setup accepts a bare backslash body reference",
+         parse(input_escape(R"(set captured SlashCaptured = 3 \)")),
+         "SlashCaptured");
+    test("live setup accepts a bare backslash body reference",
+         parse(input_escape(R"(set live SlashLive = 3 \)")),
+         "SlashLive");
+    test("usedby reports a direct backslash-name dependency",
+         parse("usedby SlashCaptured"),
+         R"(SlashCaptured directly uses: \)");
+    test("dependson accepts the bare backslash queried name",
+         parse(input_escape(R"(dependson \)")),
+         R"(\ is directly depended on by: SlashCaptured SlashLive)");
+    test("usedby path traverses a backslash-name dependency",
+         [] {
+             std::ostringstream path;
+             parse(input_escape(R"(usedby path SlashCaptured \)"))
+                 .print_to(path);
+             auto const value = path.str();
+             std::cout
+                 << value.starts_with(
+                        R"(SlashCaptured uses \ via:)" "\n")
+                 << (value.find("SlashCaptured") !=
+                     std::string::npos)
+                 << (value.find(R"(-> \@2  [captured])") !=
+                     std::string::npos);
+         },
+         "111");
+    test("set can redefine the bare backslash after define",
+         parse(input_escape(R"(set \ = 3 C)")), R"(\\)");
+    test("a captured backslash reference retains its define revision",
+         [] { parse_eval("SlashCaptured xyz"); }, "zyx\n");
+    test("a live backslash reference follows the latest set revision",
+         [] { parse_eval("SlashLive xyz"); }, "xzy\n");
+    test("remove accepts the bare backslash basis name",
+         parse(input_escape(R"(remove \)")), R"(\\)");
+    test_parse_failure(
+        "show treats a removed bare backslash name as removed",
+        input_escape(R"(show \)"), 5,
+        R"(\ is not a defined name)");
+    test("a captured backslash reference survives removal",
+         [] { parse_eval("SlashCaptured xyz"); }, "zyx\n");
+    test("a live backslash reference retains its removed target",
+         [] { parse_eval("SlashLive xyz"); }, "xzy\n");
+    test("an explicit removed backslash revision remains usable",
+         [] { parse_eval(input_escape(R"(\@3 x y z)")); },
+         "xzy\n");
+    test("set can restore the bare backslash name after removal",
+         parse(input_escape(R"(set \ = 3 I)")), R"(\\)");
+    test("a live backslash reference follows the restored revision",
+         [] { parse_eval("SlashLive xyz"); }, "xyz\n");
+    test("a captured backslash reference stays frozen after restoration",
+         [] { parse_eval("SlashCaptured xyz"); }, "zyx\n");
+    test("disconnected path output beginning with slash stays unquoted",
+         [] {
+             static_cast<void>(parse("set zAside = 1 I"));
+             parse(input_escape(
+                 R"(usedby path \ zAside)"))
+                 .print_to(std::cout);
+         },
+         R"(\ and zAside have no dependency path)");
+    test("the quoted raw backslash remains literal after registration",
+         [] {
+             auto const parsed = parse(input_escape(R"("\")"));
+             std::cout <<
+                 combdsl::detail::same_parser_definition_expression(
+                     parsed, quote(std::string_view(R"(\)")));
+         },
+         "1");
+    test("a pre-registration raw backslash snapshot survives collision",
+         [&unregistered_literal_backslash] {
+             std::ostringstream rendered;
+             unregistered_literal_backslash.print_to(rendered);
+             auto const reparsed = parse(input_escape(rendered.str()));
+             std::cout <<
+                 combdsl::detail::same_parser_definition_expression(
+                     unregistered_literal_backslash, reparsed)
+                 << ' ' << rendered.str();
+         },
+         R"(1 "\")");
+    test("a raw backslash application prints past the registered prefix",
+         [&unregistered_literal_backslash_application] {
+             std::ostringstream rendered;
+             unregistered_literal_backslash_application.print_to(rendered);
+             auto const reparsed = parse(input_escape(rendered.str()));
+             std::cout <<
+                 combdsl::detail::same_parser_definition_expression(
+                     unregistered_literal_backslash_application,
+                     reparsed)
+                 << ' ' << rendered.str();
+         },
+         R"(1 "\" foo)");
+    test("the longest frontend backslash name within 15 bytes is accepted",
+         parse(input_escape(R"(set \1234567890123 = 1 I)")),
+         R"(\\1234567890123)");
+    const auto overlong_frontend_backslash_name =
+        input_escape(R"(set \12345678901234 = 1 I)");
+    test_parse_failure(
+        "a frontend backslash name still observes the 15-byte limit",
+        overlong_frontend_backslash_name,
+        overlong_frontend_backslash_name.find(R"(\\12345678901234)") +
+            15,
+        "combdsl::basis names are limited to 15 characters");
+    test_parse_failure(
+        "the rejected overlong backslash name is not registered",
+        input_escape(R"(show \12345678901234)"), 5,
+        R"(\12345678901234 is not a defined name)");
+    test("remove accepts the maximum-length backslash name",
+         parse(input_escape(R"(remove \1234567890123)")),
+         R"(\\1234567890123)");
+    test("remove accepts the longer backslash-prefixed basis name",
+         parse(input_escape(R"(remove \foo)")), R"(\\foo)");
+    test("a removed singleton backslash-prefixed name remains parseable",
+         [] { parse_eval(input_escape(R"(\foo x y z)")); },
+         "xyz\n");
+    test("the set list journals replayable visible backslash commands",
+         [] {
+             auto const definitions = set_list();
+             std::cout
+                 << (definitions.find(R"(set \ = 3 C)") !=
+                     std::string::npos)
+                 << (definitions.find(R"(set \foo = 1 I)") !=
+                     std::string::npos)
+                 << (definitions.find(R"(define \ bar = rab)") !=
+                     std::string::npos)
+                 << (definitions.find(
+                        R"(set captured SlashCaptured = 3 \)") !=
+                     std::string::npos)
+                 << (definitions.find(
+                        R"(set live SlashLive = 3 \)") !=
+                     std::string::npos)
+                 << (definitions.find(R"(remove \)") !=
+                     std::string::npos)
+                 << definitions.ends_with(R"(remove \foo)");
+         },
+         "1111111");
+    test("a raw one-byte backslash define parses a compact self-reference",
+         [] {
+             auto const parsed = combdsl::detail::parse_input(
+                 R"(define \ x = \x)",
+                 combdsl::detail::parser_definition_mode::
+                     inspect_definitions);
+             std::cout << parsed.is_definition;
+         },
+         "1");
+    test("a visible backslash define parses a compact self-reference",
+         [] {
+             auto const parsed = combdsl::detail::parse_input(
+                 input_escape(R"(define \ x = \x)"),
+                 combdsl::detail::parser_definition_mode::
+                     inspect_definitions);
+             std::cout << parsed.is_definition;
+         },
+         "1");
+    test("a longer backslash define parses a compact self-reference",
+         [] {
+             auto const parsed = combdsl::detail::parse_input(
+                 input_escape(R"(define \foo x = \foo x)"),
+                 combdsl::detail::parser_definition_mode::
+                     inspect_definitions);
+             std::cout << parsed.is_definition;
+         },
+         "1");
+    const auto one_byte_backslash_cpp_basis = basis(R"(\)", 1, I);
+    test("the C++ basis API accepts the one-byte backslash name",
+         one_byte_backslash_cpp_basis, R"(\)");
+    test("the raw parser gives an exact one-byte backslash name precedence",
+         parse(R"(\)"), R"(\)");
+    test("raw-word openers remain distinct after slash registrations",
+         parse(input_escape(R"("word")")), "word");
+    test("a quoted literal slash remains distinct after all registrations",
+         parse(input_escape(R"("\")")), R"("\")");
+    test("a one-byte backslash basis recognizes an adjacent symbol",
+         single_step(parse(R"(\x)")), "x");
+    test("a one-byte backslash application prints round-trippably",
+         [] {
+             auto const expression = parse(R"(\x)");
+             std::ostringstream rendered;
+             expression.print_to(rendered);
+             auto const reparsed = parse(rendered.str());
+             std::cout <<
+                 combdsl::detail::same_parser_definition_expression(
+                     expression, reparsed)
+                 << ' ' << rendered.str();
+         },
+         R"(1 \ x)");
 
     std::cout << tests_run << " test(s) run, "
               << test_failures << " failed\n";

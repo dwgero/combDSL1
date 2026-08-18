@@ -188,6 +188,11 @@ enum class printed_token : long {
 
 [[nodiscard]] constexpr printed_token basis_printed_token(
     std::string_view name) noexcept {
+    if (!name.empty() && name.front() == '\\') {
+        // A compact neighbour could extend this into a different exact
+        // leading-backslash basis name, so delimit both sides.
+        return printed_token::separated_basis;
+    }
     if (ends_with_non_alphanumeric(name)) {
         return printed_token::nonalphanumeric_terminated_basis;
     }
@@ -502,6 +507,16 @@ inline void print_symbolic_string(
         print_token(output, "<?>");
     } else if (value->empty()) {
         print_token(output, "<>");
+    } else if (value->front() == '\\') {
+        // A bare leading backslash can also introduce a registered basis
+        // name.  Use the user-facing raw-word spelling so parser-representable
+        // slash-leading operands do not collide with registered names.
+        std::string quoted;
+        quoted.reserve(value->size() + 2);
+        quoted.push_back('"');
+        quoted.append(*value);
+        quoted.push_back('"');
+        print_token(output, quoted);
     } else {
         print_token(
             output,
@@ -548,12 +563,12 @@ private:
         }
 
         if (name[0] == '(' || name[0] == ')' || name[0] == '"' ||
-            name[0] == '\\' || name[0] == ' ' ||
+            name[0] == ' ' ||
             name[0] == '\t' || name[0] == '\n' || name[0] == '\r' ||
             name[0] == '\f' || name[0] == '\v') {
             throw std::invalid_argument(
                 "combdsl::basis names cannot begin with parser whitespace, "
-                "a parenthesis, a double quote, or a backslash");
+                "a parenthesis, or a double quote");
         }
 
         std::size_t length = 0;
@@ -4805,7 +4820,11 @@ public:
         auto const& displayed_name = style.revision_qualified
             ? revision_name_
             : definition_name_;
-        auto const token = style.requires_trailing_separator
+        auto const starts_with_backslash =
+            !definition_name_.empty() &&
+            definition_name_.front() == '\\';
+        auto const token =
+            style.requires_trailing_separator || starts_with_backslash
             ? printed_token::separated_basis
             : ends_with_non_alphanumeric(definition_name_)
             ? printed_token::nonalphanumeric_terminated_basis
@@ -6726,6 +6745,24 @@ struct parsed_catalog_find_command {
     std::vector<quoted_expression> catalog;
 };
 
+class parser_display_text final : public combinator_expression {
+public:
+    explicit parser_display_text(std::string text)
+        : text_(std::move(text)) {}
+
+    void print_to(std::ostream& output) const {
+        print_layout(output, text_);
+    }
+
+private:
+    std::string text_;
+};
+
+[[nodiscard]] inline quoted_expression
+quote_parser_display_text(std::string text) {
+    return quote(parser_display_text(std::move(text)));
+}
+
 struct parsed_input {
     quoted_expression expression;
     bool is_definition;
@@ -7497,7 +7534,7 @@ private:
                 output << " [removed]";
             }
         }
-        return quote(std::move(output).str());
+        return quote_parser_display_text(std::move(output).str());
     }
 
     [[nodiscard]] quoted_expression parse_dependency_path_command() {
@@ -7575,7 +7612,8 @@ private:
             first_text += " and ";
             first_text += second_text;
             first_text += " have no dependency path";
-            return quote(std::move(first_text));
+            return quote_parser_display_text(
+                std::move(first_text));
         }
 
         std::string output = unescape_input(path.nodes.front()->name());
@@ -7617,7 +7655,7 @@ private:
                 output += " [name removed]";
             }
         }
-        return quote(std::move(output));
+        return quote_parser_display_text(std::move(output));
     }
 
     [[nodiscard]] quoted_expression parse_dependency_command(
@@ -7731,7 +7769,7 @@ private:
                 output += unescape_input(dependency_name);
             }
         }
-        return quote(std::move(output));
+        return quote_parser_display_text(std::move(output));
     }
 
     [[nodiscard]] std::optional<find_catalog_entry>
@@ -9207,10 +9245,6 @@ private:
             return nested;
         }
 
-        if (current() == '\\') {
-            return parse_escaped_atom();
-        }
-
         if (auto recursive_function =
                 parse_exact_recursive_function_token()) {
             return std::move(*recursive_function);
@@ -9225,9 +9259,37 @@ private:
             return std::move(*named_expression);
         }
 
+        // The general prefix parser starts at two-byte names.  Give a
+        // public one-byte backslash basis (or recursive definition) the
+        // same prefix precedence when the next byte is not itself an
+        // escape introducer.  This must precede the recursive-prefix
+        // ambiguity guard below for compact one-byte recursion.
+        if (current() == '\\' && has_next() &&
+            source_[position_ + 1] != '\\' &&
+            source_[position_ + 1] != '"') {
+            if (auto recursive_function =
+                    parse_single_character_recursive_function()) {
+                return std::move(*recursive_function);
+            }
+            if (auto named_basis =
+                    parse_single_character_basis()) {
+                return std::move(*named_basis);
+            }
+        }
+
         if (begins_with_unseparated_recursive_function(
                 current_basis_token())) {
             fail("unknown operand");
+        }
+
+        // Registered basis names take precedence over escaped-backslash
+        // syntax.  Keeping the escape fallback here preserves the symbolic
+        // backslash when no exact or valid prefix name is registered, while
+        // raw-word delimiters still produce an empty basis token above.
+        if (current() == '\\') {
+            // A raw `\\` retains its legacy symbolic meaning unless that
+            // exact two-byte name is registered.
+            return parse_escaped_atom();
         }
 
         if (auto recursive_function =

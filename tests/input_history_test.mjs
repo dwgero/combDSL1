@@ -340,8 +340,8 @@ test("documents compact restricted Find catalogs in Studio", () => {
     assert.match(
         html,
         /longest valid bird name or revision is taken from/);
-    assert.match(html, /A basis name cannot begin with <code>\\<\/code>/);
-    assert.match(html, /<code>\?<\/code>, cannot end/);
+    assert.match(html, /A basis name cannot begin with <code>"<\/code> or/);
+    assert.match(html, /<code>\?<\/code>,\s+cannot end/);
     assert.match(html, /cannot end\s+with <code>@<\/code>/);
     assert.match(html, /cannot contain\s+<code>\)<\/code> or <code>\(<\/code> anywhere/);
     assert.match(html, /cannot be a\s+non-negative integer literal/);
@@ -361,6 +361,20 @@ test("documents leading-equals and ampersand basis names in Studio", () => {
     assert.match(html, /set &amp;bar = 3 C/);
     assert.match(html, /set &amp; 3 C/);
     assert.match(html, /define &amp; bar = rab/);
+});
+
+test("documents leading-backslash basis names in Studio", () => {
+    const html = readFileSync(
+        new URL("../web/index.html", import.meta.url), "utf8");
+
+    assert.match(html, /A backslash may also begin a basis name/);
+    assert.match(html, /set \\ = 3 C/);
+    assert.match(html, /set \\foo = 1 I/);
+    assert.match(html, /define \\ bar = rab/);
+    assert.match(html, /exact registered\s+backslash-prefixed name takes precedence/);
+    assert.match(html, /quoted raw word <code>"\\"<\/code>/);
+    assert.match(html, /each visible backslash\s+occupy two bytes/);
+    assert.match(html, /doubled stored spelling with safe\s+operand separators/);
 });
 
 test("completes unambiguous abstract command forms", () => {

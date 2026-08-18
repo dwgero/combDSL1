@@ -299,6 +299,153 @@ if(NOT ampersand_load_error STREQUAL "")
         "${ampersand_load_error}")
 endif()
 
+set(backslash "\\")
+set(quoted_backslash "\"\\\"")
+set(backslash_file
+    "${CREPL_WORKING_DIRECTORY}/backslash definitions.cmb")
+set(backslash_input
+    "${CREPL_WORKING_DIRECTORY}/backslash-save-input.cmb")
+file(REMOVE "${backslash_file}")
+file(WRITE "${backslash_input}"
+    "I ${backslash}\n"
+    "set ${backslash} = 3 C\n"
+    "set ${backslash}foo = 1 I\n"
+    "define ${backslash} bar = rab\n"
+    "${backslash}xyz\n"
+    "${backslash}foo x\n"
+    "I ${quoted_backslash}\n"
+    "save backslash definitions.cmb\n"
+    "exit\n")
+execute_process(
+    COMMAND "${CREPL_EXECUTABLE}"
+    INPUT_FILE "${backslash_input}"
+    WORKING_DIRECTORY "${CREPL_WORKING_DIRECTORY}"
+    OUTPUT_VARIABLE backslash_output
+    ERROR_VARIABLE backslash_error
+    RESULT_VARIABLE backslash_result
+    TIMEOUT 10
+)
+if(NOT backslash_result EQUAL 0)
+    message(FATAL_ERROR
+        "backslash-name save exited with ${backslash_result}\n"
+        "stderr:\n${backslash_error}")
+endif()
+string(CONCAT expected_backslash_output
+    "${quoted_backslash}\n"
+    "zyx\n"
+    "x\n"
+    "${quoted_backslash}\n"
+    "Saved backslash definitions.cmb\n")
+if(NOT backslash_output STREQUAL expected_backslash_output)
+    message(FATAL_ERROR
+        "unexpected backslash-name CREPL output\n"
+        "expected:\n${expected_backslash_output}"
+        "actual:\n${backslash_output}")
+endif()
+if(NOT backslash_error STREQUAL "")
+    message(FATAL_ERROR
+        "unexpected backslash-name CREPL error:\n${backslash_error}")
+endif()
+file(READ "${backslash_file}" backslash_contents)
+string(CONCAT expected_backslash_contents
+    "references captured\n"
+    "set ${backslash} = 3 C\n"
+    "set ${backslash}foo = 1 I\n"
+    "define ${backslash} bar = rab")
+if(NOT backslash_contents STREQUAL expected_backslash_contents)
+    message(FATAL_ERROR
+        "unexpected saved backslash-name definitions\n"
+        "expected:\n${expected_backslash_contents}\n"
+        "actual:\n${backslash_contents}\n")
+endif()
+
+set(backslash_load_input
+    "${CREPL_WORKING_DIRECTORY}/backslash-load-input.cmb")
+file(WRITE "${backslash_load_input}"
+    "load backslash definitions.cmb\n"
+    "${backslash}xyz\n"
+    "${backslash}foo x\n"
+    "I ${quoted_backslash}\n"
+    "exit\n")
+execute_process(
+    COMMAND "${CREPL_EXECUTABLE}"
+    INPUT_FILE "${backslash_load_input}"
+    WORKING_DIRECTORY "${CREPL_WORKING_DIRECTORY}"
+    OUTPUT_VARIABLE backslash_load_output
+    ERROR_VARIABLE backslash_load_error
+    RESULT_VARIABLE backslash_load_result
+    TIMEOUT 10
+)
+if(NOT backslash_load_result EQUAL 0)
+    message(FATAL_ERROR
+        "backslash-name load exited with ${backslash_load_result}\n"
+        "stderr:\n${backslash_load_error}")
+endif()
+string(CONCAT expected_backslash_load_output
+    "Loaded backslash definitions.cmb\n"
+    "zyx\n"
+    "x\n"
+    "${quoted_backslash}\n")
+if(NOT backslash_load_output STREQUAL expected_backslash_load_output)
+    message(FATAL_ERROR
+        "unexpected reloaded backslash-name CREPL output\n"
+        "expected:\n${expected_backslash_load_output}"
+        "actual:\n${backslash_load_output}")
+endif()
+if(NOT backslash_load_error STREQUAL "")
+    message(FATAL_ERROR
+        "unexpected reloaded backslash-name CREPL error:\n"
+        "${backslash_load_error}")
+endif()
+
+set(invalid_backslash_file
+    "${CREPL_WORKING_DIRECTORY}/invalid backslash definitions.cmb")
+file(WRITE "${invalid_backslash_file}"
+    "set SlashLoadBefore = 1 K\n"
+    "set ${backslash}12345678901234 = 1 I\n"
+    "set SlashLoadAfter = 1 I\n")
+set(invalid_backslash_load_input
+    "${CREPL_WORKING_DIRECTORY}/invalid-backslash-load-input.cmb")
+file(WRITE "${invalid_backslash_load_input}"
+    "set SlashLoadKeep = 1 I\n"
+    "load invalid backslash definitions.cmb\n"
+    "SlashLoadKeep x\n"
+    "show SlashLoadBefore\n"
+    "show SlashLoadAfter\n"
+    "exit\n")
+execute_process(
+    COMMAND "${CREPL_EXECUTABLE}"
+    INPUT_FILE "${invalid_backslash_load_input}"
+    WORKING_DIRECTORY "${CREPL_WORKING_DIRECTORY}"
+    OUTPUT_VARIABLE invalid_backslash_load_output
+    ERROR_VARIABLE invalid_backslash_load_error
+    RESULT_VARIABLE invalid_backslash_load_result
+    TIMEOUT 10
+)
+if(NOT invalid_backslash_load_result EQUAL 0)
+    message(FATAL_ERROR
+        "invalid backslash-name load exited with "
+        "${invalid_backslash_load_result}")
+endif()
+if(NOT invalid_backslash_load_output STREQUAL "x\n")
+    message(FATAL_ERROR
+        "backslash-name load did not roll back atomically\n"
+        "actual output:\n${invalid_backslash_load_output}")
+endif()
+string(CONCAT expected_invalid_backslash_load_error
+    "Parse error in file invalid backslash definitions.cmb on line 2 at "
+    "position 20: combdsl::basis names are limited to 15 characters\n"
+    "Errors are preventing any changes from being made\n"
+    "Parse error at position 6: SlashLoadBefore is not a defined name\n"
+    "Parse error at position 6: SlashLoadAfter is not a defined name\n")
+if(NOT invalid_backslash_load_error STREQUAL
+        expected_invalid_backslash_load_error)
+    message(FATAL_ERROR
+        "unexpected invalid backslash-name load error\n"
+        "expected:\n${expected_invalid_backslash_load_error}"
+        "actual:\n${invalid_backslash_load_error}")
+endif()
+
 set(malformed_ampersand_input
     "${CREPL_WORKING_DIRECTORY}/malformed-ampersand-input.cmb")
 file(WRITE "${malformed_ampersand_input}"

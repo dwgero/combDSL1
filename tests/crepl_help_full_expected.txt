@@ -68,7 +68,7 @@ be omitted. For example, if the Eagle bird wasn't already defined, it could be
 added by:
 define Exyzwv = xy(zwv)
 
-A basis name can't begin with \, ", or ?, can't end with @, can't contain ) or (
+A basis name can't begin with " or ?, can't end with @, can't contain ) or (
 anywhere, and can't be a non-negative integer literal.
 
 An equals sign or ampersand may begin a basis name. For such a name, whitespace
@@ -78,6 +78,15 @@ the names '=' and '&', while 'set =bar = 3 C' and 'set &bar = 3 C' define the
 names '=bar' and '&bar'. 'set = 3 C' and 'set & 3 C' are parse errors because
 they have no assignment =. In 'define = bar = rab' and 'define & bar = rab', the
 names are '=' and '&', and 'bar' is the symbol list.
+
+A backslash may also begin a basis name. 'set \ = 3 C' and 'set \foo = 1 I'
+define the names '\' and '\foo'; 'define \ bar = rab' defines '\' with the
+symbol list 'bar'. An exact registered backslash-prefixed name takes precedence
+over the literal-backslash operand. Use the quoted raw word '"\"' for that
+literal. CREPL input escaping makes each visible backslash occupy two bytes of
+the 15-byte stored-name limit. Parsed backslash names display their doubled
+stored spelling with safe operand separators; saved definitions use the visible
+one-backslash spelling.
 
 The optional "captured" or "live" modifier on set and define overrides the
 reference mode for that command only, without changing the mode for later input.

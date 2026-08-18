@@ -526,6 +526,122 @@ test("built Studio Wasm routes and reloads ampersand-prefixed basis names",
         assert.equal(restoredOrdinaryAmpersand.output, "x\n");
     });
 
+test("built Studio Wasm preserves literal and named leading backslashes",
+    async () => {
+        const module = await loadBuiltCombdslModule();
+        const slash = "\\";
+        const quotedSlash = `"${slash}"`;
+        let requestId = 340;
+
+        const literalBeforeRegistration = module.parseEval(
+            `I ${slash}`, ++requestId, false, 0);
+        assert.equal(literalBeforeRegistration.success, true,
+            literalBeforeRegistration.error);
+        assert.equal(
+            literalBeforeRegistration.output,
+            `${quotedSlash}\n`,
+            "an unregistered bare backslash must retain its old raw value",
+        );
+
+        for (const source of [
+            `set ${slash} = 3 C`,
+            `set ${slash}foo = 1 I`,
+            `define ${slash} bar = rab`,
+        ]) {
+            const inspection = module.inspectDefinition(source);
+            assert.equal(inspection.success, true, source);
+            assert.equal(inspection.definition, true, source);
+            assert.equal(inspection.displayOnly, false, source);
+            applyBuiltDefinition(module, source, ++requestId);
+        }
+
+        const bare = module.parseEval(
+            `${slash}xyz`, ++requestId, false, 0);
+        assert.equal(bare.success, true, bare.error);
+        assert.equal(bare.output, "zyx\n");
+        const longer = module.parseEval(
+            `${slash}foo x`, ++requestId, false, 0);
+        assert.equal(longer.success, true, longer.error);
+        assert.equal(longer.output, "x\n",
+            "the exact longer name must win over the bare-name prefix");
+
+        const explicitLiteral = module.parseEval(
+            `I ${quotedSlash}`, ++requestId, false, 0);
+        assert.equal(explicitLiteral.success, true, explicitLiteral.error);
+        assert.equal(explicitLiteral.output, `${quotedSlash}\n`,
+            "the quoted raw word must preserve access to the literal");
+
+        const show = module.parseEval(
+            `show ${slash}foo`, ++requestId, false, 0);
+        assert.equal(show.success, true, show.error);
+        assert.equal(show.output, "arity:1 I\n");
+        const inspected = module.parseEval(
+            `inspect ${slash}foo x`, ++requestId, false, 0);
+        assert.equal(inspected.success, true, inspected.error);
+        assert.match(inspected.output, /free symbols: x/);
+        assert.match(inspected.output, /\\\\foo \[captured\]/);
+
+        const findInspection = module.inspectDefinition(
+            `find among ${slash}foo ?x=x`);
+        assert.equal(findInspection.success, true,
+            findInspection.error);
+        assert.equal(findInspection.find, true);
+        assert.equal(findInspection.findAmong, true);
+        assert.equal(findInspection.findCatalogSize, 1);
+        const compared = module.parseEval(
+            `compare ?x ${slash}foo x = x`,
+            ++requestId, false, 0);
+        assert.equal(compared.success, true, compared.error);
+        assert.equal(compared.output, "both reduce to: xx\n");
+
+        const setList = module.setList();
+        assert.equal(
+            setList,
+            "references captured\n" +
+            `set ${slash} = 3 C\n` +
+            `set ${slash}foo = 1 I\n` +
+            `define ${slash} bar = rab`,
+        );
+
+        const invalidLoad = module.loadSetList(
+            `set SlashLoadBefore = 1 K\n` +
+            `set ${slash}12345678901234 = 1 I\n` +
+            `set SlashLoadAfter = 1 I\n`,
+            "overlong backslash names",
+        );
+        assert.equal(invalidLoad.success, false);
+        assert.equal(invalidLoad.loaded, 0);
+        assert.match(
+            invalidLoad.error,
+            /combdsl::basis names are limited to 15 characters/,
+        );
+        assert.equal(module.setList(), setList,
+            "a rejected load must roll the registry and journal back");
+        for (const name of ["SlashLoadBefore", "SlashLoadAfter"]) {
+            const absent = module.inspectDefinition(`show ${name}`);
+            assert.equal(absent.success, false, name);
+            assert.match(absent.error, /is not a defined name/, name);
+        }
+
+        const restored = await loadBuiltCombdslModule();
+        const load = restored.loadSetList(setList, "backslash names");
+        assert.equal(load.success, true, load.error);
+        assert.equal(load.loaded, 4);
+        const restoredBare = restored.parseEval(
+            `${slash}xyz`, ++requestId, false, 0);
+        assert.equal(restoredBare.success, true, restoredBare.error);
+        assert.equal(restoredBare.output, "zyx\n");
+        const restoredLonger = restored.parseEval(
+            `${slash}foo x`, ++requestId, false, 0);
+        assert.equal(restoredLonger.success, true, restoredLonger.error);
+        assert.equal(restoredLonger.output, "x\n");
+        const restoredLiteral = restored.parseEval(
+            `I ${quotedSlash}`, ++requestId, false, 0);
+        assert.equal(restoredLiteral.success, true,
+            restoredLiteral.error);
+        assert.equal(restoredLiteral.output, `${quotedSlash}\n`);
+    });
+
 test("built Studio Wasm rejects integer basis names without mutation",
     async () => {
         const module = await loadBuiltCombdslModule();

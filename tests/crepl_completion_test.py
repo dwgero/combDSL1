@@ -281,16 +281,13 @@ def main():
         require_completed_line(output, b"inspect \\\n")
         normalized_output = normalized(output)
         expected_backslash_inspection = (
+            b'canonical: "\\"\n'
             b"free symbols: none\n"
             b"references: none\n"
             b"next reduction: none [normal form]\n")
         if expected_backslash_inspection not in normalized_output:
             raise AssertionError(
                 f"expected literal-backslash inspect report; "
-                f"received {output!r}")
-        if b"canonical:" in normalized_output:
-            raise AssertionError(
-                f"transport escaping must not add canonical; "
                 f"received {output!r}")
 
         write_all(master, b"dependso\ta\tDepSource\n")
