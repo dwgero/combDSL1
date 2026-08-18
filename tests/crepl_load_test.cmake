@@ -180,3 +180,52 @@ if(NOT rollback_contents STREQUAL
         "expected:\nreferences captured\nset Existing = 0 I\n"
         "actual:\n${rollback_contents}\n")
 endif()
+
+set(question_broken_file
+    "${CREPL_WORKING_DIRECTORY}/broken question definitions.cmb")
+set(question_rollback_input
+    "${CREPL_WORKING_DIRECTORY}/question-rollback-load-input.cmb")
+file(WRITE "${question_broken_file}"
+    "set ?LoadBefore = 1 I\n"
+    "set ?Bad@ = 1 I\n"
+    "set ?LoadAfter = 1 K\n")
+file(WRITE "${question_rollback_input}"
+    "set QuestionKeep = 1 I\n"
+    "load broken question definitions.cmb\n"
+    "QuestionKeep x\n"
+    "show ?LoadBefore\n"
+    "show ?LoadAfter\n"
+    "exit\n")
+execute_process(
+    COMMAND "${CREPL_EXECUTABLE}"
+    INPUT_FILE "${question_rollback_input}"
+    WORKING_DIRECTORY "${CREPL_WORKING_DIRECTORY}"
+    OUTPUT_VARIABLE question_rollback_output
+    ERROR_VARIABLE question_rollback_error
+    RESULT_VARIABLE question_rollback_result
+    TIMEOUT 10
+)
+if(NOT question_rollback_result EQUAL 0)
+    message(FATAL_ERROR
+        "question-name rollback load exited with "
+        "${question_rollback_result}\n"
+        "stderr:\n${question_rollback_error}")
+endif()
+if(NOT question_rollback_output STREQUAL "x\n")
+    message(FATAL_ERROR
+        "question-name failed load was not rolled back atomically\n"
+        "actual output:\n${question_rollback_output}")
+endif()
+string(CONCAT expected_question_rollback_error
+    "Parse error in file broken question definitions.cmb on line 2 at "
+    "position 5: combdsl::basis names cannot end with @\n"
+    "Errors are preventing any changes from being made\n"
+    "Parse error at position 6: ?LoadBefore is not a defined name\n"
+    "Parse error at position 6: ?LoadAfter is not a defined name\n")
+if(NOT question_rollback_error STREQUAL
+        expected_question_rollback_error)
+    message(FATAL_ERROR
+        "unexpected question-name rollback error\n"
+        "expected:\n${expected_question_rollback_error}"
+        "actual:\n${question_rollback_error}")
+endif()

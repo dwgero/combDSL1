@@ -388,9 +388,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             color: #c33;
         }
     </style>
-    <script src="./evaluation_watchdog.js?v=2.12.7" defer></script>
-    <script src="./input_history.js?v=2.12.7" defer></script>
-    <script src="./app.js?v=2.12.7" defer></script>
+    <script src="./evaluation_watchdog.js?v=2.12.10" defer></script>
+    <script src="./input_history.js?v=2.12.10" defer></script>
+    <script src="./app.js?v=2.12.10" defer></script>
 </head>
 <body>
     <main aria-labelledby="studio-title">
@@ -620,24 +620,41 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             be omitted. For example, to add the Eagle bird:<br>
             <code>define Exyzwv = xy(zwv)</code>
             <br><br>
-            A basis name cannot begin with <code>"</code> or <code>?</code>,
-            cannot end with <code>@</code>, cannot contain
+            A basis name cannot begin with <code>"</code>, cannot end with
+            <code>@</code>, cannot contain
             <code>)</code> or <code>(</code> anywhere, and cannot be a
-            non-negative integer literal. The <code>?</code> introduces parser
-            command markers.
+            non-negative integer literal.
             <br><br>
-            An equals sign or ampersand may begin a basis name. For such a
+            An equals sign or question mark may begin a basis name. For such a
             name, whitespace must separate the name from the assignment
             <code>=</code>; every later <code>=</code> before that whitespace
             remains part of the name. Thus <code>set = = 3 C</code> and
-            <code>set &amp; = 3 C</code> define the names <code>=</code> and
-            <code>&amp;</code>, while <code>set =bar = 3 C</code> and
-            <code>set &amp;bar = 3 C</code> define the names <code>=bar</code>
-            and <code>&amp;bar</code>. <code>set = 3 C</code> and
-            <code>set &amp; 3 C</code> are parse errors because they have no
+            <code>set ? = 3 C</code> define the names <code>=</code> and
+            <code>?</code>, while <code>set =bar = 3 C</code> and
+            <code>set ?bar = 3 C</code> define the names <code>=bar</code>
+            and <code>?bar</code>. <code>set = 3 C</code> and
+            <code>set ? 3 C</code> are parse errors because they have no
             assignment <code>=</code>. In <code>define = bar = rab</code> and
-            <code>define &amp; bar = rab</code>, the names are <code>=</code>
-            and <code>&amp;</code>, and <code>bar</code> is the symbol list.
+            <code>define ? bar = rab</code>, the names are <code>=</code>
+            and <code>?</code>, and <code>bar</code> is the symbol list.
+            <br><br>
+            An ampersand follows the ordinary non-alphanumeric name rules.
+            Compact assignments such as <code>set &amp;=3 C</code> and
+            <code>set &amp;bar=3 C</code> are valid, and the first
+            <code>=</code> is the assignment delimiter;
+            <code>set &amp;foo=bar</code> therefore defines
+            <code>&amp;foo</code>, not <code>&amp;foo=bar</code>. Spaced forms
+            such as <code>set &amp; = 3 C</code> remain valid.
+            <br><br>
+            In Find, Abstract, and Compare command-marker positions, the
+            command's required <code>?symbols</code> marker keeps its
+            contextual meaning. Outside those positions, exact registered
+            question-prefixed names have normal precedence. A restricted Find
+            reads its catalog from left to right. Registered marker-shaped
+            names such as <code>?x=</code> remain catalog birds; the first
+            unresolved item starts the query only when it has the form
+            <code>?symbols=</code>, and any other unresolved item is a parse
+            error.
             <br><br>
             A backslash may also begin a basis name.
             <code>set \ = 3 C</code> and <code>set \foo = 1 I</code> define
@@ -910,8 +927,25 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             but whitespace before the question mark remains required. Within
             each contiguous group, an exact whole name or revision wins;
             otherwise the longest valid bird name or revision is taken from
-            left to right. Whitespace can force a shorter boundary. The list
-            may contain <code>S</code>, <code>K</code>, <code>I</code>,
+            left to right. Whitespace can force a shorter boundary. Catalog
+            items are resolved sequentially. An exact whole group is consumed
+            first. Otherwise, at a whitespace-delimited group start, a
+            <code>?symbols=</code> spelling is the query marker unless the
+            longest usable compact prefix reaches through that <code>=</code>;
+            a shorter registered prefix does not claim it. Registered names
+            such as <code>?x=</code>
+            and <code>?y=</code> therefore remain catalog birds, while the first
+            unresolved marker-shaped item supplies the symbol list. Any other
+            first unresolved item is a parse error, and a marker cannot begin
+            in the middle of a compact group. For example, after
+            <code>set ?x= = B</code> and <code>set ?y= = C</code>,
+            <code>find among S K ?x= ?y= ?z= ?y=</code> uses those four birds,
+            <code>z</code> as the symbol list, and <code>?y=</code> as the
+            target; its match is <code>?=K ?y=</code>. If <code>?x=</code> is
+            absent, <code>find among ?x=xx</code> has an empty catalog; if it is
+            present, that bird is consumed and the unresolved <code>xx</code>
+            is not a marker. The list may
+            contain <code>S</code>, <code>K</code>, <code>I</code>,
             <code>Y</code>, pre-defined birds, current user-defined names, and
             retained user revisions. Revisions of a redefined name use
             <code>name@N</code>; a removed singleton that was never redefined
@@ -1062,7 +1096,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             data-dialog-initial-focus>About</h2>
         <div class="license-text">
             <!-- Keep this version and the app.js cache key in sync. -->
-            <p>Combinator Studio, version 2.12.7<br>
+            <p>Combinator Studio, version 2.12.10<br>
                 Part of the C++ Combinator DSL<br>
                 Copyright (C) 2026  David W. Gero</p>
             <p>This program is free software: you can redistribute it and/or modify

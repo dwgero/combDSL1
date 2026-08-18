@@ -2590,15 +2590,8 @@ int main() {
         "remove rejects a version suffix",
         "remove Versioned@1", 16,
         "version suffix is not allowed in a removal name");
-    test("the C++ basis API rejects a leading question mark",
-         [] {
-             try {
-                 static_cast<void>(basis("?CppQuestion", 1, I));
-             } catch (std::invalid_argument const& error) {
-                 std::cout << error.what();
-             }
-         },
-         "combdsl::basis names cannot begin with ?");
+    test("the C++ basis API accepts a leading question mark",
+         basis("?CppQuestion", 1, I), "?CppQuestion");
     test("the C++ basis API accepts an interior question mark",
          basis("Cpp?Question", 1, I), "Cpp?Question");
     test("the C++ basis API accepts an ending question mark",
@@ -2647,55 +2640,6 @@ int main() {
                  << !after.bases.contains("123456789012345");
          },
          "111111");
-    auto const leading_question_registry_before =
-        combdsl::detail::registered_parser_lookup_snapshot();
-    auto const leading_question_history_before = set_list();
-    test_parse_failure(
-        "set rejects a name beginning with a question mark",
-        "set ?SetQuestion = I", 4,
-        "combdsl::basis names cannot begin with ?");
-    test_parse_failure(
-        "define rejects a name beginning with a question mark",
-        "define ?DefineQuestion x = x", 7,
-        "combdsl::basis names cannot begin with ?");
-    test_parse_failure(
-        "remove rejects a name beginning with a question mark",
-        "remove ?RemoveQuestion", 7,
-        "combdsl::basis names cannot begin with ?");
-    test_parse_failure(
-        "set leading question mark precedes a version-suffix error",
-        "set ?Bad@1 = I", 4,
-        "combdsl::basis names cannot begin with ?");
-    test_parse_failure(
-        "define leading question mark precedes a version-suffix error",
-        "define ?Bad@1 x = x", 7,
-        "combdsl::basis names cannot begin with ?");
-    test_parse_failure(
-        "remove leading question mark precedes a version-suffix error",
-        "remove ?Bad@1", 7,
-        "combdsl::basis names cannot begin with ?");
-    test_parse_failure(
-        "revisions leading question mark precedes a version-suffix error",
-        "revisions ?Bad@1", 10,
-        "combdsl::basis names cannot begin with ?");
-    test("leading-question rejections do not mutate definitions",
-         [&] {
-             auto const after =
-                 combdsl::detail::registered_parser_lookup_snapshot();
-             std::cout
-                 << (after.bases.size() ==
-                     leading_question_registry_before.bases.size())
-                 << (after.versions.size() ==
-                     leading_question_registry_before.versions.size())
-                 << (after.live_bindings.size() ==
-                     leading_question_registry_before.live_bindings.size())
-                 << !after.bases.contains("?SetQuestion")
-                 << !after.bases.contains("?DefineQuestion")
-                 << !after.bases.contains("?RemoveQuestion")
-                 << !after.bases.contains("?Bad@1")
-                 << (set_list() == leading_question_history_before);
-         },
-         "11111111");
     test("set accepts a question mark inside a basis name",
          parse("set Mid?Set = 1 I"), "Mid?Set");
     test("define accepts a question mark at the end of a basis name",
@@ -10935,82 +10879,461 @@ int main() {
          },
          "111111");
 
-    test("the C++ basis API accepts a name beginning with ampersand",
-         basis("&CppApi", 1, I), "&CppApi");
+    test("the C++ basis API accepts a name beginning with question mark",
+         basis("?CppApi", 1, I), "?CppApi");
+    test("the C++ basis API separates a marker-shaped operand after K",
+         K(basis("?api=", 0, C)), "K ?api=");
     test_parse_failure(
-        "set does not mistake an ampersand name for its assignment",
-        "set & 3 C", 6, "expected '='");
+        "set does not mistake a question name for its assignment",
+        "set ? 3 C", 6, "expected '='");
     test_parse_failure(
-        "a longer leading ampersand token still needs an assignment",
-        "set && 3 C", 7, "expected '='");
+        "a longer leading question token still needs an assignment",
+        "set ?? 3 C", 7, "expected '='");
     test_parse_failure(
-        "an adjacent equals remains part of a lone ampersand name",
-        "set &= 3 C", 7, "expected '='");
+        "an adjacent equals remains part of a lone question name",
+        "set ?= 3 C", 7, "expected '='");
     test_parse_failure(
-        "a leading ampersand name needs whitespace before assignment",
-        "set &bar=3 C", 11, "expected '='");
-    test("ordinary ampersand names retain optional assignment spacing",
-         parse("set A&B=1 I"), "A&B");
-    test("an ordinary internal-ampersand name evaluates normally",
-         [] { parse_eval("A&B x"); }, "x\n");
-    test("set accepts ampersand as a basis name",
-         parse("set & = 3 C"), "&");
-    test("show accepts ampersand as a basis name",
-         parse("show &"), "arity:3 C");
-    test("an ampersand basis is self-delimiting before symbols",
-         parse("& x y z"), "&xyz");
-    test("an ampersand basis evaluates from compact expression syntax",
-         [] { parse_eval("&xyz"); }, "xzy\n");
-    test("set accepts a longer name beginning with ampersand",
-         parse("set &bar = 3 C"), "&bar");
-    test("show accepts a longer name beginning with ampersand",
-         parse("show &bar"), "arity:3 C");
-    test("a lowercase-ending ampersand name prints with a safe boundary",
-         parse("&bar x y z"), "&bar xyz");
-    test("a longer ampersand name evaluates through that boundary",
-         [] { parse_eval("&bar x y z"); }, "xzy\n");
-    test("define distinguishes an ampersand name from its symbol list",
-         parse("define & bar = rab"), "&");
-    test("the ampersand define binds each symbol after the name",
-         [] { parse_eval("&xyz"); }, "zyx\n");
-    test("compact define retains the one-character ampersand grammar",
-         parse("define &bar = rab"), "&");
-    test("compact ampersand define does not replace the longer name",
-         parse("show &bar"), "arity:3 C");
-    test("show reports the ampersand define's arity",
+        "a leading question name needs whitespace before assignment",
+        "set ?bar=3 C", 11, "expected '='");
+    test_parse_failure(
+        "set question version suffix reaches the normal diagnostic",
+        "set ?Bad@1 = I", 8,
+        "version suffix is not allowed in a definition name");
+    test_parse_failure(
+        "define question version suffix reaches the normal diagnostic",
+        "define ?Bad@1 x = x", 11,
+        "version suffix is not allowed in a definition name");
+    test_parse_failure(
+        "remove question version suffix reaches the normal diagnostic",
+        "remove ?Bad@1", 11,
+        "version suffix is not allowed in a removal name");
+    test_parse_failure(
+        "revisions question suffix reaches the normal diagnostic",
+        "revisions ?Bad@1", 14,
+        "version suffix is not allowed in a revisions name");
+    test_parse_failure(
+        "an unregistered marker-shaped prefix leaves an empty catalog",
+        "find among ?x=xx", 11,
+        "expected at least one bird name");
+
+    test("ordinary ampersand accepts a compact assignment",
+         parse("set &=1 I"), "&");
+    test("ordinary longer ampersand accepts a compact assignment",
+         parse("set &bar=1 I"), "&bar");
+    test("ordinary ampersand stops its name at the first equals",
+         parse("set &foo=bar"), "&foo");
+    test("the old special ampersand whole name is not registered",
          [] {
-             std::ostringstream shown;
-             parse("show &").print_to(shown);
-             std::cout << shown.str().starts_with("arity:3 ");
+             try {
+                 static_cast<void>(parse("show &foo=bar"));
+             } catch (parse_error const&) {
+                 std::cout << "not registered";
+             }
          },
-         "1");
-    test("the ampersand name retains both distinct revisions",
+         "not registered");
+    test("ordinary ampersand retains compact define splitting",
+         parse("define &bar = rab"), "&");
+    test("ordinary internal ampersand retains compact assignment",
+         parse("set A&B=1 I"), "A&B");
+    test("ordinary internal ampersand evaluates normally",
+         [] { parse_eval("A&B x"); }, "x\n");
+
+    test("set accepts question mark as a basis name",
+         parse("set ? = 3 C"), "?");
+    test("show accepts question mark as a basis name",
+         parse("show ?"), "arity:3 C");
+    test("a question basis is self-delimiting before symbols",
+         parse("? x y z"), "?xyz");
+    test("a question basis evaluates from compact expression syntax",
+         [] { parse_eval("?xyz"); }, "xzy\n");
+    test("set accepts a longer name beginning with question mark",
+         parse("set ?bar = 3 C"), "?bar");
+    test("set accepts another question-prefixed name",
+         parse("set ?foo = 1 I"), "?foo");
+    test("show accepts a longer question name",
+         parse("show ?bar"), "arity:3 C");
+    test("an exact longer question name wins over its bare prefix",
+         single_step(parse("?bar x y z"), true), "Cxyz");
+    test("a lowercase-ending question name prints with a safe boundary",
+         parse("?bar x y z"), "?bar xyz");
+    test("a longer question name evaluates through that boundary",
+         [] { parse_eval("?bar x y z"); }, "xzy\n");
+    test("define distinguishes a bare question name from its symbols",
+         parse("define ? bar = rab"), "?");
+    test("the bare question define binds each listed symbol",
+         [] { parse_eval("?xyz"); }, "zyx\n");
+    test("compact define retains the one-character question grammar",
+         parse("define ?bar = rab"), "?");
+    test("compact question define does not replace the longer name",
+         [] { parse_eval("?xyz"); }, "zyx\n");
+    test("show still reports the longer question set definition",
+         parse("show ?bar"), "arity:3 C");
+    test("the bare question name retains set and define revisions",
          [] {
              std::ostringstream revisions;
-             parse("revisions &").print_to(revisions);
+             parse("revisions ?").print_to(revisions);
              auto const value = revisions.str();
              std::cout
-                 << value.starts_with("&@1 arity:3 C [captured]\n")
-                 << (value.find("&@2 arity:3 ") != std::string::npos)
+                 << value.starts_with("?@1 arity:3 C [captured]\n")
+                 << (value.find("?@2 arity:3 ") != std::string::npos)
                  << value.ends_with("[captured] [current]");
          },
          "111");
-    test("set preserves a later equals byte in an ampersand name",
-         parse("set &foo=bar = 1 I"), "&foo=bar");
-    test("show preserves the ampersand name's interior equals",
-         parse("show &foo=bar"), "arity:1 I");
-    test("an ampersand name with an interior equals round trips",
-         parse("&foo=bar x"), "&foo=bar x");
-    test("the interior-equals ampersand name evaluates normally",
-         [] { parse_eval("&foo=bar x"); }, "x\n");
-    test("set preserves a later ampersand byte in an ampersand name",
-         parse("set &foo&bar = 1 I"), "&foo&bar");
-    test("the interior-ampersand name evaluates normally",
-         [] { parse_eval("&foo&bar x"); }, "x\n");
-    test("find among resolves the whole interior-equals ampersand name",
+    test("set preserves a later equals byte in a question name",
+         parse("set ?foo=bar = 1 I"), "?foo=bar");
+    test("show preserves the question name's interior equals",
+         parse("show ?foo=bar"), "arity:1 I");
+    test("an interior-equals question name round trips",
+         parse("?foo=bar x"), "?foo=bar x");
+    test("the interior-equals question name evaluates normally",
+         [] { parse_eval("?foo=bar x"); }, "x\n");
+    test("set preserves a later question byte in a question name",
+         parse("set ?foo?bar = 1 I"), "?foo?bar");
+    test("the interior-question name evaluates normally",
+         [] { parse_eval("?foo?bar x"); }, "x\n");
+    test("set accepts a question name ending in equals",
+         parse("set ?x= = B"), "?x=");
+    test("set accepts a second marker-shaped question name",
+         parse("set ?y= = C"), "?y=");
+    test("inspect recognizes an exact question-prefixed reference",
+         [] {
+             auto const value = parse("inspect ?foo=bar x");
+             std::ostringstream output;
+             value.print_to(output);
+             std::cout
+                 << (output.str().find("free symbols: x") !=
+                     std::string::npos)
+                 << (output.str().find(
+                        "  ?foo=bar [captured]") !=
+                     std::string::npos);
+         },
+         "11");
+    test("find among distinguishes question names from its first marker",
          [] {
              auto parsed = combdsl::detail::parse_input(
-                 "find among &foo=bar ?x=x",
+                 "find among ? ?bar ?foo ?q=q",
+                 combdsl::detail::parser_definition_mode::
+                     inspect_definitions);
+             std::cout
+                 << parsed.is_find
+                 << parsed.catalog_find_command.has_value()
+                 << (parsed.catalog_find_command &&
+                     parsed.catalog_find_command->catalog.size() == 3);
+         },
+         "111");
+    test("an exact whole marker-shaped name remains a catalog bird",
+         [] {
+             auto parsed = combdsl::detail::parse_input(
+                 "find among ?foo=bar ?q=q",
+                 combdsl::detail::parser_definition_mode::
+                     inspect_definitions);
+             std::cout
+                 << parsed.catalog_find_command->catalog.size()
+                 << parsed.catalog_find_command->symbols.size();
+         },
+         "11");
+    test("an exact marker-shaped name resolves inside a compact group",
+         [] {
+             auto parsed = combdsl::detail::parse_input(
+                 "find among I?foo=bar ?q=q",
+                 combdsl::detail::parser_definition_mode::
+                     inspect_definitions);
+             std::cout
+                 << parsed.catalog_find_command->catalog.size()
+                 << parsed.catalog_find_command->symbols.size();
+         },
+         "21");
+    test("a long registered prefix blocks marker fallback in a compact group",
+         [] {
+             auto parsed = combdsl::detail::parse_input(
+                 "find among ?foo=barI ?q=q",
+                 combdsl::detail::parser_definition_mode::
+                     inspect_definitions);
+             std::cout
+                 << parsed.catalog_find_command->catalog.size()
+                 << parsed.catalog_find_command->symbols.size();
+         },
+         "21");
+    test("set accepts an exact name overlapping a compact catalog group",
+         parse("set ?foo=barI = K"), "?foo=barI");
+    test("an exact whole group wins over its registered compact prefix",
+         [] {
+             auto parsed = combdsl::detail::parse_input(
+                 "find among ?foo=barI ?q=q",
+                 combdsl::detail::parser_definition_mode::
+                     inspect_definitions);
+             std::cout
+                 << parsed.catalog_find_command->catalog.size()
+                 << parsed.catalog_find_command->symbols.size();
+         },
+         "11");
+    test("a prefix shorter than compact equals cannot steal a marker",
+         [] {
+             auto parsed = combdsl::detail::parse_input(
+                 "find among I ?foo=x",
+                 combdsl::detail::parser_definition_mode::
+                     inspect_definitions);
+             std::cout
+                 << parsed.catalog_find_command->catalog.size()
+                 << parsed.catalog_find_command->symbols.size();
+             parsed.catalog_find_command->target.print_to(std::cout);
+         },
+         "13x");
+    test("find among resolves a question-name revision group",
+         [] {
+             auto parsed = combdsl::detail::parse_input(
+                 "find among ?foo@1 ?q=q",
+                 combdsl::detail::parser_definition_mode::
+                     inspect_definitions);
+             std::cout
+                 << parsed.catalog_find_command->catalog.size()
+                 << parsed.catalog_find_command->symbols.size();
+         },
+         "11");
+    test("the first unresolved marker-shaped item starts the query",
+         [] {
+             auto parsed = combdsl::detail::parse_input(
+                 "find among ?x= ?z= ?y=",
+                 combdsl::detail::parser_definition_mode::
+                     inspect_definitions);
+             std::cout
+                 << parsed.catalog_find_command->catalog.size()
+                 << parsed.catalog_find_command->symbols.size();
+             parsed.catalog_find_command->target.print_to(std::cout);
+         },
+         "11?y=");
+    test("an unregistered spaced question name remains a query marker",
+         [] {
+             auto parsed = combdsl::detail::parse_input(
+                 "find among I ?x = ?y=",
+                 combdsl::detail::parser_definition_mode::
+                     inspect_definitions);
+             std::cout
+                 << parsed.catalog_find_command->catalog.size()
+                 << parsed.catalog_find_command->symbols.size();
+             parsed.catalog_find_command->target.print_to(std::cout);
+         },
+         "11?y=");
+    test_parse_failure(
+        "find among still rejects an empty sequential catalog",
+        "find among ?q=q", 11,
+        "expected at least one bird name");
+    test_parse_failure(
+        "a fully resolved sequential catalog still requires a marker",
+        "find among S K ?x= ?y=", 22, "expected '?'");
+    test_parse_failure(
+        "the first unresolved ordinary group errors before a later marker",
+        "find among ?x= Missing ?z=zz", 16,
+        "issing is not a defined name");
+    test_parse_failure(
+        "a registered marker prefix makes its compact suffix ordinary",
+        "find among I ?x=xx", 16,
+        "xx is not a defined name");
+    test_parse_failure(
+        "a registered marker prefix exposes a longer ordinary suffix",
+        "find among ?x=barI ?q=q", 14,
+        "barI is not a defined name");
+    test_parse_failure(
+        "an invalid revision follows a usable compact marker prefix",
+        "find among ?x=@999 ?q=q", 14,
+        "@999 is not a defined name");
+    test_parse_failure(
+        "a marker-shaped compact suffix is not a query marker",
+        "find among I?z=zz", 13,
+        "z=zz is not a defined name");
+    test("the user sequential catalog parses four registered birds",
+         [] {
+             auto parsed = combdsl::detail::parse_input(
+                 "find among S K ?x= ?y= ?z= ?y=",
+                 combdsl::detail::parser_definition_mode::
+                     inspect_definitions);
+             std::cout
+                 << parsed.catalog_find_command->catalog.size()
+                 << parsed.catalog_find_command->symbols.size();
+             parsed.catalog_find_command->symbols[0]
+                 .expression().print_to(std::cout);
+             for (auto const& bird :
+                  parsed.catalog_find_command->catalog) {
+                 std::cout << '|';
+                 bird.print_to(std::cout);
+             }
+             std::cout << '|';
+             parsed.catalog_find_command->target.print_to(std::cout);
+         },
+         "41z|S|K|?x=|?y=|?y=");
+    test("the user sequential catalog finds the exact requested expression",
+         parse("find among S K ?x= ?y= ?z= ?y="),
+         "?=K ?y=");
+    test("a leading-question operand prints after K with a safe boundary",
+         parse("K ?y="), "K ?y=");
+    test("the spaced leading-question operand print reparses identically",
+         [] {
+             auto const expression = parse("K ?y=");
+             std::ostringstream printed;
+             expression.print_to(printed);
+             auto const reparsed = parse(printed.str());
+             std::cout <<
+                 combdsl::detail::same_parser_definition_expression(
+                     expression, reparsed);
+         },
+         "1");
+    test("a leading-question function beside another operand round trips",
+         [] {
+             auto const expression = parse("?y= K");
+             std::ostringstream printed;
+             expression.print_to(printed);
+             auto const reparsed = parse(printed.str());
+             std::cout <<
+                 combdsl::detail::same_parser_definition_expression(
+                     expression, reparsed);
+         },
+         "1");
+    test("registered compact marker names split greedily in one group",
+         [] {
+             auto parsed = combdsl::detail::parse_input(
+                 "find among ?x=?y= ?q=q",
+                 combdsl::detail::parser_definition_mode::
+                     inspect_definitions);
+             std::cout
+                 << parsed.catalog_find_command->catalog.size()
+                 << parsed.catalog_find_command->symbols.size();
+         },
+         "21");
+    test("set accepts a whole name overlapping compact marker names",
+         parse("set ?x=?y= = K"), "?x=?y=");
+    test("an exact whole compact group wins over greedy marker names",
+         [] {
+             auto parsed = combdsl::detail::parse_input(
+                 "find among ?x=?y= ?q=q",
+                 combdsl::detail::parser_definition_mode::
+                     inspect_definitions);
+             std::cout
+                 << parsed.catalog_find_command->catalog.size()
+                 << parsed.catalog_find_command->symbols.size();
+         },
+         "11");
+    test("set creates the first revision of a marker-shaped name",
+         parse("set ?rev= = I"), "?rev=");
+    test("set creates a second revision of a marker-shaped name",
+         parse("set ?rev= = S"), "?rev=");
+    test("current and explicit marker-shaped revisions remain catalog birds",
+         [] {
+             auto parsed = combdsl::detail::parse_input(
+                 "find among ?rev= ?rev=@1 ?q=q",
+                 combdsl::detail::parser_definition_mode::
+                     inspect_definitions);
+             std::cout
+                 << parsed.catalog_find_command->catalog.size()
+                 << parsed.catalog_find_command->symbols.size();
+         },
+         "21");
+    test("a multiply revised marker-shaped name can be removed",
+         parse("remove ?rev="), "?rev=");
+    test("an explicit removed revision remains a catalog bird",
+         [] {
+             auto parsed = combdsl::detail::parse_input(
+                 "find among ?rev=@1 ?q=q",
+                 combdsl::detail::parser_definition_mode::
+                     inspect_definitions);
+             std::cout
+                 << parsed.catalog_find_command->catalog.size()
+                 << parsed.catalog_find_command->symbols.size();
+         },
+         "11");
+    test("a removed multi-revision bare name becomes the query marker",
+         [] {
+             auto parsed = combdsl::detail::parse_input(
+                 "find among I ?rev=K",
+                 combdsl::detail::parser_definition_mode::
+                     inspect_definitions);
+             std::cout
+                 << parsed.catalog_find_command->catalog.size()
+                 << parsed.catalog_find_command->symbols.size();
+             parsed.catalog_find_command->target.print_to(std::cout);
+         },
+         "13K");
+    test_parse_failure(
+        "an invalid revision after an unavailable prefix reaches the target",
+        "find among I ?rev=@999", 18,
+        "unknown operand");
+    test_parse_failure(
+        "a removed multi-revision marker leaves a start catalog empty",
+        "find among ?rev=K", 11,
+        "expected at least one bird name");
+    test("set creates a marker-shaped singleton for removal",
+         parse("set ?gone= = I"), "?gone=");
+    test("a marker-shaped singleton can be removed",
+         parse("remove ?gone="), "?gone=");
+    test("a removed singleton marker-shaped name remains a catalog bird",
+         [] {
+             auto parsed = combdsl::detail::parse_input(
+                 "find among ?gone= ?q=q",
+                 combdsl::detail::parser_definition_mode::
+                     inspect_definitions);
+             std::cout
+                 << parsed.catalog_find_command->catalog.size()
+                 << parsed.catalog_find_command->symbols.size();
+         },
+         "11");
+    test("a removed singleton question name remains a Find target",
+         [] {
+             auto parsed = combdsl::detail::parse_input(
+                 "find among S K ?z= ?gone=",
+                 combdsl::detail::parser_definition_mode::
+                     inspect_definitions);
+             parsed.catalog_find_command->target.print_to(std::cout);
+         },
+         "?gone=");
+    test("an explicit removed question revision remains a Find target",
+         [] {
+             auto parsed = combdsl::detail::parse_input(
+                 "find among S K ?z= ?rev=@1",
+                 combdsl::detail::parser_definition_mode::
+                     inspect_definitions);
+             parsed.catalog_find_command->target.print_to(std::cout);
+         },
+         "?rev=@1");
+    test("an unregistered spaced question marker accepts its target",
+         [] {
+             auto parsed = combdsl::detail::parse_input(
+                 "find among I ?space = ?y=",
+                 combdsl::detail::parser_definition_mode::
+                     inspect_definitions);
+             std::cout
+                 << parsed.catalog_find_command->catalog.size()
+                 << parsed.catalog_find_command->symbols.size();
+         },
+         "15");
+    test("set creates a spaced-marker question name",
+         parse("set ?space = I"), "?space");
+    test("a current spaced-marker name and equals are catalog birds",
+         [] {
+             auto parsed = combdsl::detail::parse_input(
+                 "find among I ?space = ?q=K",
+                 combdsl::detail::parser_definition_mode::
+                     inspect_definitions);
+             std::cout
+                 << parsed.catalog_find_command->catalog.size()
+                 << parsed.catalog_find_command->symbols.size();
+         },
+         "31");
+    test("a spaced-marker question singleton can be removed",
+         parse("remove ?space"), "?space");
+    test("a removed spaced-marker singleton and equals remain catalog birds",
+         [] {
+             auto parsed = combdsl::detail::parse_input(
+                 "find among I ?space = ?q=K",
+                 combdsl::detail::parser_definition_mode::
+                     inspect_definitions);
+             std::cout
+                 << parsed.catalog_find_command->catalog.size()
+                 << parsed.catalog_find_command->symbols.size();
+         },
+         "31");
+    test("find among accepts an explicit bare-question revision",
+         [] {
+             auto parsed = combdsl::detail::parse_input(
+                 "find among ?@1 ?q=q",
                  combdsl::detail::parser_definition_mode::
                      inspect_definitions);
              std::cout
@@ -11020,81 +11343,103 @@ int main() {
                      parsed.catalog_find_command->catalog.size() == 1);
          },
          "111");
-    test("compare accepts a bare ampersand name containing equals on the left",
-         parse("compare ?x &foo=bar x = x"),
+    test("compare keeps its marker contextual before a question basis",
+         parse("compare ?x ?foo=bar x = x"),
          "both reduce to: xx");
-    test("revisions accepts the complete interior-equals ampersand name",
-         parse("revisions &foo=bar"),
-         "&foo=bar arity:1 I [captured] [current]");
-    test("captured setup accepts ampersand as a body reference",
-         parse("set captured AmpCaptured = 3 &"),
-         "AmpCaptured");
-    test("live setup accepts ampersand as a body reference",
-         parse("set live AmpLive = 3 &"), "AmpLive");
-    test("usedby reports a direct ampersand-name dependency",
-         parse("usedby AmpCaptured"),
-         "AmpCaptured directly uses: &");
-    test("dependson accepts ampersand as its queried name",
-         parse("dependson &"),
-         "& is directly depended on by: AmpCaptured AmpLive");
-    test("set can redefine ampersand after a define",
-         parse("set & = 3 C"), "&");
-    test("a captured ampersand reference retains the define revision",
-         [] { parse_eval("AmpCaptured xyz"); }, "zyx\n");
-    test("a live ampersand reference follows the set revision",
-         [] { parse_eval("AmpLive xyz"); }, "xzy\n");
-    test("remove accepts ampersand as a basis name",
-         parse("remove &"), "&");
+    test("abstract keeps its marker contextual after question registration",
+         parse("abstract ?x=x"), "?=I");
+    test("revisions accepts the complete interior-equals question name",
+         parse("revisions ?foo=bar"),
+         "?foo=bar arity:1 I [captured] [current]");
+    test("captured setup accepts question mark as a body reference",
+         parse("set captured QCaptured = 3 ?"),
+         "QCaptured");
+    test("live setup accepts question mark as a body reference",
+         parse("set live QLive = 3 ?"), "QLive");
+    test("usedby reports a direct question-name dependency",
+         parse("usedby QCaptured"),
+         "QCaptured directly uses: ?");
+    test("dependson accepts question mark as its queried name",
+         parse("dependson ?"),
+         "? is directly depended on by: QCaptured QLive");
+    test("usedby path traverses a question-name dependency",
+         parse("usedby path QCaptured ?"),
+         "QCaptured uses ? via:\n"
+         "  QCaptured -> ?@2  [captured]");
+    test("set can redefine question mark after define",
+         parse("set ? = 3 C"), "?");
+    test("a captured question reference retains the define revision",
+         [] { parse_eval("QCaptured xyz"); }, "zyx\n");
+    test("a live question reference follows the set revision",
+         [] { parse_eval("QLive xyz"); }, "xzy\n");
+    test("remove accepts question mark as a basis name",
+         parse("remove ?"), "?");
     test_parse_failure(
-        "show treats a removed ampersand name as removed",
-        "show &", 5, "& is not a defined name");
-    test("a captured ampersand reference survives removal",
-         [] { parse_eval("AmpCaptured xyz"); }, "zyx\n");
-    test("a live ampersand reference retains its removed target",
-         [] { parse_eval("AmpLive xyz"); }, "xzy\n");
-    test("an explicit removed ampersand revision remains usable",
-         [] { parse_eval("&@3xyz"); }, "xzy\n");
-    test("set can restore an ampersand name after removal",
-         parse("set & = 3 I"), "&");
-    test("show reports the restored ampersand definition",
-         parse("show &"), "arity:3 I");
-    test("a live ampersand reference follows the restored revision",
-         [] { parse_eval("AmpLive xyz"); }, "xyz\n");
-    test("a captured ampersand reference remains frozen after restoration",
-         [] { parse_eval("AmpCaptured xyz"); }, "zyx\n");
-    test("remove accepts the full interior-ampersand name",
-         parse("remove &foo&bar"), "&foo&bar");
-    test("a removed singleton interior-ampersand name remains parseable",
-         [] { parse_eval("&foo&bar x"); }, "x\n");
-    test("remove accepts the full interior-equals ampersand name",
-         parse("remove &foo=bar"), "&foo=bar");
+        "show treats a removed question name as removed",
+        "show ?", 5, "? is not a defined name");
+    test("a captured question reference survives removal",
+         [] { parse_eval("QCaptured xyz"); }, "zyx\n");
+    test("a live question reference retains its removed target",
+         [] { parse_eval("QLive xyz"); }, "xzy\n");
+    test("an explicit removed question revision remains usable",
+         [] { parse_eval("?@3xyz"); }, "xzy\n");
+    test("set can restore a question name after removal",
+         parse("set ? = 3 I"), "?");
+    test("show reports the restored question definition",
+         parse("show ?"), "arity:3 I");
+    test("a live question reference follows the restored revision",
+         [] { parse_eval("QLive xyz"); }, "xyz\n");
+    test("a captured question reference remains frozen after restoration",
+         [] { parse_eval("QCaptured xyz"); }, "zyx\n");
+    test("remove accepts the full interior-question name",
+         parse("remove ?foo?bar"), "?foo?bar");
+    test("a removed singleton interior-question name remains parseable",
+         [] { parse_eval("?foo?bar x"); }, "x\n");
+    test("remove accepts the full interior-equals question name",
+         parse("remove ?foo=bar"), "?foo=bar");
     test_parse_failure(
-        "show treats the interior-equals ampersand name as removed",
-        "show &foo=bar", 5,
-        "&foo=bar is not a defined name");
-    test("a removed singleton interior-equals ampersand name remains parseable",
-         [] { parse_eval("&foo=bar x"); }, "x\n");
-    test("the set list preserves unambiguous ampersand-name commands",
+        "show treats the interior-equals question name as removed",
+        "show ?foo=bar", 5,
+        "?foo=bar is not a defined name");
+    test("a removed singleton interior-equals question name is parseable",
+         [] { parse_eval("?foo=bar x"); }, "x\n");
+    test("the set list preserves unambiguous question-name commands",
          [] {
              auto const definitions = set_list();
              std::cout
-                 << (definitions.find("set & = 3 C") !=
+                 << (definitions.find("set ?bar = 3 C") !=
                      std::string::npos)
-                 << (definitions.find("set &bar = 3 C") !=
+                 << (definitions.find("set ?foo = 1 I") !=
                      std::string::npos)
-                 << (definitions.find("define & bar = rab") !=
+                 << (definitions.find("define ? bar = rab") !=
                      std::string::npos)
-                 << (definitions.find("set &foo=bar = 1 I") !=
+                 << (definitions.find("define ?bar = rab") ==
                      std::string::npos)
-                 << (definitions.find("set &foo&bar = 1 I") !=
+                 << (definitions.find("set ?foo=bar = 1 I") !=
                      std::string::npos)
-                 << (definitions.find("set A&B = 1 I") !=
+                 << (definitions.find("set ?foo?bar = 1 I") !=
                      std::string::npos)
-                 << (definitions.find("remove &") !=
+                 << (definitions.find("set ?x= = 0 B") !=
                      std::string::npos)
-                 << definitions.ends_with("remove &foo=bar");
+                 << (definitions.find("set ?y= = 0 C") !=
+                     std::string::npos)
+                 << (definitions.find("set ?foo=barI = 0 K") !=
+                     std::string::npos)
+                 << (definitions.find("set ?x=?y= = 0 K") !=
+                     std::string::npos)
+                 << (definitions.find("remove ?rev=") !=
+                     std::string::npos)
+                 << (definitions.find("remove ?gone=") !=
+                     std::string::npos)
+                 << (definitions.find("remove ?space") !=
+                     std::string::npos)
+                 << (definitions.find("set &foo = 0 bar") !=
+                     std::string::npos)
+                 << (definitions.find("remove ?") !=
+                     std::string::npos)
+                 << definitions.ends_with("remove ?foo=bar");
          },
-         "11111111");
+         "1111111111111111");
 
     test("set accepts a visible backslash as a basis name",
          parse(input_escape(R"(set \ = 3 C)")), R"(\\)");
@@ -11150,7 +11495,7 @@ int main() {
     test("find among resolves an exact backslash-prefixed catalog name",
          [] {
              auto parsed = combdsl::detail::parse_input(
-                 input_escape(R"(find among \foo ?x=x)"),
+                 input_escape(R"(find among \foo ?q=q)"),
                  combdsl::detail::parser_definition_mode::
                      inspect_definitions);
              std::cout

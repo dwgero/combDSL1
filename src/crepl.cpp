@@ -66,7 +66,7 @@
 
 namespace {
 
-constexpr std::string_view crepl_version = "2.12.7";
+constexpr std::string_view crepl_version = "2.12.10";
 constexpr std::string_view no_further_reductions_message =
     "No further reductions";
 
@@ -2002,21 +2002,41 @@ void print_help_full(std::ostream& output) {
     output << "define Exyzwv = xy(zwv)\n\n";
     write_wrapped_paragraph(
         output,
-        "A basis name can't begin with \" or ?, can't end with @, "
+        "A basis name can't begin with \", can't end with @, "
         "can't contain ) or ( anywhere, and can't be a non-negative integer "
         "literal.");
     output.put('\n');
     write_wrapped_paragraph(
         output,
-        "An equals sign or ampersand may begin a basis name. For such a name, "
+        "An equals sign or question mark may begin a basis name. For such a "
+        "name, "
         "whitespace must separate the name from the assignment =; every "
         "later = before that whitespace remains part of the name. Thus "
-        "'set = = 3 C' and 'set & = 3 C' define the names '=' and '&', while "
-        "'set =bar = 3 C' and 'set &bar = 3 C' define the names '=bar' and "
-        "'&bar'. 'set = 3 C' and 'set & 3 C' are parse errors because they "
+        "'set = = 3 C' and 'set ? = 3 C' define the names '=' and '?', while "
+        "'set =bar = 3 C' and 'set ?bar = 3 C' define the names '=bar' and "
+        "'?bar'. 'set = 3 C' and 'set ? 3 C' are parse errors because they "
         "have no assignment =. In 'define = bar = rab' and "
-        "'define & bar = rab', the names are '=' and '&', and 'bar' is the "
+        "'define ? bar = rab', the names are '=' and '?', and 'bar' is the "
         "symbol list.");
+    output.put('\n');
+    write_wrapped_paragraph(
+        output,
+        "An ampersand follows the ordinary non-alphanumeric name rules. "
+        "Compact assignments such as 'set &=3 C' and 'set &bar=3 C' are "
+        "valid, and the first = is the assignment delimiter; "
+        "'set &foo=bar' therefore defines '&foo', not '&foo=bar'. Spaced "
+        "forms such as 'set & = 3 C' remain valid.");
+    output.put('\n');
+    write_wrapped_paragraph(
+        output,
+        "In Find, Abstract, and Compare command-marker positions, the "
+        "command's required '?symbols' marker keeps its contextual meaning. "
+        "Outside those positions, exact registered question-prefixed names "
+        "have normal precedence. A restricted Find reads its catalog from "
+        "left to right. Registered marker-shaped names such as '?x=' remain "
+        "catalog birds; the first unresolved item starts the query only when "
+        "it has the form '?symbols=', and any other unresolved item is a parse "
+        "error.");
     output.put('\n');
     write_wrapped_paragraph(
         output,
@@ -2279,9 +2299,23 @@ void print_help_full(std::ostream& output) {
         "question mark remains required. Within each contiguous group, an "
         "exact whole name or revision wins; otherwise the longest valid bird "
         "name or revision is taken from left to right. "
-        "Whitespace can force a shorter boundary. S, K, I, Y, pre-defined "
-        "birds, current user-defined names, and retained user revisions are "
-        "accepted. Revisions of a redefined name use name@N; a removed "
+        "Whitespace can force a shorter boundary. Catalog items are resolved "
+        "sequentially. An exact whole group is consumed first. Otherwise, at "
+        "a whitespace-delimited group start, a ?symbols= spelling is the query "
+        "marker unless the longest usable compact prefix reaches through that "
+        "=; a shorter registered prefix does not claim it. Registered names such as "
+        "?x= and ?y= therefore remain "
+        "catalog birds, while the first unresolved marker-shaped item supplies "
+        "the symbol list. Any other first unresolved item is a parse error, "
+        "and a marker cannot begin in the middle of a compact group. For "
+        "example, after 'set ?x= = B' and 'set ?y= = C', 'find among S K ?x= "
+        "?y= ?z= ?y=' uses those four birds, z as the symbol list, and ?y= as "
+        "the target; its match is '?=K ?y='. If ?x= is absent, 'find among "
+        "?x=xx' has an empty catalog; if ?x= is present, that bird is consumed "
+        "and the unresolved xx is not a marker. S, "
+        "K, I, Y, pre-defined birds, current user-defined names, and retained "
+        "user revisions are accepted. Revisions of a redefined name use "
+        "name@N; a removed "
         "singleton that was never redefined uses its bare name. Unlike the "
         "default catalog, an explicitly listed "
         "Y is allowed. A restricted search examines increasing composition "

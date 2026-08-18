@@ -186,11 +186,26 @@ enum class printed_token : long {
            text.back() <= 'z';
 }
 
+[[nodiscard]] constexpr bool is_query_marker_shaped_basis_name(
+    std::string_view name) noexcept {
+    if (name.size() < 3 || name.front() != '?' || name.back() != '=') {
+        return false;
+    }
+    return std::all_of(
+        name.begin() + 1,
+        name.end() - 1,
+        [](char character) {
+            return character >= 'a' && character <= 'z';
+        });
+}
+
 [[nodiscard]] constexpr printed_token basis_printed_token(
     std::string_view name) noexcept {
-    if (!name.empty() && name.front() == '\\') {
+    if ((!name.empty() && name.front() == '\\') ||
+        is_query_marker_shaped_basis_name(name)) {
         // A compact neighbour could extend this into a different exact
-        // leading-backslash basis name, so delimit both sides.
+        // basis name or make a restricted-Find catalog name look like its
+        // query marker, so delimit both sides.
         return printed_token::separated_basis;
     }
     if (ends_with_non_alphanumeric(name)) {
@@ -555,11 +570,6 @@ private:
         if (name.empty() || name[0] == '\0') {
             throw std::invalid_argument(
                 "combdsl::basis names cannot be empty");
-        }
-
-        if (name[0] == '?') {
-            throw std::invalid_argument(
-                "combdsl::basis names cannot begin with ?");
         }
 
         if (name[0] == '(' || name[0] == ')' || name[0] == '"' ||
@@ -4824,7 +4834,8 @@ public:
             !definition_name_.empty() &&
             definition_name_.front() == '\\';
         auto const token =
-            style.requires_trailing_separator || starts_with_backslash
+            style.requires_trailing_separator || starts_with_backslash ||
+                is_query_marker_shaped_basis_name(definition_name_)
             ? printed_token::separated_basis
             : ends_with_non_alphanumeric(definition_name_)
             ? printed_token::nonalphanumeric_terminated_basis
@@ -7451,11 +7462,6 @@ private:
         }
         auto const [name_text, parsed_name_position] =
             parse_definition_basis_name_token();
-        if (!name_text.empty() && name_text.front() == '?') {
-            throw parse_error(
-                parsed_name_position,
-                "combdsl::basis names cannot begin with ?");
-        }
         if (auto versioned = parse_versioned_basis_name(
                 name_text, parsed_name_position)) {
             static_cast<void>(versioned);
@@ -7921,7 +7927,45 @@ private:
     [[nodiscard]] std::vector<quoted_expression>
     parse_find_catalog() {
         std::vector<find_catalog_entry> entries;
-        while (!at_end() && current() != '?') {
+        auto append_bird = [&](find_catalog_entry bird) {
+            auto const duplicate = std::ranges::any_of(
+                entries,
+                [&](find_catalog_entry const& existing) {
+                    auto const same_registration =
+                        existing.registration &&
+                        bird.registration &&
+                        existing.registration ==
+                            bird.registration &&
+                        existing.live_reference ==
+                            bird.live_reference;
+                    return same_registration ||
+                           same_parser_definition_expression(
+                               existing.expression,
+                               bird.expression);
+                });
+            if (!duplicate) {
+                entries.push_back(std::move(bird));
+            }
+        };
+        auto finish_catalog = [&]() {
+            if (entries.empty()) {
+                fail("expected at least one bird name");
+            }
+            std::vector<quoted_expression> catalog;
+            catalog.reserve(entries.size());
+            for (auto& entry : entries) {
+                catalog.push_back(std::move(entry.expression));
+            }
+            return catalog;
+        };
+
+        for (;;) {
+            if (at_end()) {
+                if (entries.empty()) {
+                    fail("expected at least one bird name");
+                }
+                fail("expected '?'");
+            }
             auto const group_position = position_;
             auto const group = current_basis_token();
             if (group.empty()) {
@@ -7929,38 +7973,31 @@ private:
             }
 
             auto const group_end = group_position + group.size();
-            auto append_bird = [&](find_catalog_entry bird) {
-                auto const duplicate = std::ranges::any_of(
-                    entries,
-                    [&](find_catalog_entry const& existing) {
-                        auto const same_registration =
-                            existing.registration &&
-                            bird.registration &&
-                            existing.registration ==
-                                bird.registration &&
-                            existing.live_reference ==
-                                bird.live_reference;
-                        return same_registration ||
-                               same_parser_definition_expression(
-                                   existing.expression,
-                                   bird.expression);
-                    });
-                if (!duplicate) {
-                    entries.push_back(std::move(bird));
-                }
-            };
+            auto const query_marker_size =
+                find_query_marker_size_at(group_position);
 
             if (auto exact = try_resolve_find_catalog_bird(
                     group, group_position)) {
                 position_ = group_end;
                 append_bird(std::move(*exact));
             } else {
+                auto prefix = longest_find_catalog_bird_prefix(group);
+
+                // An exact whole group wins above.  Otherwise a usable
+                // compact name must reach through the candidate '=' to win;
+                // a shorter prefix such as '?foo' must not steal '?foo=x'
+                // from the query grammar.  Once such a prefix is consumed,
+                // any later failure in the same group remains an undefined
+                // catalog name rather than a compact suffix marker.
+                if (query_marker_size &&
+                    (!prefix || prefix->size < *query_marker_size)) {
+                    return finish_catalog();
+                }
+
                 while (position_ < group_end) {
-                    auto const remaining = source_.substr(
-                        position_, group_end - position_);
-                    auto prefix = longest_find_catalog_bird_prefix(
-                        remaining);
                     if (!prefix) {
+                        auto const remaining = source_.substr(
+                            position_, group_end - position_);
                         auto message = unescape_input(remaining);
                         message += " is not a defined name";
                         throw parse_error(position_, message);
@@ -7968,6 +8005,11 @@ private:
 
                     position_ += prefix->size;
                     append_bird(std::move(prefix->entry));
+                    if (position_ < group_end) {
+                        prefix = longest_find_catalog_bird_prefix(
+                            source_.substr(
+                                position_, group_end - position_));
+                    }
                 }
             }
 
@@ -7979,15 +8021,34 @@ private:
             }
             skip_whitespace();
         }
-        if (entries.empty()) {
-            fail("expected at least one bird name");
+    }
+
+    [[nodiscard]] std::optional<std::size_t>
+    find_query_marker_size_at(
+        std::size_t position) const noexcept {
+        auto const marker_begin = position;
+        if (position >= source_.size() || source_[position] != '?') {
+            return std::nullopt;
         }
-        std::vector<quoted_expression> catalog;
-        catalog.reserve(entries.size());
-        for (auto& entry : entries) {
-            catalog.push_back(std::move(entry.expression));
+
+        ++position;
+        auto const symbols_begin = position;
+        while (position < source_.size() &&
+               source_[position] >= 'a' &&
+               source_[position] <= 'z') {
+            ++position;
         }
-        return catalog;
+        if (position == symbols_begin) {
+            return std::nullopt;
+        }
+        while (position < source_.size() &&
+               is_whitespace(source_[position])) {
+            ++position;
+        }
+        if (position == source_.size() || source_[position] != '=') {
+            return std::nullopt;
+        }
+        return position - marker_begin + 1;
     }
 
     [[nodiscard]] quoted_expression parse_find_command() {
@@ -8307,11 +8368,6 @@ private:
         }
         auto const [name_text, parsed_name_position] =
             parse_definition_basis_name_token();
-        if (!name_text.empty() && name_text.front() == '?') {
-            throw parse_error(
-                parsed_name_position,
-                "combdsl::basis names cannot begin with ?");
-        }
         if (auto versioned = parse_versioned_basis_name(
                 name_text, parsed_name_position)) {
             static_cast<void>(versioned);
@@ -8522,11 +8578,11 @@ private:
     [[nodiscard]] std::pair<std::string_view, std::size_t>
     parse_definition_basis_name_token() {
         auto const name_position = position_;
-        auto const begins_with_equals_or_ampersand =
-            !at_end() && (current() == '=' || current() == '&');
+        auto const begins_with_equals_or_question_mark =
+            !at_end() && (current() == '=' || current() == '?');
         while (!at_end() &&
                !is_basis_token_delimiter(position_) &&
-               (begins_with_equals_or_ampersand || current() != '=')) {
+               (begins_with_equals_or_question_mark || current() != '=')) {
             ++position_;
         }
         if (position_ == name_position) {
@@ -9092,11 +9148,6 @@ private:
     [[nodiscard]] basis_label validated_definition_basis_name(
         std::string_view name,
         std::size_t name_position) const {
-        if (!name.empty() && name.front() == '?') {
-            throw parse_error(
-                name_position,
-                "combdsl::basis names cannot begin with ?");
-        }
         if (auto versioned =
                 parse_versioned_basis_name(name, name_position)) {
             static_cast<void>(versioned);

@@ -340,27 +340,48 @@ test("documents compact restricted Find catalogs in Studio", () => {
     assert.match(
         html,
         /longest valid bird name or revision is taken from/);
-    assert.match(html, /A basis name cannot begin with <code>"<\/code> or/);
-    assert.match(html, /<code>\?<\/code>,\s+cannot end/);
-    assert.match(html, /cannot end\s+with <code>@<\/code>/);
+    assert.match(html, /A basis name cannot begin with <code>"<\/code>,/);
+    assert.match(html, /cannot end\s+with\s+<code>@<\/code>/);
     assert.match(html, /cannot contain\s+<code>\)<\/code> or <code>\(<\/code> anywhere/);
     assert.match(html, /cannot be a\s+non-negative integer literal/);
-    assert.match(html, /introduces\s+parser\s+command\s+markers/);
+    assert.match(
+        html,
+        /Catalog\s+items are resolved sequentially/);
+    assert.match(html,
+        /a\s+<code>\?symbols=<\/code> spelling is the query marker unless the\s+longest usable compact prefix reaches through that <code>=<\/code>/);
+    assert.match(html,
+        /a shorter registered prefix does not claim it/);
+    assert.match(html,
+        /<code>find among S K \?x= \?y= \?z= \?y=<\/code> uses those four birds/);
+    assert.match(html,
+        /its match is <code>\?=K \?y=<\/code>/);
+    assert.match(html,
+        /If <code>\?x=<\/code> is\s+absent, <code>find among \?x=xx<\/code> has an empty catalog/);
+    assert.match(html,
+        /if it is\s+present, that bird is consumed and the unresolved <code>xx<\/code>\s+is not a marker/);
 });
 
-test("documents leading-equals and ampersand basis names in Studio", () => {
+test("documents special question names and ordinary ampersand names in Studio", () => {
     const html = readFileSync(
         new URL("../web/index.html", import.meta.url), "utf8");
 
-    assert.match(html, /An equals sign or ampersand may begin a basis name/);
+    assert.match(html, /An equals sign or question mark may begin a basis name/);
     assert.match(html, /set = = 3 C/);
     assert.match(html, /set =bar = 3 C/);
     assert.match(html, /set = 3 C/);
     assert.match(html, /define = bar = rab/);
-    assert.match(html, /set &amp; = 3 C/);
-    assert.match(html, /set &amp;bar = 3 C/);
-    assert.match(html, /set &amp; 3 C/);
-    assert.match(html, /define &amp; bar = rab/);
+    assert.match(html, /set \? = 3 C/);
+    assert.match(html, /set \?bar = 3 C/);
+    assert.match(html, /set \? 3 C/);
+    assert.match(html, /define \? bar = rab/);
+    assert.match(html, /ampersand follows the ordinary non-alphanumeric name rules/);
+    assert.match(html, /set &amp;=3 C/);
+    assert.match(html, /set &amp;bar=3 C/);
+    assert.match(html, /set &amp;foo=bar/);
+    assert.match(html, /defines\s+<code>&amp;foo<\/code>, not <code>&amp;foo=bar<\/code>/);
+    assert.match(
+        html,
+        /required <code>\?symbols<\/code> marker keeps its\s+contextual meaning/);
 });
 
 test("documents leading-backslash basis names in Studio", () => {

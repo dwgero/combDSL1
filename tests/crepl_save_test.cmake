@@ -204,99 +204,122 @@ if(NOT equals_load_error STREQUAL "")
         "${equals_load_error}")
 endif()
 
-set(ampersand_file
-    "${CREPL_WORKING_DIRECTORY}/ampersand definitions.cmb")
-set(ampersand_input
-    "${CREPL_WORKING_DIRECTORY}/ampersand-save-input.cmb")
-file(REMOVE "${ampersand_file}")
-file(WRITE "${ampersand_input}"
-    "set & = 3 C\n"
-    "set &bar = 3 C\n"
-    "define & bar = rab\n"
-    "set &foo=bar = 1 I\n"
+set(question_file
+    "${CREPL_WORKING_DIRECTORY}/question definitions.cmb")
+set(question_input
+    "${CREPL_WORKING_DIRECTORY}/question-save-input.cmb")
+file(REMOVE "${question_file}")
+file(WRITE "${question_input}"
+    "set ? = 3 C\n"
+    "set ?bar = 3 C\n"
+    "define ? bar = rab\n"
+    "set ?foo=bar = 1 I\n"
+    "set ?foo?bar = 1 I\n"
+    "set ?x= = B\n"
+    "set ?y= = C\n"
+    "set &=1 I\n"
+    "set &bar=1 I\n"
+    "set &foo=bar\n"
     "set A&B=1 I\n"
-    "&xyz\n"
-    "&bar x y z\n"
-    "&foo=bar x\n"
+    "?xyz\n"
+    "?bar x y z\n"
+    "?foo=bar x\n"
+    "?foo?bar x\n"
+    "&x\n"
+    "&bar x\n"
     "A&B x\n"
-    "save ampersand definitions.cmb\n"
+    "find among S K ?x= ?y= ?z= ?y=\n"
+    "save question definitions.cmb\n"
     "exit\n")
 execute_process(
     COMMAND "${CREPL_EXECUTABLE}"
-    INPUT_FILE "${ampersand_input}"
+    INPUT_FILE "${question_input}"
     WORKING_DIRECTORY "${CREPL_WORKING_DIRECTORY}"
-    OUTPUT_VARIABLE ampersand_output
-    ERROR_VARIABLE ampersand_error
-    RESULT_VARIABLE ampersand_result
+    OUTPUT_VARIABLE question_output
+    ERROR_VARIABLE question_error
+    RESULT_VARIABLE question_result
     TIMEOUT 10
 )
-if(NOT ampersand_result EQUAL 0)
+if(NOT question_result EQUAL 0)
     message(FATAL_ERROR
-        "ampersand-name save exited with ${ampersand_result}\n"
-        "stderr:\n${ampersand_error}")
+        "question-name save exited with ${question_result}\n"
+        "stderr:\n${question_error}")
 endif()
-set(expected_ampersand_output
-    "zyx\nxzy\nx\nx\nSaved ampersand definitions.cmb\n")
-if(NOT ampersand_output STREQUAL expected_ampersand_output)
+string(CONCAT expected_question_output
+    "zyx\nxzy\nx\nx\nx\nx\nx\n"
+    "?=K ?y=\n"
+    "Saved question definitions.cmb\n")
+if(NOT question_output STREQUAL expected_question_output)
     message(FATAL_ERROR
-        "unexpected ampersand-name CREPL output\n"
-        "expected:\n${expected_ampersand_output}"
-        "actual:\n${ampersand_output}")
+        "unexpected question-name CREPL output\n"
+        "expected:\n${expected_question_output}"
+        "actual:\n${question_output}")
 endif()
-if(NOT ampersand_error STREQUAL "")
+if(NOT question_error STREQUAL "")
     message(FATAL_ERROR
-        "unexpected ampersand-name CREPL error:\n${ampersand_error}")
+        "unexpected question-name CREPL error:\n${question_error}")
 endif()
-file(READ "${ampersand_file}" ampersand_contents)
-string(CONCAT expected_ampersand_contents
+file(READ "${question_file}" question_contents)
+string(CONCAT expected_question_contents
     "references captured\n"
-    "set & = 3 C\n"
-    "set &bar = 3 C\n"
-    "define & bar = rab\n"
-    "set &foo=bar = 1 I\n"
+    "set ? = 3 C\n"
+    "set ?bar = 3 C\n"
+    "define ? bar = rab\n"
+    "set ?foo=bar = 1 I\n"
+    "set ?foo?bar = 1 I\n"
+    "set ?x= = 0 B\n"
+    "set ?y= = 0 C\n"
+    "set & = 1 I\n"
+    "set &bar = 1 I\n"
+    "set &foo = 0 bar\n"
     "set A&B = 1 I")
-if(NOT ampersand_contents STREQUAL expected_ampersand_contents)
+if(NOT question_contents STREQUAL expected_question_contents)
     message(FATAL_ERROR
-        "unexpected saved ampersand-name definitions\n"
-        "expected:\n${expected_ampersand_contents}\n"
-        "actual:\n${ampersand_contents}\n")
+        "unexpected saved question-name definitions\n"
+        "expected:\n${expected_question_contents}\n"
+        "actual:\n${question_contents}\n")
 endif()
 
-set(ampersand_load_input
-    "${CREPL_WORKING_DIRECTORY}/ampersand-load-input.cmb")
-file(WRITE "${ampersand_load_input}"
-    "load ampersand definitions.cmb\n"
-    "&xyz\n"
-    "&bar x y z\n"
-    "&foo=bar x\n"
+set(question_load_input
+    "${CREPL_WORKING_DIRECTORY}/question-load-input.cmb")
+file(WRITE "${question_load_input}"
+    "load question definitions.cmb\n"
+    "?xyz\n"
+    "?bar x y z\n"
+    "?foo=bar x\n"
+    "?foo?bar x\n"
+    "&x\n"
+    "&bar x\n"
     "A&B x\n"
+    "find among S K ?x= ?y= ?z= ?y=\n"
     "exit\n")
 execute_process(
     COMMAND "${CREPL_EXECUTABLE}"
-    INPUT_FILE "${ampersand_load_input}"
+    INPUT_FILE "${question_load_input}"
     WORKING_DIRECTORY "${CREPL_WORKING_DIRECTORY}"
-    OUTPUT_VARIABLE ampersand_load_output
-    ERROR_VARIABLE ampersand_load_error
-    RESULT_VARIABLE ampersand_load_result
+    OUTPUT_VARIABLE question_load_output
+    ERROR_VARIABLE question_load_error
+    RESULT_VARIABLE question_load_result
     TIMEOUT 10
 )
-if(NOT ampersand_load_result EQUAL 0)
+if(NOT question_load_result EQUAL 0)
     message(FATAL_ERROR
-        "ampersand-name load exited with ${ampersand_load_result}\n"
-        "stderr:\n${ampersand_load_error}")
+        "question-name load exited with ${question_load_result}\n"
+        "stderr:\n${question_load_error}")
 endif()
-set(expected_ampersand_load_output
-    "Loaded ampersand definitions.cmb\nzyx\nxzy\nx\nx\n")
-if(NOT ampersand_load_output STREQUAL expected_ampersand_load_output)
+string(CONCAT expected_question_load_output
+    "Loaded question definitions.cmb\nzyx\nxzy\nx\nx\nx\nx\nx\n"
+    "?=K ?y=\n")
+if(NOT question_load_output STREQUAL expected_question_load_output)
     message(FATAL_ERROR
-        "unexpected reloaded ampersand-name CREPL output\n"
-        "expected:\n${expected_ampersand_load_output}"
-        "actual:\n${ampersand_load_output}")
+        "unexpected reloaded question-name CREPL output\n"
+        "expected:\n${expected_question_load_output}"
+        "actual:\n${question_load_output}")
 endif()
-if(NOT ampersand_load_error STREQUAL "")
+if(NOT question_load_error STREQUAL "")
     message(FATAL_ERROR
-        "unexpected reloaded ampersand-name CREPL error:\n"
-        "${ampersand_load_error}")
+        "unexpected reloaded question-name CREPL error:\n"
+        "${question_load_error}")
 endif()
 
 set(backslash "\\")
@@ -446,45 +469,131 @@ if(NOT invalid_backslash_load_error STREQUAL
         "actual:\n${invalid_backslash_load_error}")
 endif()
 
-set(malformed_ampersand_input
-    "${CREPL_WORKING_DIRECTORY}/malformed-ampersand-input.cmb")
-file(WRITE "${malformed_ampersand_input}"
-    "set & 3 C\n"
-    "set &= 3 C\n"
-    "set &bar=3 C\n"
+set(malformed_question_input
+    "${CREPL_WORKING_DIRECTORY}/malformed-question-input.cmb")
+file(WRITE "${malformed_question_input}"
+    "set ? 3 C\n"
+    "set ?? 3 C\n"
+    "set ?= 3 C\n"
+    "set ?bar=3 C\n"
     "exit\n")
 execute_process(
     COMMAND "${CREPL_EXECUTABLE}"
-    INPUT_FILE "${malformed_ampersand_input}"
+    INPUT_FILE "${malformed_question_input}"
     WORKING_DIRECTORY "${CREPL_WORKING_DIRECTORY}"
-    OUTPUT_VARIABLE malformed_ampersand_output
-    ERROR_VARIABLE malformed_ampersand_error
-    RESULT_VARIABLE malformed_ampersand_result
+    OUTPUT_VARIABLE malformed_question_output
+    ERROR_VARIABLE malformed_question_error
+    RESULT_VARIABLE malformed_question_result
     TIMEOUT 10
 )
-if(NOT malformed_ampersand_result EQUAL 0)
+if(NOT malformed_question_result EQUAL 0)
     message(FATAL_ERROR
-        "malformed ampersand-name command exited with "
-        "${malformed_ampersand_result}")
+        "malformed question-name command exited with "
+        "${malformed_question_result}")
 endif()
-if(NOT malformed_ampersand_output STREQUAL "")
+if(NOT malformed_question_output STREQUAL "")
     message(FATAL_ERROR
-        "malformed ampersand-name command produced output:\n"
-        "${malformed_ampersand_output}")
+        "malformed question-name command produced output:\n"
+        "${malformed_question_output}")
 endif()
-string(CONCAT expected_malformed_ampersand_error
+string(CONCAT expected_malformed_question_error
     "Parse error at position 7: expected '='\n"
     "Parse error at position 8: expected '='\n"
+    "Parse error at position 8: expected '='\n"
     "Parse error at position 12: expected '='\n")
-if(NOT malformed_ampersand_error STREQUAL
-        expected_malformed_ampersand_error)
+if(NOT malformed_question_error STREQUAL
+        expected_malformed_question_error)
     message(FATAL_ERROR
-        "unexpected malformed ampersand-name error\n"
+        "unexpected malformed question-name error\n"
         "expected:\n"
         "Parse error at position 7: expected '='\n"
         "Parse error at position 8: expected '='\n"
+        "Parse error at position 8: expected '='\n"
         "Parse error at position 12: expected '='\n"
-        "actual:\n${malformed_ampersand_error}")
+        "actual:\n${malformed_question_error}")
+endif()
+
+set(unregistered_question_marker_input
+    "${CREPL_WORKING_DIRECTORY}/unregistered-question-marker-input.cmb")
+file(WRITE "${unregistered_question_marker_input}"
+    "find among ?x=xx\n"
+    "exit\n")
+execute_process(
+    COMMAND "${CREPL_EXECUTABLE}"
+    INPUT_FILE "${unregistered_question_marker_input}"
+    WORKING_DIRECTORY "${CREPL_WORKING_DIRECTORY}"
+    OUTPUT_VARIABLE unregistered_question_marker_output
+    ERROR_VARIABLE unregistered_question_marker_error
+    RESULT_VARIABLE unregistered_question_marker_result
+    TIMEOUT 10
+)
+if(NOT unregistered_question_marker_result EQUAL 0 OR
+        NOT unregistered_question_marker_output STREQUAL "" OR
+        NOT unregistered_question_marker_error STREQUAL
+            "Parse error at position 12: expected at least one bird name\n")
+    message(FATAL_ERROR
+        "unexpected unregistered question-marker result\n"
+        "stdout:\n${unregistered_question_marker_output}"
+        "stderr:\n${unregistered_question_marker_error}")
+endif()
+
+set(registered_question_marker_input
+    "${CREPL_WORKING_DIRECTORY}/registered-question-marker-input.cmb")
+file(WRITE "${registered_question_marker_input}"
+    "set ?x= = B\n"
+    "set ?y= = C\n"
+    "set ?foo=bar = 1 I\n"
+    "find among S K ?x= ?y= ?z= ?y=\n"
+    "find among ?x=xx\n"
+    "find among ?x=x\n"
+    "find among ?x= Missing ?z=zz\n"
+    "remove ?x=\n"
+    "find among ?x=xx\n"
+    "exit\n")
+execute_process(
+    COMMAND "${CREPL_EXECUTABLE}"
+    INPUT_FILE "${registered_question_marker_input}"
+    WORKING_DIRECTORY "${CREPL_WORKING_DIRECTORY}"
+    OUTPUT_VARIABLE registered_question_marker_output
+    ERROR_VARIABLE registered_question_marker_error
+    RESULT_VARIABLE registered_question_marker_result
+    TIMEOUT 10
+)
+if(NOT registered_question_marker_result EQUAL 0 OR
+        NOT registered_question_marker_output STREQUAL "?=K ?y=\n" OR
+        NOT registered_question_marker_error STREQUAL
+            "Parse error at position 15: xx is not a defined name\nParse error at position 15: x is not a defined name\nParse error at position 17: issing is not a defined name\nParse error at position 15: xx is not a defined name\n")
+    message(FATAL_ERROR
+        "unexpected registered question-marker result\n"
+        "stdout:\n${registered_question_marker_output}"
+        "stderr:\n${registered_question_marker_error}")
+endif()
+
+set(spaced_question_marker_input
+    "${CREPL_WORKING_DIRECTORY}/spaced-question-marker-input.cmb")
+file(WRITE "${spaced_question_marker_input}"
+    "set ?space = I\n"
+    "find among I ?space = ?q=K\n"
+    "remove ?space\n"
+    "find among I ?space = ?q=K\n"
+    "exit\n")
+execute_process(
+    COMMAND "${CREPL_EXECUTABLE}"
+    INPUT_FILE "${spaced_question_marker_input}"
+    WORKING_DIRECTORY "${CREPL_WORKING_DIRECTORY}"
+    OUTPUT_VARIABLE spaced_question_marker_output
+    ERROR_VARIABLE spaced_question_marker_error
+    RESULT_VARIABLE spaced_question_marker_result
+    TIMEOUT 10
+)
+if(NOT spaced_question_marker_result EQUAL 0 OR
+        NOT spaced_question_marker_output STREQUAL "" OR
+        NOT spaced_question_marker_error STREQUAL
+            "Parse error at position 21: = is not a defined name\nParse error at position 21: = is not a defined name\n")
+    message(FATAL_ERROR
+        "unexpected spaced question-marker result\n"
+        "stdout:\n${spaced_question_marker_output}"
+        "stderr:\n${spaced_question_marker_error}")
 endif()
 
 set(malformed_equals_input

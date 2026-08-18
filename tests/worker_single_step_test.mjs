@@ -410,7 +410,7 @@ test("built Studio Wasm routes and reloads equals-prefixed basis names",
         assert.equal(restoredEqualsBar.output, "xzy\n");
     });
 
-test("built Studio Wasm routes and reloads ampersand-prefixed basis names",
+test("built Studio Wasm keeps ampersand under ordinary punctuation rules",
     async () => {
         const module = await loadBuiltCombdslModule();
         const malformed = module.inspectDefinition("set & 3 C");
@@ -425,26 +425,20 @@ test("built Studio Wasm routes and reloads ampersand-prefixed basis names",
             missingAssignment.error,
             /Parse error at position 8: expected '='/,
         );
-        const adjacentAssignment = module.inspectDefinition("set &= 3 C");
-        assert.equal(adjacentAssignment.success, false);
-        assert.match(
-            adjacentAssignment.error,
-            /Parse error at position 8: expected '='/,
-        );
-        const unspacedAssignment = module.inspectDefinition("set &bar=3 C");
-        assert.equal(unspacedAssignment.success, false);
-        assert.match(
-            unspacedAssignment.error,
-            /Parse error at position 12: expected '='/,
-        );
+        const adjacentAssignment = module.inspectDefinition("set &=1 I");
+        assert.equal(adjacentAssignment.success, true,
+            adjacentAssignment.error);
+        const unspacedAssignment = module.inspectDefinition("set &bar=1 I");
+        assert.equal(unspacedAssignment.success, true,
+            unspacedAssignment.error);
 
         let requestId = 320;
         for (const source of [
-            "set & = 3 C",
-            "set &bar = 3 C",
+            "set &=1 I",
+            "set &bar=1 I",
+            "set &foo=bar",
             "define & bar = rab",
             "define &bar = rab",
-            "set &foo=bar = 1 I",
             "set A&B=1 I",
         ]) {
             const inspection = module.inspectDefinition(source);
@@ -465,11 +459,10 @@ test("built Studio Wasm routes and reloads ampersand-prefixed basis names",
         const ampersandBar = module.parseEval(
             "&bar x y z", ++requestId, false, 0);
         assert.equal(ampersandBar.success, true, ampersandBar.error);
-        assert.equal(ampersandBar.output, "xzy\n");
-        const punctuated = module.parseEval(
-            "&foo=bar x", ++requestId, false, 0);
-        assert.equal(punctuated.success, true, punctuated.error);
-        assert.equal(punctuated.output, "x\n");
+        assert.equal(ampersandBar.output, "xyz\n");
+        const oldWholeName = module.inspectDefinition("show &foo=bar");
+        assert.equal(oldWholeName.success, false);
+        assert.match(oldWholeName.error, /is not a defined name/);
         const ordinaryAmpersand = module.parseEval(
             "A&B x", ++requestId, false, 0);
         assert.equal(ordinaryAmpersand.success, true,
@@ -477,14 +470,14 @@ test("built Studio Wasm routes and reloads ampersand-prefixed basis names",
         assert.equal(ordinaryAmpersand.output, "x\n");
 
         const findInspection = module.inspectDefinition(
-            "find among &foo=bar ?x=x");
+            "find among &bar ?x=x");
         assert.equal(findInspection.success, true, findInspection.error);
         assert.equal(findInspection.find, true);
         assert.equal(findInspection.findAmong, true);
         assert.equal(findInspection.findCatalogSize, 1);
 
         const compared = module.parseEval(
-            "compare ?x &foo=bar x = x",
+            "compare ?x &bar x = x",
             ++requestId, false, 0);
         assert.equal(compared.success, true, compared.error);
         assert.equal(compared.output, "both reduce to: xx\n");
@@ -493,10 +486,10 @@ test("built Studio Wasm routes and reloads ampersand-prefixed basis names",
         assert.equal(
             setList,
             "references captured\n" +
-            "set & = 3 C\n" +
-            "set &bar = 3 C\n" +
+            "set & = 1 I\n" +
+            "set &bar = 1 I\n" +
+            "set &foo = 0 bar\n" +
             "define & bar = rab\n" +
-            "set &foo=bar = 1 I\n" +
             "set A&B = 1 I",
         );
 
@@ -513,17 +506,322 @@ test("built Studio Wasm routes and reloads ampersand-prefixed basis names",
             "&bar x y z", ++requestId, false, 0);
         assert.equal(restoredAmpersandBar.success, true,
             restoredAmpersandBar.error);
-        assert.equal(restoredAmpersandBar.output, "xzy\n");
-        const restoredPunctuated = restored.parseEval(
-            "&foo=bar x", ++requestId, false, 0);
-        assert.equal(restoredPunctuated.success, true,
-            restoredPunctuated.error);
-        assert.equal(restoredPunctuated.output, "x\n");
+        assert.equal(restoredAmpersandBar.output, "xyz\n");
+        const restoredOldWholeName = restored.inspectDefinition(
+            "show &foo=bar");
+        assert.equal(restoredOldWholeName.success, false);
+        assert.match(restoredOldWholeName.error, /is not a defined name/);
         const restoredOrdinaryAmpersand = restored.parseEval(
             "A&B x", ++requestId, false, 0);
         assert.equal(restoredOrdinaryAmpersand.success, true,
             restoredOrdinaryAmpersand.error);
         assert.equal(restoredOrdinaryAmpersand.output, "x\n");
+    });
+
+test("built Studio Wasm routes, queries, and reloads question-prefixed names",
+    async () => {
+        const module = await loadBuiltCombdslModule();
+        for (const [source, position] of [
+            ["set ? 3 C", 7],
+            ["set ?? 3 C", 8],
+            ["set ?= 3 C", 8],
+            ["set ?bar=3 C", 12],
+        ]) {
+            const malformed = module.inspectDefinition(source);
+            assert.equal(malformed.success, false, source);
+            assert.match(malformed.error,
+                new RegExp(`Parse error at position ${position}: expected '='`),
+                source);
+        }
+        for (const [source, position, diagnostic] of [
+            ["set ?Bad@1 = I", 9,
+                "version suffix is not allowed in a definition name"],
+            ["define ?Bad@1 x = x", 12,
+                "version suffix is not allowed in a definition name"],
+            ["remove ?Bad@1", 12,
+                "version suffix is not allowed in a removal name"],
+            ["revisions ?Bad@1", 15,
+                "version suffix is not allowed in a revisions name"],
+        ]) {
+            const invalid = module.inspectDefinition(source);
+            assert.equal(invalid.success, false, source);
+            assert.match(invalid.error,
+                new RegExp(`Parse error at position ${position}:`), source);
+            assert.match(invalid.error, new RegExp(diagnostic), source);
+        }
+        const unregisteredSoleMarker = module.inspectDefinition(
+            "find among ?x=xx");
+        assert.equal(unregisteredSoleMarker.success, false);
+        assert.match(unregisteredSoleMarker.error,
+            /Parse error at position 12: expected at least one bird name/);
+
+        let requestId = 340;
+        for (const source of [
+            "set ? = 3 C",
+            "set ?bar = 3 C",
+            "set ?foo = 1 I",
+            "define ? bar = rab",
+            "define ?bar = rab",
+            "set ?foo=bar = 1 I",
+            "set ?foo?bar = 1 I",
+        ]) {
+            const inspection = module.inspectDefinition(source);
+            assert.equal(inspection.success, true, source);
+            assert.equal(inspection.definition, true, source);
+            assert.equal(inspection.displayOnly, false, source);
+            applyBuiltDefinition(module, source, ++requestId);
+        }
+
+        const bare = module.parseEval("?xyz", ++requestId, false, 0);
+        assert.equal(bare.success, true, bare.error);
+        assert.equal(bare.output, "zyx\n");
+        const longer = module.parseEval(
+            "?bar x y z", ++requestId, false, 0);
+        assert.equal(longer.success, true, longer.error);
+        assert.equal(longer.output, "xzy\n");
+        const interiorEquals = module.parseEval(
+            "?foo=bar x", ++requestId, false, 0);
+        assert.equal(interiorEquals.success, true, interiorEquals.error);
+        assert.equal(interiorEquals.output, "x\n");
+        const longerExactNameOnly = module.inspectDefinition(
+            "find among ?foo=bar");
+        assert.equal(longerExactNameOnly.success, false);
+        assert.match(longerExactNameOnly.error,
+            /Parse error at position 20: expected '\?'/);
+        const interiorQuestion = module.parseEval(
+            "?foo?bar x", ++requestId, false, 0);
+        assert.equal(interiorQuestion.success, true, interiorQuestion.error);
+        assert.equal(interiorQuestion.output, "x\n");
+
+        const inspected = module.parseEval(
+            "inspect ?foo=bar x", ++requestId, false, 0);
+        assert.equal(inspected.success, true, inspected.error);
+        assert.match(inspected.output, /free symbols: x/);
+        assert.match(inspected.output, /\?foo=bar \[captured\]/);
+
+        for (const source of ["set ?x= = B", "set ?y= = C"]) {
+            applyBuiltDefinition(module, source, ++requestId);
+        }
+
+        for (const [source, catalogSize] of [
+            ["find among ? ?bar ?foo ?q=q", 3],
+            ["find among ?foo@1 ?q=q", 1],
+            ["find among ?@1 ?q=q", 1],
+            ["find among I ?q=q", 1],
+            ["find among I ?x = x", 1],
+            ["find among I?foo=bar ?q=q", 2],
+            ["find among ?foo=bar ?q=q", 1],
+            ["find among ?foo=barI ?q=q", 2],
+            ["find among I ?foo=x", 1],
+            ["find among ?x= ?y= ?z=zz", 2],
+            ["find among ?y= ?x= ?z=zz", 2],
+            ["find among ?x=\t?y=\n?z \f=zz", 2],
+            ["find among I?x=?y= ?z=zz", 3],
+            ["find among ?x=@1 ?y=@1 ?z=zz", 2],
+            ["find among ?x= ?y= ?z = (?foo=bar)", 2],
+            ["find among I ?z=?foo=bar", 1],
+            ["find among I ?z=(K ?x=xx)", 1],
+            ['find among I ?z="raw ?x=xx"', 1],
+        ]) {
+            const find = module.inspectDefinition(source);
+            assert.equal(find.success, true, `${source}: ${find.error}`);
+            assert.equal(find.find, true, source);
+            assert.equal(find.findAmong, true, source);
+            assert.equal(find.findCatalogSize, catalogSize, source);
+        }
+        for (const source of ["find among ?q=q", "find among ?q =q"]) {
+            const empty = module.inspectDefinition(source);
+            assert.equal(empty.success, false, source);
+            assert.match(empty.error,
+                /Parse error at position 12: expected at least one bird name/,
+                source);
+        }
+        const undefinedBeforeMarker = module.inspectDefinition(
+            "find among ?x= Missing ?z=zz");
+        assert.equal(undefinedBeforeMarker.success, false);
+        assert.match(undefinedBeforeMarker.error,
+            /Parse error at position 17: issing is not a defined name/);
+
+        applyBuiltDefinition(module, "set ?foo=barI = K", ++requestId);
+        const exactWholeCompact = module.inspectDefinition(
+            "find among ?foo=barI ?q=q");
+        assert.equal(exactWholeCompact.success, true,
+            exactWholeCompact.error);
+        assert.equal(exactWholeCompact.findCatalogSize, 1);
+
+        const compactSuffixMarker = module.inspectDefinition(
+            "find among I?z=zz");
+        assert.equal(compactSuffixMarker.success, false);
+        assert.match(compactSuffixMarker.error,
+            /Parse error at position 14: z=zz is not a defined name/);
+
+        applyBuiltDefinition(module, "set ?space = I", ++requestId);
+        for (const phase of ["current", "removed singleton"]) {
+            const spacedRegisteredName = module.inspectDefinition(
+                "find among I ?space = ?q=K");
+            assert.equal(spacedRegisteredName.success, false, phase);
+            assert.match(spacedRegisteredName.error,
+                /Parse error at position 21: = is not a defined name/,
+                phase);
+            if (phase === "current") {
+                applyBuiltDefinition(module, "remove ?space", ++requestId);
+            }
+        }
+
+        applyBuiltDefinition(module, "set ?rev= = I", ++requestId);
+        applyBuiltDefinition(module, "set ?rev= = K", ++requestId);
+        applyBuiltDefinition(module, "remove ?rev=", ++requestId);
+        const explicitRemovedRevision = module.inspectDefinition(
+            "find among ?rev=@1 ?q=q");
+        assert.equal(explicitRemovedRevision.success, true,
+            explicitRemovedRevision.error);
+        assert.equal(explicitRemovedRevision.findCatalogSize, 1);
+        const unavailableRemovedName = module.inspectDefinition(
+            "find among I ?rev=K");
+        assert.equal(unavailableRemovedName.success, true,
+            unavailableRemovedName.error);
+        assert.equal(unavailableRemovedName.findCatalogSize, 1);
+
+        const requestedFind = module.parseEval(
+            "find among S K ?x= ?y= ?z= ?y=",
+            ++requestId, false, 0);
+        assert.equal(requestedFind.success, true, requestedFind.error);
+        assert.equal(requestedFind.output, "?=K ?y=\n");
+
+        const registeredSoleMarker = module.inspectDefinition(
+            "find among ?x=xx");
+        assert.equal(registeredSoleMarker.success, false);
+        assert.match(registeredSoleMarker.error,
+            /Parse error at position 15: xx is not a defined name/);
+        const registeredShortTarget = module.inspectDefinition(
+            "find among ?x=x");
+        assert.equal(registeredShortTarget.success, false);
+        assert.match(registeredShortTarget.error,
+            /Parse error at position 15: x is not a defined name/);
+        const spacedRegisteredPrefix = module.inspectDefinition(
+            "find among ?x =x");
+        assert.equal(spacedRegisteredPrefix.success, false);
+        assert.match(spacedRegisteredPrefix.error,
+            /Parse error at position 12: expected at least one bird name/);
+        applyBuiltDefinition(module, "set ?z= = 1 I", ++requestId);
+        const registeredMarkerNameIsCatalog = module.inspectDefinition(
+            "find among ?x= ?y= ?z=zz");
+        assert.equal(registeredMarkerNameIsCatalog.success, false);
+        assert.match(registeredMarkerNameIsCatalog.error,
+            /Parse error at position 23: zz is not a defined name/);
+        applyBuiltDefinition(module, "remove ?y=", ++requestId);
+        const retainedRevision = module.inspectDefinition(
+            "find among ?x= ?y=@1 ?u=uu");
+        assert.equal(retainedRevision.success, true,
+            retainedRevision.error);
+        assert.equal(retainedRevision.findCatalogSize, 2);
+        applyBuiltDefinition(module, "remove ?x=", ++requestId);
+        const retainedBareSingleton = module.inspectDefinition(
+            "find among ?x=xx");
+        assert.equal(retainedBareSingleton.success, false);
+        assert.match(retainedBareSingleton.error,
+            /Parse error at position 15: xx is not a defined name/);
+
+        const compared = module.parseEval(
+            "compare ?x ?foo=bar x = x",
+            ++requestId, false, 0);
+        assert.equal(compared.success, true, compared.error);
+        assert.equal(compared.output, "both reduce to: xx\n");
+        const abstracted = module.parseEval(
+            "abstract ?x=x", ++requestId, false, 0);
+        assert.equal(abstracted.success, true, abstracted.error);
+        assert.equal(abstracted.output, "?=I\n");
+        const revisions = module.parseEval(
+            "revisions ?", ++requestId, false, 0);
+        assert.equal(revisions.success, true, revisions.error);
+        assert.match(revisions.output,
+            /^\?@1 arity:3 C \[captured\]\n/);
+        assert.match(revisions.output,
+            /\?@2 arity:3 .* \[captured\] \[current\]\n$/);
+
+        for (const source of [
+            "set captured QCaptured = 3 ?",
+            "set live QLive = 3 ?",
+        ]) {
+            applyBuiltDefinition(module, source, ++requestId);
+        }
+        const usedBy = module.parseEval(
+            "usedby QCaptured", ++requestId, false, 0);
+        assert.equal(usedBy.success, true, usedBy.error);
+        assert.equal(usedBy.output, "QCaptured directly uses: ?\n");
+        const dependsOn = module.parseEval(
+            "dependson ?", ++requestId, false, 0);
+        assert.equal(dependsOn.success, true, dependsOn.error);
+        assert.equal(dependsOn.output,
+            "? is directly depended on by: QCaptured QLive\n");
+        const path = module.parseEval(
+            "usedby path QCaptured ?", ++requestId, false, 0);
+        assert.equal(path.success, true, path.error);
+        assert.equal(path.output,
+            "QCaptured uses ? via:\n" +
+            "  QCaptured -> ?@2  [captured]\n");
+
+        applyBuiltDefinition(module, "set ? = 3 C", ++requestId);
+        applyBuiltDefinition(module, "remove ?", ++requestId);
+        const capturedAfterRemove = module.parseEval(
+            "QCaptured xyz", ++requestId, false, 0);
+        assert.equal(capturedAfterRemove.success, true,
+            capturedAfterRemove.error);
+        assert.equal(capturedAfterRemove.output, "zyx\n");
+        const liveAfterRemove = module.parseEval(
+            "QLive xyz", ++requestId, false, 0);
+        assert.equal(liveAfterRemove.success, true, liveAfterRemove.error);
+        assert.equal(liveAfterRemove.output, "xzy\n");
+        const removedRevision = module.parseEval(
+            "?@3xyz", ++requestId, false, 0);
+        assert.equal(removedRevision.success, true, removedRevision.error);
+        assert.equal(removedRevision.output, "xzy\n");
+        applyBuiltDefinition(module, "set ? = 3 I", ++requestId);
+        applyBuiltDefinition(module, "remove ?foo?bar", ++requestId);
+        applyBuiltDefinition(module, "remove ?foo=bar", ++requestId);
+
+        const setList = module.setList();
+        assert.match(setList, /^references captured\nset \? = 3 C\n/);
+        assert.match(setList, /\nset \?foo=bar = 1 I\n/);
+        assert.doesNotMatch(setList, /\nset &foo=bar = /);
+        assert.match(setList, /\nremove \?\nset \? = 3 I\n/);
+        assert.match(setList, /\nremove \?foo\?bar\nremove \?foo=bar$/);
+
+        const invalidLoad = module.loadSetList(
+            "set ?LoadBefore = 1 I\n" +
+            "set ?Bad@ = 1 I\n" +
+            "set ?LoadAfter = 1 K\n",
+            "invalid question names",
+        );
+        assert.equal(invalidLoad.success, false);
+        assert.equal(invalidLoad.loaded, 0);
+        assert.match(invalidLoad.error,
+            /combdsl::basis names cannot end with @/);
+        assert.equal(module.setList(), setList,
+            "a rejected question-name load must restore registry and journal");
+        for (const name of ["?LoadBefore", "?LoadAfter"]) {
+            const absent = module.inspectDefinition(`show ${name}`);
+            assert.equal(absent.success, false, name);
+            assert.match(absent.error, /is not a defined name/, name);
+        }
+
+        const restored = await loadBuiltCombdslModule();
+        const load = restored.loadSetList(setList, "question names");
+        assert.equal(load.success, true, load.error);
+        assert.equal(load.loaded, setList.split("\n").length);
+        assert.equal(restored.setList(), setList);
+        const restoredBare = restored.parseEval(
+            "? x y z", ++requestId, false, 0);
+        assert.equal(restoredBare.success, true, restoredBare.error);
+        assert.equal(restoredBare.output, "xyz\n");
+        const restoredLonger = restored.parseEval(
+            "?bar x y z", ++requestId, false, 0);
+        assert.equal(restoredLonger.success, true, restoredLonger.error);
+        assert.equal(restoredLonger.output, "xzy\n");
+        const restoredRemoved = restored.parseEval(
+            "?foo=bar x", ++requestId, false, 0);
+        assert.equal(restoredRemoved.success, true, restoredRemoved.error);
+        assert.equal(restoredRemoved.output, "x\n");
     });
 
 test("built Studio Wasm preserves literal and named leading backslashes",

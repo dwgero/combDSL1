@@ -219,10 +219,10 @@ name compact on its left.
 
 Basis names are copied into the expression and may contain up to 15
 bytes. Names cannot be empty or begin with a null character; a later null
-character terminates the copied name. Because leading whitespace,
-parentheses, and `?` belong to the parser grammar, names cannot begin with one
-of those characters or with a double quote. A visible name cannot end in `@`
-or consist entirely of ASCII decimal digits:
+character terminates the copied name. Because leading whitespace and
+parentheses belong to the parser grammar, names cannot begin with one of those
+characters or with a double quote. A visible name cannot end in `@` or consist
+entirely of ASCII decimal digits:
 non-negative integer literal spellings such as `0`, `42`, and `00042` are
 reserved for integer values. Names such as `+4`, `-4`, `4.0`, `4e2`, and `4x`
 remain valid.
@@ -461,13 +461,27 @@ primitive meanings. `parse_eval`, `read_parse_eval`, `parse_and_step`, and
 stored expression, and produce no output for the declaration itself. A
 malformed declaration does not register its name.
 
-An equals sign or ampersand may begin a basis name. For such a name, whitespace
-must separate the name from the assignment `=`; every later `=` before that
-whitespace remains part of the name. Thus `set = = 3 C` and `set & = 3 C`
-define the names `=` and `&`, while `set =bar = 3 C` and `set &bar = 3 C`
-define the names `=bar` and `&bar`. `set = 3 C` and `set & 3 C` are parse
-errors because they have no assignment `=`. In `define = bar = rab` and
-`define & bar = rab`, the names are `=` and `&`, and `bar` is the symbol list.
+An equals sign or question mark may begin a basis name. For such a name,
+whitespace must separate the name from the assignment `=`; every later `=`
+before that whitespace remains part of the name. Thus `set = = 3 C` and
+`set ? = 3 C` define the names `=` and `?`, while `set =bar = 3 C` and
+`set ?bar = 3 C` define the names `=bar` and `?bar`. `set = 3 C` and
+`set ? 3 C` are parse errors because they have no assignment `=`. In
+`define = bar = rab` and `define ? bar = rab`, the names are `=` and `?`, and
+`bar` is the symbol list.
+
+An ampersand follows the ordinary non-alphanumeric name rules. Compact
+assignment forms such as `set &=3 C` and `set &bar=3 C` are valid, and the
+first `=` is the assignment delimiter; `set &foo=bar` therefore defines
+`&foo`, not `&foo=bar`. Spaced forms such as `set & = 3 C` remain valid.
+
+In Find, Abstract, and Compare command-marker positions, the command's required
+`?symbols` marker keeps its contextual meaning. Outside those positions, exact
+registered question-prefixed names have the normal precedence. A restricted
+Find reads its catalog from left to right. Registered marker-shaped names such
+as `?x=` remain catalog birds; the first unresolved item starts the query only
+when it has the form `?symbols=`, and any other unresolved item is a parse
+error.
 
 A backslash may also begin a CREPL or Studio basis name. `set \ = 3 C` and
 `set \foo = 1 I` define the names `\` and `\foo`; `define \ bar = rab`
@@ -720,9 +734,23 @@ more bird names must follow it before the required `?`. Whitespace between
 names is optional, but whitespace before `?` remains required. Within each
 contiguous group, an exact whole name or revision wins; otherwise the longest
 valid bird name or revision is taken from left to right. Add whitespace to
-force a shorter boundary when names are ambiguous. The list accepts `S`, `K`,
-`I`, `Y`, pre-defined birds, current user-defined names, and retained user
-revisions. A retained revision of a redefined name is written as `name@N`.
+force a shorter boundary when names are ambiguous. Catalog items are resolved
+sequentially. An exact whole group is consumed first. Otherwise, at a
+whitespace-delimited group start, a `?symbols=` spelling is the query marker
+unless the longest usable compact prefix reaches through that `=`; a shorter
+registered prefix does not claim it. Thus registered names
+such as `?x=` and `?y=` remain catalog birds, while the first unresolved
+marker-shaped item supplies the symbol list. The first unresolved item of any
+other form is a parse error, and a marker cannot begin in the middle of a
+compact group. For example, after `set ?x= = B` and `set ?y= = C`,
+`find among S K ?x= ?y= ?z= ?y=` uses the four listed birds, `z` as the symbol
+list, and `?y=` as the target; its match is printed as `?=K ?y=`. If `?x=` is
+not registered, `find among ?x=xx` fails because its catalog is empty. If
+`?x=` is registered, the same command consumes that bird and then fails because
+`xx` is not a registered bird and is not a marker. The list accepts `S`, `K`,
+`I`, `Y`,
+pre-defined birds, current user-defined names, and retained user revisions. A
+retained revision of a redefined name is written as `name@N`.
 The sole retained revision of a removed, never-redefined name is instead
 written as its bare `name`, which remains usable here so displayed expressions
 round-trip. An explicitly listed `Y` is allowed even though the default
@@ -1027,7 +1055,7 @@ expression produces no output, while malformed or empty lines throw
 The `crepl` executable applies `input_escape` to each line before passing it to
 `parse_eval`, so ordinary quoted words and backslashes can be entered directly.
 When standard output is a terminal, it first prints
-`Combinator Read-Eval-Print Loop, version 2.12.7`. Long evaluations display
+`Combinator Read-Eval-Print Loop, version 2.12.10`. Long evaluations display
 the accumulated step count every 1,000 reductions by overwriting one status
 line; the line is cleared before evaluation output is printed. Its interactive
 prompt is `>`. Interactive input uses GNU Readline, so previous nonempty
@@ -1189,7 +1217,14 @@ four-bird search may take minutes. `Y` is excluded from the default catalog.
 before `?`. Whitespace between names is optional, but whitespace before `?`
 remains required. Exact whole names and revisions take precedence within each
 contiguous group, followed by the longest valid bird name or revision;
-whitespace can force a shorter boundary.
+whitespace can force a shorter boundary. Catalog items are resolved from left
+to right, with an exact whole group first. Otherwise, at a
+whitespace-delimited group start, the first unresolved `?symbols=` spelling is
+the query marker unless the longest usable compact prefix reaches through its
+`=`. A shorter prefix does not claim the marker. Any other unresolved item is
+a parse error, and a compact suffix
+cannot start the marker. After the marker, the rest of the command is the
+target expression.
 Its restricted catalog may contain `S`, `K`, `I`, `Y`, pre-defined birds,
 current user-defined names, and retained user revisions. Revisions of a
 redefined name use `name@N`; a removed singleton that was never redefined uses

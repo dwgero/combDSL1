@@ -68,16 +68,28 @@ be omitted. For example, if the Eagle bird wasn't already defined, it could be
 added by:
 define Exyzwv = xy(zwv)
 
-A basis name can't begin with " or ?, can't end with @, can't contain ) or (
+A basis name can't begin with ", can't end with @, can't contain ) or (
 anywhere, and can't be a non-negative integer literal.
 
-An equals sign or ampersand may begin a basis name. For such a name, whitespace
-must separate the name from the assignment =; every later = before that
-whitespace remains part of the name. Thus 'set = = 3 C' and 'set & = 3 C' define
-the names '=' and '&', while 'set =bar = 3 C' and 'set &bar = 3 C' define the
-names '=bar' and '&bar'. 'set = 3 C' and 'set & 3 C' are parse errors because
-they have no assignment =. In 'define = bar = rab' and 'define & bar = rab', the
-names are '=' and '&', and 'bar' is the symbol list.
+An equals sign or question mark may begin a basis name. For such a name,
+whitespace must separate the name from the assignment =; every later = before
+that whitespace remains part of the name. Thus 'set = = 3 C' and 'set ? = 3 C'
+define the names '=' and '?', while 'set =bar = 3 C' and 'set ?bar = 3 C' define
+the names '=bar' and '?bar'. 'set = 3 C' and 'set ? 3 C' are parse errors
+because they have no assignment =. In 'define = bar = rab' and 'define ? bar =
+rab', the names are '=' and '?', and 'bar' is the symbol list.
+
+An ampersand follows the ordinary non-alphanumeric name rules. Compact
+assignments such as 'set &=3 C' and 'set &bar=3 C' are valid, and the first = is
+the assignment delimiter; 'set &foo=bar' therefore defines '&foo', not
+'&foo=bar'. Spaced forms such as 'set & = 3 C' remain valid.
+
+In Find, Abstract, and Compare command-marker positions, the command's required
+'?symbols' marker keeps its contextual meaning. Outside those positions, exact
+registered question-prefixed names have normal precedence. A restricted Find
+reads its catalog from left to right. Registered marker-shaped names such as
+'?x=' remain catalog birds; the first unresolved item starts the query only when
+it has the form '?symbols=', and any other unresolved item is a parse error.
 
 A backslash may also begin a basis name. 'set \ = 3 C' and 'set \foo = 1 I'
 define the names '\' and '\foo'; 'define \ bar = rab' defines '\' with the
@@ -274,20 +286,30 @@ or more bird names before the question mark. Whitespace between names is
 optional, but whitespace before the question mark remains required. Within each
 contiguous group, an exact whole name or revision wins; otherwise the longest
 valid bird name or revision is taken from left to right. Whitespace can force a
-shorter boundary. S, K, I, Y, pre-defined birds, current user-defined names, and
-retained user revisions are accepted. Revisions of a redefined name use name@N;
-a removed singleton that was never redefined uses its bare name. Unlike the
-default catalog, an explicitly listed Y is allowed. A restricted search examines
-increasing composition sizes within one 10-second window. Native CREPL keeps
-sizes one and two serial, then reuses one grow-only worker pool for sizes three
-and above. Each worker owns a deterministic modulo shard; up to eight shards are
-activated, bounded by the machine's reported hardware threads and the candidate
-count, and indexed answers are merged in sequential-search order. Only fully
-completed sizes are reported, and results from a size still in progress when
-time expires are discarded. Without "all", it stops at the first completed size
-with answers. With "all", it retains answers from every size completed within
-the same window. The output is otherwise unchanged, including the bounded
-no-match response.
+shorter boundary. Catalog items are resolved sequentially. An exact whole group
+is consumed first. Otherwise, at a whitespace-delimited group start, a ?symbols=
+spelling is the query marker unless the longest usable compact prefix reaches
+through that =; a shorter registered prefix does not claim it. Registered names
+such as ?x= and ?y= therefore remain catalog birds, while the first unresolved
+marker-shaped item supplies the symbol list. Any other first unresolved item is
+a parse error, and a marker cannot begin in the middle of a compact group. For
+example, after 'set ?x= = B' and 'set ?y= = C', 'find among S K ?x= ?y= ?z= ?y='
+uses those four birds, z as the symbol list, and ?y= as the target; its match is
+'?=K ?y='. If ?x= is absent, 'find among ?x=xx' has an empty catalog; if ?x= is
+present, that bird is consumed and the unresolved xx is not a marker. S, K, I,
+Y, pre-defined birds, current user-defined names, and retained user revisions
+are accepted. Revisions of a redefined name use name@N; a removed singleton that
+was never redefined uses its bare name. Unlike the default catalog, an
+explicitly listed Y is allowed. A restricted search examines increasing
+composition sizes within one 10-second window. Native CREPL keeps sizes one and
+two serial, then reuses one grow-only worker pool for sizes three and above.
+Each worker owns a deterministic modulo shard; up to eight shards are activated,
+bounded by the machine's reported hardware threads and the candidate count, and
+indexed answers are merged in sequential-search order. Only fully completed
+sizes are reported, and results from a size still in progress when time expires
+are discarded. Without "all", it stops at the first completed size with answers.
+With "all", it retains answers from every size completed within the same window.
+The output is otherwise unchanged, including the bounded no-match response.
 
 Command Entry
 
