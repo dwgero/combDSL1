@@ -94,11 +94,12 @@ it has the form '?symbols=', and any other unresolved item is a parse error.
 A backslash may also begin a basis name. 'set \ = 3 C' and 'set \foo = 1 I'
 define the names '\' and '\foo'; 'define \ bar = rab' defines '\' with the
 symbol list 'bar'. An exact registered backslash-prefixed name takes precedence
-over the literal-backslash operand. Use the quoted raw word '"\"' for that
-literal. CREPL input escaping makes each visible backslash occupy two bytes of
-the 15-byte stored-name limit. Parsed backslash names display their doubled
-stored spelling with safe operand separators; saved definitions use the visible
-one-backslash spelling.
+over the literal-backslash operand. Use the quoted string '"\\"' for that
+literal. A bare double quote opens or closes a string. Inside strings, use
+C-style '\"' for a double quote and '\\' for a backslash; every other backslash
+escape is a parse error. CREPL passes input directly to the parser, so each
+visible backslash occupies one byte of the 15-byte stored-name limit. Parsed and
+saved backslash names retain that direct spelling with safe operand separators.
 
 The optional "captured" or "live" modifier on set and define overrides the
 reference mode for that command only, without changing the mode for later input.

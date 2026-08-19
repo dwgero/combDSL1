@@ -173,9 +173,8 @@ std::optional<prepared_find_among_state> prepared_find_among;
                 command->enabled,
                 command->limit};
         }
-        auto escaped_source = combdsl::input_escape(source);
         auto parsed = combdsl::detail::parse_input(
-            escaped_source,
+            source,
             combdsl::detail::parser_definition_mode::
                 inspect_definitions);
         definition_inspection_result result{
@@ -236,9 +235,8 @@ prepare_find_among_input(
     try {
         auto const deadline =
             find_deadline_from_budget(budget_milliseconds);
-        auto escaped_source = combdsl::input_escape(source);
         auto parsed = combdsl::detail::parse_input(
-            escaped_source,
+            source,
             combdsl::detail::parser_definition_mode::
                 inspect_definitions);
         if (!parsed.catalog_find_command) {
@@ -561,8 +559,7 @@ void report_limited_evaluation_progress(
     std::ostringstream output;
 
     try {
-        auto escaped_source = combdsl::input_escape(source);
-        auto parsed = combdsl::detail::parse_input(escaped_source);
+        auto parsed = combdsl::detail::parse_input(source);
         if (parsed.is_display_only) {
             parsed.expression.print_to(output);
             output << '\n';
@@ -630,8 +627,7 @@ void report_limited_evaluation_progress(
     std::ostringstream output;
 
     try {
-        auto escaped_source = combdsl::input_escape(source);
-        auto parsed = combdsl::detail::parse_input(escaped_source);
+        auto parsed = combdsl::detail::parse_input(source);
         if (parsed.is_display_only) {
             parsed.expression.print_to(output);
             output << '\n';
@@ -696,8 +692,7 @@ void report_limited_evaluation_progress(
     std::ostringstream output;
 
     try {
-        auto escaped_source = combdsl::input_escape(source);
-        auto parsed = combdsl::detail::parse_input(escaped_source);
+        auto parsed = combdsl::detail::parse_input(source);
         if (parsed.is_display_only) {
             parsed.expression.print_to(output);
             output << '\n';
@@ -749,8 +744,7 @@ void report_limited_evaluation_progress(
     bool basis_step,
     std::size_t request_id) {
     try {
-        auto escaped_source = combdsl::input_escape(source);
-        auto parsed = combdsl::detail::parse_input(escaped_source);
+        auto parsed = combdsl::detail::parse_input(source);
         if (parsed.is_display_only) {
             std::ostringstream output;
             combdsl::detail::print_quoted_html(
@@ -843,8 +837,7 @@ void reset_stepped_evaluation() noexcept {
     reset_stepped_evaluation();
 
     try {
-        auto escaped_source = combdsl::input_escape(source);
-        auto parsed = combdsl::detail::parse_input(escaped_source);
+        auto parsed = combdsl::detail::parse_input(source);
         if (parsed.is_display_only) {
             std::ostringstream output;
             parsed.expression.print_to(output);

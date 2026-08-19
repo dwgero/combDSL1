@@ -146,8 +146,7 @@ inline constexpr std::size_t maximum_file_parse_errors = 15;
 
         error_line = record_line;
         try {
-            static_cast<void>(
-                parse(input_escape(record)));
+            static_cast<void>(parse(record));
             ++loaded;
         } catch (parse_error const& error) {
             diagnostics.push_back({
@@ -168,6 +167,13 @@ inline constexpr std::size_t maximum_file_parse_errors = 15;
              position < source.size();
              ++position) {
             auto const value = source[position];
+            if (inside_word && value == '\\' &&
+                position + 1 < source.size() &&
+                (source[position + 1] == '\\' ||
+                 source[position + 1] == '"')) {
+                ++position;
+                continue;
+            }
             if (value == '"') {
                 inside_word = !inside_word;
                 continue;

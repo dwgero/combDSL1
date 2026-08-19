@@ -393,9 +393,14 @@ test("documents leading-backslash basis names in Studio", () => {
     assert.match(html, /set \\foo = 1 I/);
     assert.match(html, /define \\ bar = rab/);
     assert.match(html, /exact registered\s+backslash-prefixed name takes precedence/);
-    assert.match(html, /quoted raw word <code>"\\"<\/code>/);
-    assert.match(html, /each visible backslash\s+occupy two bytes/);
-    assert.match(html, /doubled stored spelling with safe\s+operand separators/);
+    assert.match(html, /quoted string <code>"\\\\"<\/code>/);
+    assert.match(html, /bare double quote opens or closes a string/);
+    assert.match(html, /<code>\\"<\/code> for a double quote/);
+    assert.match(html, /<code>\\\\<\/code> for a\s+backslash/);
+    assert.match(html, /every other backslash escape is a parse error/);
+    assert.match(html, /passes input directly to the parser/);
+    assert.match(html, /each visible backslash\s+occupies one byte/);
+    assert.match(html, /retain that direct spelling with safe\s+operand separators/);
 });
 
 test("completes unambiguous abstract command forms", () => {

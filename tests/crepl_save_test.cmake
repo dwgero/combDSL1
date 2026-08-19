@@ -323,7 +323,7 @@ if(NOT question_load_error STREQUAL "")
 endif()
 
 set(backslash "\\")
-set(quoted_backslash "\"\\\"")
+set(quoted_backslash "\"\\\\\"")
 set(backslash_file
     "${CREPL_WORKING_DIRECTORY}/backslash definitions.cmb")
 set(backslash_input
@@ -333,9 +333,11 @@ file(WRITE "${backslash_input}"
     "I ${backslash}\n"
     "set ${backslash} = 3 C\n"
     "set ${backslash}foo = 1 I\n"
+    "set ${backslash}12345678901234 = 1 I\n"
     "define ${backslash} bar = rab\n"
     "${backslash}xyz\n"
     "${backslash}foo x\n"
+    "${backslash}12345678901234 x\n"
     "I ${quoted_backslash}\n"
     "save backslash definitions.cmb\n"
     "exit\n")
@@ -357,6 +359,7 @@ string(CONCAT expected_backslash_output
     "${quoted_backslash}\n"
     "zyx\n"
     "x\n"
+    "x\n"
     "${quoted_backslash}\n"
     "Saved backslash definitions.cmb\n")
 if(NOT backslash_output STREQUAL expected_backslash_output)
@@ -374,6 +377,7 @@ string(CONCAT expected_backslash_contents
     "references captured\n"
     "set ${backslash} = 3 C\n"
     "set ${backslash}foo = 1 I\n"
+    "set ${backslash}12345678901234 = 1 I\n"
     "define ${backslash} bar = rab")
 if(NOT backslash_contents STREQUAL expected_backslash_contents)
     message(FATAL_ERROR
@@ -388,6 +392,7 @@ file(WRITE "${backslash_load_input}"
     "load backslash definitions.cmb\n"
     "${backslash}xyz\n"
     "${backslash}foo x\n"
+    "${backslash}12345678901234 x\n"
     "I ${quoted_backslash}\n"
     "exit\n")
 execute_process(
@@ -408,6 +413,7 @@ string(CONCAT expected_backslash_load_output
     "Loaded backslash definitions.cmb\n"
     "zyx\n"
     "x\n"
+    "x\n"
     "${quoted_backslash}\n")
 if(NOT backslash_load_output STREQUAL expected_backslash_load_output)
     message(FATAL_ERROR
@@ -421,11 +427,146 @@ if(NOT backslash_load_error STREQUAL "")
         "${backslash_load_error}")
 endif()
 
+set(quoted_word_file
+    "${CREPL_WORKING_DIRECTORY}/quoted word definitions.cmb")
+set(quoted_word_input
+    "${CREPL_WORKING_DIRECTORY}/quoted-word-save-input.cmb")
+file(REMOVE "${quoted_word_file}")
+string(CONCAT quoted_word_commands
+    [=[set QuotedWord = 0 "fo\"\\o"]=] "\n"
+    [=[set QuotedSlashWord = 0 "\\fo\"\\bar\\"]=] "\n"
+    "QuotedWord\n"
+    "QuotedSlashWord\n"
+    "save quoted word definitions.cmb\n"
+    "exit\n")
+file(WRITE "${quoted_word_input}" "${quoted_word_commands}")
+execute_process(
+    COMMAND "${CREPL_EXECUTABLE}"
+    INPUT_FILE "${quoted_word_input}"
+    WORKING_DIRECTORY "${CREPL_WORKING_DIRECTORY}"
+    OUTPUT_VARIABLE quoted_word_output
+    ERROR_VARIABLE quoted_word_error
+    RESULT_VARIABLE quoted_word_result
+    TIMEOUT 10
+)
+if(NOT quoted_word_result EQUAL 0)
+    message(FATAL_ERROR
+        "quoted-word save exited with ${quoted_word_result}\n"
+        "stderr:\n${quoted_word_error}")
+endif()
+string(CONCAT expected_quoted_word_output
+    [=[fo"\o]=] "\n"
+    [=["\\fo\"\\bar\\"]=] "\n"
+    "Saved quoted word definitions.cmb\n")
+if(NOT quoted_word_output STREQUAL expected_quoted_word_output)
+    message(FATAL_ERROR
+        "unexpected quoted-word CREPL output\n"
+        "expected:\n${expected_quoted_word_output}"
+        "actual:\n${quoted_word_output}")
+endif()
+if(NOT quoted_word_error STREQUAL "")
+    message(FATAL_ERROR
+        "unexpected quoted-word CREPL error:\n${quoted_word_error}")
+endif()
+file(READ "${quoted_word_file}" quoted_word_contents)
+string(CONCAT expected_quoted_word_contents
+    "references captured\n"
+    [=[set QuotedWord = 0 "fo\"\\o"]=] "\n"
+    [=[set QuotedSlashWord = 0 "\\fo\"\\bar\\"]=])
+if(NOT quoted_word_contents STREQUAL expected_quoted_word_contents)
+    message(FATAL_ERROR
+        "unexpected saved quoted-word definitions\n"
+        "expected:\n${expected_quoted_word_contents}\n"
+        "actual:\n${quoted_word_contents}\n")
+endif()
+
+set(quoted_word_load_input
+    "${CREPL_WORKING_DIRECTORY}/quoted-word-load-input.cmb")
+file(WRITE "${quoted_word_load_input}"
+    "load quoted word definitions.cmb\n"
+    "QuotedWord\n"
+    "QuotedSlashWord\n"
+    "exit\n")
+execute_process(
+    COMMAND "${CREPL_EXECUTABLE}"
+    INPUT_FILE "${quoted_word_load_input}"
+    WORKING_DIRECTORY "${CREPL_WORKING_DIRECTORY}"
+    OUTPUT_VARIABLE quoted_word_load_output
+    ERROR_VARIABLE quoted_word_load_error
+    RESULT_VARIABLE quoted_word_load_result
+    TIMEOUT 10
+)
+if(NOT quoted_word_load_result EQUAL 0)
+    message(FATAL_ERROR
+        "quoted-word load exited with ${quoted_word_load_result}\n"
+        "stderr:\n${quoted_word_load_error}")
+endif()
+string(CONCAT expected_quoted_word_load_output
+    "Loaded quoted word definitions.cmb\n"
+    [=[fo"\o]=] "\n"
+    [=["\\fo\"\\bar\\"]=] "\n")
+if(NOT quoted_word_load_output STREQUAL
+        expected_quoted_word_load_output)
+    message(FATAL_ERROR
+        "unexpected reloaded quoted-word CREPL output\n"
+        "expected:\n${expected_quoted_word_load_output}"
+        "actual:\n${quoted_word_load_output}")
+endif()
+if(NOT quoted_word_load_error STREQUAL "")
+    message(FATAL_ERROR
+        "unexpected reloaded quoted-word CREPL error:\n"
+        "${quoted_word_load_error}")
+endif()
+
+set(direct_string_pipe_input
+    "${CREPL_WORKING_DIRECTORY}/direct-string-pipe-input.cmb")
+file(WRITE "${direct_string_pipe_input}"
+    [=[I "pipe\"\\word"]=] "\n"
+    [=[I "bad\q"]=] "\n"
+    [=[I "\\"]=] "\n"
+    "exit\n")
+execute_process(
+    COMMAND "${CREPL_EXECUTABLE}"
+    INPUT_FILE "${direct_string_pipe_input}"
+    WORKING_DIRECTORY "${CREPL_WORKING_DIRECTORY}"
+    OUTPUT_VARIABLE direct_string_pipe_output
+    ERROR_VARIABLE direct_string_pipe_error
+    RESULT_VARIABLE direct_string_pipe_result
+    TIMEOUT 10
+)
+if(NOT direct_string_pipe_result EQUAL 0)
+    message(FATAL_ERROR
+        "direct-string pipe input exited with "
+        "${direct_string_pipe_result}\n"
+        "stderr:\n${direct_string_pipe_error}")
+endif()
+string(CONCAT expected_direct_string_pipe_output
+    [=[pipe"\word]=] "\n"
+    [=["\\"]=] "\n")
+if(NOT direct_string_pipe_output STREQUAL
+        expected_direct_string_pipe_output)
+    message(FATAL_ERROR
+        "unexpected direct-string pipe output\n"
+        "expected:\n${expected_direct_string_pipe_output}"
+        "actual:\n${direct_string_pipe_output}")
+endif()
+string(FIND "${direct_string_pipe_error}"
+    "Parse error at position 7: " direct_string_error_position)
+string(REGEX MATCHALL "Parse error" direct_string_error_matches
+    "${direct_string_pipe_error}")
+list(LENGTH direct_string_error_matches direct_string_error_count)
+if(NOT direct_string_error_position EQUAL 0 OR
+        NOT direct_string_error_count EQUAL 1)
+    message(FATAL_ERROR
+        "expected exactly one direct invalid-escape diagnostic:\n"
+        "${direct_string_pipe_error}")
+endif()
+
 set(invalid_backslash_file
     "${CREPL_WORKING_DIRECTORY}/invalid backslash definitions.cmb")
 file(WRITE "${invalid_backslash_file}"
     "set SlashLoadBefore = 1 K\n"
-    "set ${backslash}12345678901234 = 1 I\n"
+    "set ${backslash}123456789012345 = 1 I\n"
     "set SlashLoadAfter = 1 I\n")
 set(invalid_backslash_load_input
     "${CREPL_WORKING_DIRECTORY}/invalid-backslash-load-input.cmb")

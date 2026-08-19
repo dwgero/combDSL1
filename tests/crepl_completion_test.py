@@ -281,7 +281,7 @@ def main():
         require_completed_line(output, b"inspect \\\n")
         normalized_output = normalized(output)
         expected_backslash_inspection = (
-            b'canonical: "\\"\n'
+            b'canonical: "\\\\"\n'
             b"free symbols: none\n"
             b"references: none\n"
             b"next reduction: none [normal form]\n")

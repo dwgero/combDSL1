@@ -505,6 +505,79 @@ int main() {
           shown_definition("M") == "arity:1 SII" &&
           combdsl::set_list() == before_predefined_error);
 
+    auto const multiline_escaped_word = load_set_list(
+        R"(set FileEscapedWord = 0 "left\"mid\\
+right"
+set FileAfterWord = 0 I
+)");
+    check("a multiline word with C-style escapes loads as one record",
+          multiline_escaped_word.success &&
+          !multiline_escaped_word.aborted &&
+          multiline_escaped_word.loaded == 2 &&
+          multiline_escaped_word.diagnostics.empty());
+    check("escaped quotes and slashes survive a multiline file load",
+          evaluated_expression("FileEscapedWord") ==
+              "left\"mid\\\nright");
+    check("a record following the multiline escaped word is loaded",
+          defined_name("FileAfterWord"));
+    constexpr std::string_view expected_multiline_definition =
+        R"(set FileEscapedWord = 0 "left\"mid\\
+right")";
+    auto const multiline_set_list = combdsl::set_list();
+    check("the multiline escaped word is saved without splitting",
+          multiline_set_list.find(expected_multiline_definition) !=
+              std::string::npos);
+    auto const reloaded_multiline = load_set_list(multiline_set_list);
+    check("the saved multiline escaped word and following record reload",
+          reloaded_multiline.success &&
+          reloaded_multiline.diagnostics.empty() &&
+          evaluated_expression("FileEscapedWord") ==
+              "left\"mid\\\nright" &&
+          defined_name("FileAfterWord"));
+
+    auto const direct_backslash_names = load_set_list(
+        R"(set \FileDirect = 1 I
+set FileSlashUse = 1 \FileDirect
+)");
+    check("file loading parses direct backslash names without escaping",
+          direct_backslash_names.success &&
+          direct_backslash_names.loaded == 2 &&
+          defined_name(R"(\FileDirect)") &&
+          shown_definition(R"(\FileDirect)") == "arity:1 I" &&
+          stepped_expression(R"(\FileDirect x)") == "x" &&
+          stepped_expression("FileSlashUse x") == "x");
+    auto const direct_backslash_set_list = combdsl::set_list();
+    check("direct backslash names retain one byte in the saved journal",
+          direct_backslash_set_list.find(
+              R"(set \FileDirect = 1 I)") != std::string::npos &&
+          direct_backslash_set_list.find(
+              R"(set FileSlashUse = 1 \FileDirect)") !=
+              std::string::npos);
+    auto const reloaded_direct_backslash =
+        load_set_list(direct_backslash_set_list);
+    check("saved direct backslash names reload without input escaping",
+          reloaded_direct_backslash.success &&
+          reloaded_direct_backslash.diagnostics.empty() &&
+          stepped_expression(R"(\FileDirect x)") == "x" &&
+          stepped_expression("FileSlashUse x") == "x");
+
+    auto const before_invalid_word_escape = combdsl::set_list();
+    auto const invalid_word_escape = load_set_list(
+        "set FileBeforeBad = 0 I\n"
+        R"(set FileBadEscape = 0 "a\q")" "\n"
+        "set FileAfterBad = 0 K\n");
+    check("a non-C escape inside a loaded string is a parse error",
+          !invalid_word_escape.success &&
+          !invalid_word_escape.aborted &&
+          invalid_word_escape.loaded == 0 &&
+          invalid_word_escape.diagnostics.size() == 1 &&
+          invalid_word_escape.diagnostics.front().line == 2);
+    check("an invalid loaded string rolls back every file definition",
+          !defined_name("FileBeforeBad") &&
+          !defined_name("FileBadEscape") &&
+          !defined_name("FileAfterBad") &&
+          combdsl::set_list() == before_invalid_word_escape);
+
     std::cout << tests_run << " test(s) run, "
               << test_failures << " failed\n";
     return test_failures == 0 ? 0 : 1;

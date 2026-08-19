@@ -524,12 +524,20 @@ inline void print_symbolic_string(
         print_token(output, "<>");
     } else if (value->front() == '\\') {
         // A bare leading backslash can also introduce a registered basis
-        // name.  Use the user-facing raw-word spelling so parser-representable
-        // slash-leading operands do not collide with registered names.
+        // name.  Use the user-facing quoted-string spelling so
+        // parser-representable
+        // slash-leading operands do not collide with registered names.  The
+        // word syntax is C-like: quote and backslash bytes are escaped inside
+        // the bare double-quote delimiters.
         std::string quoted;
         quoted.reserve(value->size() + 2);
         quoted.push_back('"');
-        quoted.append(*value);
+        for (char const byte : *value) {
+            if (byte == '\\' || byte == '"') {
+                quoted.push_back('\\');
+            }
+            quoted.push_back(byte);
+        }
         quoted.push_back('"');
         print_token(output, quoted);
     } else {
@@ -6930,21 +6938,7 @@ private:
     [[nodiscard]] static bool inspect_input_matches_canonical(
         std::string_view input,
         std::string_view canonical) noexcept {
-        std::size_t input_position = 0;
-        std::size_t canonical_position = 0;
-        while (input_position < input.size()) {
-            auto byte = input[input_position++];
-            if (byte == '\\' && input_position < input.size() &&
-                (input[input_position] == '\\' ||
-                 input[input_position] == '"')) {
-                byte = input[input_position++];
-            }
-            if (canonical_position == canonical.size() ||
-                canonical[canonical_position++] != byte) {
-                return false;
-            }
-        }
-        return canonical_position == canonical.size();
+        return input == canonical;
     }
 
     static void inspect_expression_contents(
@@ -7432,7 +7426,7 @@ private:
             shown_basis = match->second;
         }
         if (!shown_basis) {
-            auto message = unescape_input(name);
+            auto message = input_text(name);
             message += " is not a defined name";
             throw parse_error(name_position, message);
         }
@@ -7493,7 +7487,7 @@ private:
         auto const versions = registered_versions_.find(name.view());
         if (versions == registered_versions_.end() ||
             versions->second.empty()) {
-            auto message = unescape_input(name.view());
+            auto message = input_text(name.view());
             message += " is not a defined name";
             throw parse_error(name_position, message);
         }
@@ -7519,7 +7513,7 @@ private:
             }
             auto const& basis =
                 static_cast<quoted_basis_node_base const&>(*root);
-            output << unescape_input(revision->name());
+            output << input_text(revision->name());
             if (versions->second.size() > 1) {
                 output << '@' << revision->version();
             }
@@ -7575,7 +7569,7 @@ private:
                 throw parse_error(name_position, message);
             }
             if (!registered_bases_.contains(name.view())) {
-                auto message = unescape_input(name.view());
+                auto message = input_text(name.view());
                 message += " is not a defined name";
                 throw parse_error(name_position, message);
             }
@@ -7610,8 +7604,8 @@ private:
             first.view(), second.view(), registered_bases_,
             registered_versions_);
         if (path.empty()) {
-            auto first_text = unescape_input(first.view());
-            auto second_text = unescape_input(second.view());
+            auto first_text = input_text(first.view());
+            auto second_text = input_text(second.view());
             if (second_text < first_text) {
                 std::swap(first_text, second_text);
             }
@@ -7622,13 +7616,13 @@ private:
                 std::move(first_text));
         }
 
-        std::string output = unescape_input(path.nodes.front()->name());
+        std::string output = input_text(path.nodes.front()->name());
         output += " uses ";
-        output += unescape_input(path.nodes.back()->name());
+        output += input_text(path.nodes.back()->name());
         output += " via:";
         auto append_node = [this, &output](
                                registered_parser_basis_ptr const& node) {
-            output += unescape_input(node->name());
+            output += input_text(node->name());
             auto const revisions =
                 registered_versions_.find(node->name());
             if (!node->predefined() &&
@@ -7740,7 +7734,7 @@ private:
             throw parse_error(name_position, message);
         }
         if (!registered_bases_.contains(name.view())) {
-            auto message = unescape_input(name.view());
+            auto message = input_text(name.view());
             message += " is not a defined name";
             throw parse_error(name_position, message);
         }
@@ -7748,7 +7742,7 @@ private:
         auto const names = parser_dependency_names(
             name.view(), direction, include_indirect, registered_bases_,
             registered_versions_);
-        std::string output = unescape_input(name.view());
+        std::string output = input_text(name.view());
         if (direction ==
             parser_dependency_direction::depended_on_by) {
             output += names.direct.empty()
@@ -7761,18 +7755,18 @@ private:
         }
         for (auto const& dependency_name : names.direct) {
             output.push_back(' ');
-            output += unescape_input(dependency_name);
+            output += input_text(dependency_name);
         }
         if (!names.indirect.empty()) {
             output.push_back('\n');
-            output += unescape_input(name.view());
+            output += input_text(name.view());
             output += direction ==
                     parser_dependency_direction::depended_on_by
                 ? " is indirectly depended on by:"
                 : " indirectly uses:";
             for (auto const& dependency_name : names.indirect) {
                 output.push_back(' ');
-                output += unescape_input(dependency_name);
+                output += input_text(dependency_name);
             }
         }
         return quote_parser_display_text(std::move(output));
@@ -7998,7 +7992,7 @@ private:
                     if (!prefix) {
                         auto const remaining = source_.substr(
                             position_, group_end - position_);
-                        auto message = unescape_input(remaining);
+                        auto message = input_text(remaining);
                         message += " is not a defined name";
                         throw parse_error(position_, message);
                     }
@@ -8399,12 +8393,12 @@ private:
 
         auto const match = registered_bases_.find(name.view());
         if (match == registered_bases_.end()) {
-            auto message = unescape_input(name.view());
+            auto message = input_text(name.view());
             message += " is not a defined name";
             throw parse_error(name_position, message);
         }
         if (match->second->predefined()) {
-            auto message = unescape_input(name.view());
+            auto message = input_text(name.view());
             message +=
                 " is a pre-defined basis and cannot be removed";
             throw parse_error(name_position, message);
@@ -8416,13 +8410,13 @@ private:
             auto const change = remove_parser_definition_basis(
                 name.view(), canonical_remove_definition(name.view()));
             if (change == parser_removal_change::not_found) {
-                auto message = unescape_input(name.view());
+                auto message = input_text(name.view());
                 message += " is not a defined name";
                 throw parse_error(name_position, message);
             }
             if (change ==
                 parser_removal_change::rejected_predefined) {
-                auto message = unescape_input(name.view());
+                auto message = input_text(name.view());
                 message +=
                     " is a pre-defined basis and cannot be removed";
                 throw parse_error(name_position, message);
@@ -8551,7 +8545,7 @@ private:
         }
         if (change ==
             parser_definition_change::rejected_circular) {
-            auto message = unescape_input(name);
+            auto message = input_text(name);
             message += " would have a circular definition";
             if (!circular_path.empty()) {
                 message.push_back('\n');
@@ -8561,7 +8555,7 @@ private:
                     if (index != 0) {
                         message += " -> ";
                     }
-                    message += unescape_input(circular_path[index]);
+                    message += input_text(circular_path[index]);
                 }
             }
             throw parse_error(name_position, message);
@@ -9044,24 +9038,9 @@ private:
         return expression;
     }
 
-    [[nodiscard]] static std::string unescape_input(
+    [[nodiscard]] static std::string input_text(
         std::string_view source) {
-        std::string result;
-        result.reserve(source.size());
-
-        for (std::size_t index = 0; index < source.size();) {
-            if (source[index] == '\\' &&
-                index + 1 < source.size() &&
-                (source[index + 1] == '\\' ||
-                 source[index + 1] == '"')) {
-                result.push_back(source[index + 1]);
-                index += 2;
-            } else {
-                result.push_back(source[index]);
-                ++index;
-            }
-        }
-        return result;
+        return std::string(source);
     }
 
     [[nodiscard]] static std::string append_canonical_body(
@@ -9070,16 +9049,24 @@ private:
         bool inside_word = false;
         bool pending_space = true;
         for (std::size_t index = 0; index < body.size();) {
-            if (body[index] == '\\' &&
-                index + 1 < body.size() &&
-                body[index + 1] == '"') {
+            if (inside_word && body[index] == '\\') {
+                if (index + 1 < body.size() &&
+                    (body[index + 1] == '\\' ||
+                     body[index + 1] == '"')) {
+                    result.append(body.substr(index, 2));
+                    index += 2;
+                    continue;
+                }
+            }
+
+            if (body[index] == '"') {
                 if (!inside_word && pending_space) {
                     result.push_back(' ');
                     pending_space = false;
                 }
-                result += "\\\"";
+                result.push_back('"');
                 inside_word = !inside_word;
-                index += 2;
+                ++index;
                 continue;
             }
 
@@ -9096,7 +9083,7 @@ private:
             result.push_back(body[index]);
             ++index;
         }
-        return unescape_input(result);
+        return result;
     }
 
     [[nodiscard]] static std::string canonical_set_definition(
@@ -9142,7 +9129,7 @@ private:
         std::string_view name) {
         std::string result = "remove ";
         result += name;
-        return unescape_input(result);
+        return input_text(result);
     }
 
     [[nodiscard]] basis_label validated_definition_basis_name(
@@ -9296,6 +9283,10 @@ private:
             return nested;
         }
 
+        if (current() == '"') {
+            return parse_word_string();
+        }
+
         if (auto recursive_function =
                 parse_exact_recursive_function_token()) {
             return std::move(*recursive_function);
@@ -9311,13 +9302,11 @@ private:
         }
 
         // The general prefix parser starts at two-byte names.  Give a
-        // public one-byte backslash basis (or recursive definition) the
-        // same prefix precedence when the next byte is not itself an
-        // escape introducer.  This must precede the recursive-prefix
-        // ambiguity guard below for compact one-byte recursion.
-        if (current() == '\\' && has_next() &&
-            source_[position_ + 1] != '\\' &&
-            source_[position_ + 1] != '"') {
+        // one-byte backslash basis (or recursive definition) the same prefix
+        // precedence before falling back to the literal-backslash operand.
+        // This must precede the recursive-prefix ambiguity guard below for
+        // compact one-byte recursion.
+        if (current() == '\\' && has_next()) {
             if (auto recursive_function =
                     parse_single_character_recursive_function()) {
                 return std::move(*recursive_function);
@@ -9333,14 +9322,10 @@ private:
             fail("unknown operand");
         }
 
-        // Registered basis names take precedence over escaped-backslash
-        // syntax.  Keeping the escape fallback here preserves the symbolic
-        // backslash when no exact or valid prefix name is registered, while
-        // raw-word delimiters still produce an empty basis token above.
+        // Registered basis names take precedence over the symbolic
+        // backslash fallback.
         if (current() == '\\') {
-            // A raw `\\` retains its legacy symbolic meaning unless that
-            // exact two-byte name is registered.
-            return parse_escaped_atom();
+            return parse_backslash_atom();
         }
 
         if (auto recursive_function =
@@ -9468,29 +9453,23 @@ private:
         return quote(value);
     }
 
-    [[nodiscard]] quoted_expression parse_escaped_atom() {
-        if (!has_next()) {
-            position_ = source_.size();
-            fail("expected an escaped backslash or word delimiter");
-        }
-
-        auto const escaped = source_[position_ + 1];
-        if (escaped == '"') {
-            return parse_word_string();
-        }
-        if (escaped == '\\') {
-            position_ += 2;
-            return quote(std::string_view("\\", 1));
-        }
-
-        fail("expected an escaped backslash or word delimiter");
+    [[nodiscard]] quoted_expression parse_backslash_atom() {
+        ++position_;
+        return quote(std::string_view("\\", 1));
     }
 
     [[nodiscard]] quoted_expression parse_word_string() {
-        position_ += 2;
+        ++position_;
         std::string result;
 
         while (!at_end()) {
+            if (current() == '"') {
+                if (result.empty()) {
+                    fail("quoted strings cannot be empty");
+                }
+                ++position_;
+                return quote(std::move(result));
+            }
             if (current() != '\\') {
                 result.push_back(current());
                 ++position_;
@@ -9499,7 +9478,8 @@ private:
 
             if (!has_next()) {
                 position_ = source_.size();
-                fail("expected an escaped backslash or closing word delimiter");
+                fail("expected '\\\\' or '\\\"' after backslash in "
+                     "quoted string");
             }
 
             auto const escaped = source_[position_ + 1];
@@ -9509,17 +9489,16 @@ private:
                 continue;
             }
             if (escaped == '"') {
-                if (result.empty()) {
-                    fail("word strings cannot be empty");
-                }
+                result.push_back('"');
                 position_ += 2;
-                return quote(std::move(result));
+                continue;
             }
 
-            fail("expected an escaped backslash or closing word delimiter");
+            fail("expected '\\\\' or '\\\"' after backslash in "
+                 "quoted string");
         }
 
-        fail("expected a closing word delimiter");
+        fail("expected a closing double quote");
     }
 
     [[nodiscard]] std::optional<quoted_expression>
@@ -9856,11 +9835,7 @@ private:
             is_basis_token_delimiter(position_ - 1)) {
             return true;
         }
-
-        return position_ >= 2 &&
-               source_[position_ - 2] == '\\' &&
-               (source_[position_ - 1] == '\\' ||
-                source_[position_ - 1] == '"');
+        return false;
     }
 
     [[nodiscard]] bool is_recursive_function_name(
@@ -9959,8 +9934,7 @@ private:
         std::size_t position) const noexcept {
         auto const value = source_[position];
         return is_whitespace(value) || value == '(' || value == ')' ||
-               (value == '\\' && position + 1 < source_.size() &&
-                source_[position + 1] == '"');
+               value == '"';
     }
 
     void skip_whitespace() noexcept {

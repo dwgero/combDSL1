@@ -2577,7 +2577,7 @@ test("routes the quoted canonical form for literal-backslash inspect",
         const worker = harness.workers[0];
         const command = "inspect \\";
         const report =
-            "canonical: \"\\\"\n" +
+            "canonical: \"\\\\\"\n" +
             "free symbols: none\n" +
             "references: none\n" +
             "next reduction: none [normal form]\n";
@@ -2627,7 +2627,8 @@ test("routes the quoted canonical form for literal-backslash inspect",
             `${command}\n${report.trimEnd()}`,
         );
         assert.equal(
-            outputEntry.textContent.includes("canonical: \"\\\""), true);
+            outputEntry.textContent.includes("canonical: \"\\\\\""),
+            true);
         assert.equal(outputEntry.dataset.compactAfter, "true");
     });
 

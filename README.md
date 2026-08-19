@@ -105,7 +105,7 @@ text parser.
 Raw string literals, C strings, `std::string`, and `std::string_view` operands
 are automatically copied into callable symbolic string expressions. They
 normally print without quotes or angle brackets. A parser-representable raw
-value beginning with a backslash instead prints inside raw-word quotes so it
+value beginning with a backslash instead prints using quoted-string syntax so it
 cannot be mistaken for a registered backslash-prefixed basis name. Names
 longer than one byte use the same spacing rules as multi-character basis
 names:
@@ -121,8 +121,8 @@ Raw strings are byte-preserving and do not receive UTF-8 validation. Empty or
 null strings are rejected. Consequently, raw UTF-8 text and an explicit symbol
 have different spacing: `x("\xE2\x97\x8F")()` prints `x ●`, while
 `x(symbol("\xE2\x97\x8F"))()` prints `x●`. A printed multi-character raw name
-is not parsed atomically by itself; it must be surrounded by the escaped word
-delimiters described below or registered as a basis. Wrap a string in a
+is not parsed atomically by itself; it must be entered as a quoted string using
+the delimiters described below or registered as a basis. Wrap a string in a
 distinct user-defined type when it should remain ordinary C++ data rather than
 a symbolic operand.
 
@@ -219,9 +219,9 @@ name compact on its left.
 
 Basis names are copied into the expression and may contain up to 15
 bytes. Names cannot be empty or begin with a null character; a later null
-character terminates the copied name. Because leading whitespace and
-parentheses belong to the parser grammar, names cannot begin with one of those
-characters or with a double quote. A visible name cannot end in `@` or consist
+character terminates the copied name. Because leading whitespace, parentheses,
+and double quotes belong to the parser grammar, names cannot begin with one of
+those characters. A visible name cannot end in `@` or consist
 entirely of ASCII decimal digits:
 non-negative integer literal spellings such as `0`, `42`, and `00042` are
 reserved for integer values. Names such as `+4`, `-4`, `4.0`, `4e2`, and `4x`
@@ -229,13 +229,11 @@ remain valid.
 A visible name longer than 15 bytes throws `std::length_error`; an invalid name
 throws `std::invalid_argument`.
 
-A backslash may begin a basis name. The low-level C++ API stores exactly the
-bytes supplied to `basis`, so `basis("\\", ...)` creates a one-byte name for
-direct raw-parser input. CREPL and Studio first call `input_escape`; each
-visible backslash therefore becomes two stored parser bytes. A C++ basis meant
-to match the visible frontend name `\` is written `basis("\\\\", ...)`, and
-that visible backslash consumes two of the 15 available bytes. The direct
-one-byte and frontend two-byte names are distinct.
+A backslash may begin a basis name. The C++ API stores exactly the supplied
+name bytes, and direct CREPL/Studio parsing now uses that same byte spelling,
+so `basis("\\", ...)` creates the one-byte name entered as `\`. A name
+containing two backslashes is written `basis("\\\\", ...)`, and each visible
+backslash consumes one of the 15 available bytes.
 
 Every successful `basis(...)` call also registers that name with the text
 parser. User-defined names may be redefined.
@@ -400,16 +398,13 @@ Because a signal handler is process-wide, concurrent calls to `eval` and
 `eval` and `single_step_run` keep reducing an expression with an endless
 sequence of eligible reductions until interrupted.
 
-`input_escape` copies input text and prefixes a backslash before every
-backslash or double quote. It does not add surrounding delimiters, and all
-other bytes are preserved:
+`parse` consumes its input directly; no transport-escaping pass is needed.
+Quoted strings use bare double-quote delimiters and C-style escapes for quote
+and backslash bytes:
 
 ```cpp
-input_escape("a\\b\"c") == "a\\\\b\\\"c";
-input_escape("R") == "R";
-
-auto source = input_escape("x \"word\" y \"mid\\dle\" z");
-parse(source); // x word y mid\dle z
+auto source = R"(x "word" y "mid\\dle" z "fo\"\\o")";
+parse(source); // x word y mid\dle z fo"\o
 ```
 
 ### Parsing expressions
@@ -487,16 +482,15 @@ A backslash may also begin a CREPL or Studio basis name. `set \ = 3 C` and
 `set \foo = 1 I` define the names `\` and `\foo`; `define \ bar = rab`
 defines `\` with the symbol list `bar`. An exact registered
 backslash-prefixed name takes precedence over the literal-backslash operand.
-To enter that literal after a collision, use the quoted raw word consisting of
-a double quote, one backslash, and a double quote:
+To enter that literal after a collision, use the quoted string consisting of
+a double quote, two backslashes, and a double quote:
 
 ```text
-"\"
+"\\"
 ```
 
-CREPL/Studio-defined backslash names retain their doubled stored spelling when they
-print as expressions, with safe separators on both sides. Saved definitions
-use the visible one-backslash spelling and reload through `input_escape`.
+Backslash names retain their direct spelling when printed as expressions,
+with safe separators on both sides. Saved definitions use that same spelling.
 
 At the start of a line, preceded by optional whitespace,
 `define [captured | live]` followed by whitespace creates a named basis
@@ -1018,14 +1012,14 @@ declaration includes its defining symbols. Quotes and backslashes appear
 exactly as a user would enter them. Because this is replayable source history,
 an explicitly entered `name@1` may remain visible here, including through
 `show all` and Save, even while formatted expressions display the singleton as
-bare `name`. Passing each line through `input_escape`
-and then to `parse` recreates the definitions and reference semantics:
+bare `name`. Parsing each saved line directly recreates the definitions and
+reference semantics:
 
 ```cpp
 auto definitions = set_list();
 std::istringstream input(definitions);
 for (std::string line; std::getline(input, line);) {
-    static_cast<void>(parse(input_escape(line)));
+    static_cast<void>(parse(line));
 }
 ```
 
@@ -1052,10 +1046,12 @@ prints the current expression and the resume prompt. End-of-input before an
 expression produces no output, while malformed or empty lines throw
 `combdsl::parse_error`.
 
-The `crepl` executable applies `input_escape` to each line before passing it to
-`parse_eval`, so ordinary quoted words and backslashes can be entered directly.
+The `crepl` executable passes each ordinary input line directly to `parse_eval`,
+using the same direct syntax for interactive input, piped input, and loaded
+journals. Piped input remains line-oriented, while journal loading can group a
+quoted string that spans multiple physical lines into one record.
 When standard output is a terminal, it first prints
-`Combinator Read-Eval-Print Loop, version 2.12.10`. Long evaluations display
+`Combinator Read-Eval-Print Loop, version 2.12.11`. Long evaluations display
 the accumulated step count every 1,000 reductions by overwriting one status
 line; the line is cleared before evaluation output is printed. Its interactive
 prompt is `>`. Interactive input uses GNU Readline, so previous nonempty
@@ -1259,7 +1255,7 @@ an ASCII letter or digit is self-delimiting on both sides, so
 `CstarW*` means `Cstar W*`, and a captured `Tail+@2` retains the compact
 boundaries of `Tail+`. When the entire compact token is itself a registered
 name, that exact name takes precedence. Other names ending in `a` through `z`
-still require whitespace, parentheses, or an escaped-word opener as a
+still require whitespace, parentheses, or a quoted-string opener as a
 delimiter. Thus `Cstar x` means `Cstar` applied to `x`, while `Cstarx` is an
 unknown operand; it does not fall back to `C` followed by five symbols.
 The leading-boundary rule follows the underlying name, so `Q1@2` inherits it
@@ -1279,26 +1275,26 @@ each lowercase ASCII letter (`a` through `z`) becomes a single-character
 symbol, so compact primitive and symbol expressions such as `SKIx` remain
 valid.
 
-In escaped parser input, the two characters `\"` open or close one raw word,
-and `\\` normally represents one backslash. This input:
+A bare double quote opens or closes a quoted string. Inside the string, `\\`
+represents one backslash and `\"` represents one double quote. This input:
 
 ```text
-x \"word\" y \"mid\\dle\" z
+x "word" y "mid\\dle" z "fo\"\\o"
 ```
 
-parses and prints as `x word y mid\dle z`. Spaces, parentheses, UTF-8 bytes,
-and other ordinary bytes between the word delimiters are content rather than
-parser syntax. Outside a word, an exact registered backslash-prefixed name or
-valid registered-name prefix takes precedence over the escape meaning. When no
-such name matches, `\\` is a one-character symbolic backslash operand. In
-ordinary CREPL and Studio input, use the visible quoted raw word shown above to
-force that literal after a name collision. Registered slash-leading names use
-safe separators when printed; a doubled backslash may also occur later in a
-registered name. A raw `\"` always remains the word delimiter. Any other
-unmatched sequence beginning with a backslash is rejected, as are empty or
-unterminated words. A word whose spelling matches a primitive or registered
-basis remains raw. Raw words can contain further backslashes and newlines but
-cannot represent an embedded double quote.
+parses and prints as `x word y mid\dle z fo"\o`. Spaces, parentheses,
+newlines, and UTF-8 bytes between the delimiters are content rather than
+parser syntax. Every backslash inside a string must be part of one of the two
+escapes above; every other backslash-led sequence is rejected. Empty and
+unterminated strings are also rejected.
+
+Outside a string, an exact registered backslash-prefixed name or valid
+registered-name prefix takes precedence. When no such name matches, one
+backslash is a one-character symbolic backslash operand. Use the quoted
+string `"\\"` to force that literal after a name collision. Registered
+slash-leading names use safe separators when printed, and quoted
+slash-leading raw values C-escape embedded quotes and backslashes. A string
+whose spelling matches a primitive or registered basis remains raw.
 
 Malformed or empty input throws `combdsl::parse_error`. Its `position()` is the
 zero-based byte position of the error; an error at the end of input reports the
@@ -1424,9 +1420,8 @@ configuration.
 
 ### Browser WebAssembly
 
-The browser target exposes the equivalent of
-`parse_eval(input_escape(source))` through a Web Worker. Configure and build it
-with Emscripten:
+The browser target exposes the equivalent of `parse_eval(source)` through a
+Web Worker. Configure and build it with Emscripten:
 
 ```sh
 EM_CACHE="$PWD/build-emscripten-cache" emcmake cmake -S . -B build-browser \
@@ -1537,16 +1532,14 @@ the submitted source instead of repeating the expression. Key Step completes
 immediately without entering the key-wait state or waiting for a keypress.
 
 The Single Step button switches between displaying only the evaluated result
-and displaying every reduction produced by
-`single_step_run(parse(input_escape(source)))`. Evaluations accumulate in the
-results area with a blank line between them.
+and displaying every reduction produced by `single_step_run(parse(source))`.
+Evaluations accumulate in the results area with a blank line between them.
 
-The Key Step button starts a
-manual reduction session: after submitting an expression, each ordinary
-keypress performs exactly one `single_step`. The keypress that performs the
-final reduction also ends the session. Pause opens a dialog where the session
-can be resumed or cancelled. The Single Step and Key Step modes are mutually
-exclusive.
+The Key Step button starts a manual reduction session: after submitting an
+expression, each ordinary keypress performs exactly one `single_step`. The
+keypress that performs the final reduction also ends the session. Pause opens
+a dialog where the session can be resumed or cancelled. The Single Step and
+Key Step modes are mutually exclusive.
 
 The independent Basis Step
 button controls whether either stepping mode exposes a saturated named basis
@@ -1582,17 +1575,15 @@ in the browser would change a user definition, a confirmation dialog shows
 `About to replace name=arity expression`; Cancel preserves the existing
 definition, while Replace is initially focused so Enter confirms it.
 
-The Load
-button opens a file picker filtered for `.cmb` files and replays its definitions,
-removals, and `references` commands in file order by applying
-`parse(input_escape(record))` to each saved record; file redefinitions are
-applied silently and the expressions are not evaluated. A parser failure is
-reported with the file name, one-based line
-number, and one-based byte position. Loading continues with the next line after
-a parse error. It stops after the fifteenth parse error and reports
-`Too many errors, aborting with no changes made`. If any error is found, the
-entire load is rolled back, so no definitions from that file are kept. Failed
-loads below the cutoff report
+The Load button opens a file picker filtered for `.cmb` files and replays its
+definitions, removals, and `references` commands in file order by applying
+`parse(record)` to each saved record; file redefinitions are applied silently
+and the expressions are not evaluated. A parser failure is reported with the
+file name, one-based line number, and one-based byte position. Loading
+continues with the next record after a parse error. It stops after the
+fifteenth parse error and reports `Too many errors, aborting with no changes
+made`. If any error is found, the entire load is rolled back, so no definitions
+from that file are kept. Failed loads below the cutoff report
 `Errors are preventing any changes from being made`; a load aborted at the
 cutoff displays only the `Too many errors` status after its diagnostics.
 

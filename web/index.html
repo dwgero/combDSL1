@@ -388,9 +388,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             color: #c33;
         }
     </style>
-    <script src="./evaluation_watchdog.js?v=2.12.10" defer></script>
-    <script src="./input_history.js?v=2.12.10" defer></script>
-    <script src="./app.js?v=2.12.10" defer></script>
+    <script src="./evaluation_watchdog.js?v=2.12.11" defer></script>
+    <script src="./input_history.js?v=2.12.11" defer></script>
+    <script src="./app.js?v=2.12.11" defer></script>
 </head>
 <body>
     <main aria-labelledby="studio-title">
@@ -662,12 +662,15 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             <code>define \ bar = rab</code> defines <code>\</code> with the
             symbol list <code>bar</code>. An exact registered
             backslash-prefixed name takes precedence over the literal
-            backslash operand. Use the quoted raw word <code>"\"</code> for
-            that literal. Studio input escaping makes each visible backslash
-            occupy two bytes of the 15-byte stored-name limit. Parsed
-            backslash names display their doubled stored spelling with safe
-            operand separators; saved definitions use the visible
-            one-backslash spelling.
+            backslash operand. Use the quoted string <code>"\\"</code> for
+            that literal. A bare double quote opens or closes a string.
+            Inside strings, use C-style
+            <code>\"</code> for a double quote and <code>\\</code> for a
+            backslash; every other backslash escape is a parse error. Studio
+            passes input directly to the parser, so each visible backslash
+            occupies one byte of the 15-byte stored-name limit. Parsed and
+            saved backslash names retain that direct spelling with safe
+            operand separators.
             <br><br>
             The optional <code>captured</code> or <code>live</code> modifier
             on <code>set</code> and <code>define</code> overrides the current
@@ -1096,7 +1099,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             data-dialog-initial-focus>About</h2>
         <div class="license-text">
             <!-- Keep this version and the app.js cache key in sync. -->
-            <p>Combinator Studio, version 2.12.10<br>
+            <p>Combinator Studio, version 2.12.11<br>
                 Part of the C++ Combinator DSL<br>
                 Copyright (C) 2026  David W. Gero</p>
             <p>This program is free software: you can redistribute it and/or modify

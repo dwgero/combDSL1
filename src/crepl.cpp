@@ -66,7 +66,7 @@
 
 namespace {
 
-constexpr std::string_view crepl_version = "2.12.10";
+constexpr std::string_view crepl_version = "2.12.11";
 constexpr std::string_view no_further_reductions_message =
     "No further reductions";
 
@@ -2044,12 +2044,14 @@ void print_help_full(std::ostream& output) {
         "'set \\foo = 1 I' define the names '\\' and '\\foo'; "
         "'define \\ bar = rab' defines '\\' with the symbol list 'bar'. "
         "An exact registered backslash-prefixed name takes precedence over "
-        "the literal-backslash operand. Use the quoted raw word '\"\\\"' "
-        "for that literal. CREPL input escaping makes each visible "
-        "backslash occupy two bytes of the 15-byte stored-name limit. "
-        "Parsed backslash names display their doubled stored spelling with "
-        "safe operand separators; saved definitions use the visible "
-        "one-backslash spelling.");
+        "the literal-backslash operand. Use the quoted string '\"\\\\\"' "
+        "for that literal. A bare double quote opens or closes a string. "
+        "Inside strings, use C-style '\\\"' "
+        "for a double quote and '\\\\' for a backslash; every other "
+        "backslash escape is a parse error. CREPL passes input directly to "
+        "the parser, so each visible backslash occupies one byte of the "
+        "15-byte stored-name limit. Parsed and saved backslash names retain "
+        "that direct spelling with safe operand separators.");
     output.put('\n');
     write_wrapped_paragraph(
         output,
@@ -3778,18 +3780,17 @@ int main(int argc, char* argv[]) {
                 continue;
             }
 
-            auto const escaped_source =
-                combdsl::input_escape(source);
+            auto const& parser_source = source;
             if (begins_command(source, "abstract")) {
                 auto const parsed =
-                    combdsl::detail::parse_input(escaped_source);
+                    combdsl::detail::parse_input(parser_source);
                 print_expression_line(
                     std::cout, parsed.expression);
                 continue;
             }
             if (begins_command(source, "find")) {
                 auto const parsed =
-                    combdsl::detail::parse_input(escaped_source);
+                    combdsl::detail::parse_input(parser_source);
                 if (parsed.is_find_no_match) {
                     print_red_message_line(
                         std::cout,
@@ -3816,7 +3817,7 @@ int main(int argc, char* argv[]) {
                 if (active_stepping_mode == stepping_mode::single) {
                     if (colorize_mode) {
                         outcome = parse_and_color_step_ansi(
-                            escaped_source,
+                            parser_source,
                             std::cout,
                             std::cin,
                             basis_step_mode,
@@ -3826,7 +3827,7 @@ int main(int argc, char* argv[]) {
                             interrupt_pause);
                     } else {
                         outcome = parse_and_crepl_single_step(
-                            escaped_source,
+                            parser_source,
                             std::cout,
                             std::cin,
                             basis_step_mode,
@@ -3838,7 +3839,7 @@ int main(int argc, char* argv[]) {
                     active_stepping_mode == stepping_mode::key) {
                     if (colorize_mode) {
                         outcome = parse_and_color_step_ansi(
-                            escaped_source,
+                            parser_source,
                             std::cout,
                             std::cin,
                             basis_step_mode,
@@ -3848,14 +3849,14 @@ int main(int argc, char* argv[]) {
                             interrupt_pause);
                     } else {
                         outcome = parse_and_terminal_key_step(
-                            escaped_source,
+                            parser_source,
                             std::cout,
                             basis_step_mode,
                             interrupt_pause);
                     }
                 } else {
                     outcome = parse_and_crepl_eval(
-                        escaped_source,
+                        parser_source,
                         std::cout,
                         std::cin,
                         false,
@@ -3894,7 +3895,7 @@ int main(int argc, char* argv[]) {
                 auto outcome = combdsl::evaluation_outcome::completed;
                 if (colorize_mode) {
                     outcome = parse_and_color_step_ansi(
-                        escaped_source,
+                        parser_source,
                         evaluation_output,
                         std::cin,
                         basis_step_mode,
@@ -3904,7 +3905,7 @@ int main(int argc, char* argv[]) {
                         interrupt_pause);
                 } else {
                     outcome = parse_and_crepl_single_step(
-                        escaped_source,
+                        parser_source,
                         evaluation_output,
                         std::cin,
                         basis_step_mode,
@@ -3923,7 +3924,7 @@ int main(int argc, char* argv[]) {
                 auto outcome = combdsl::evaluation_outcome::completed;
                 if (colorize_mode) {
                     outcome = parse_and_color_step_ansi(
-                        escaped_source,
+                        parser_source,
                         evaluation_output,
                         std::cin,
                         basis_step_mode,
@@ -3933,7 +3934,7 @@ int main(int argc, char* argv[]) {
                         interrupt_pause);
                 } else {
                     outcome = parse_and_terminal_key_step(
-                        escaped_source,
+                        parser_source,
                         evaluation_output,
                         basis_step_mode,
                         interrupt_pause);
@@ -3951,7 +3952,7 @@ int main(int argc, char* argv[]) {
                 output_buffer.update_progress(reductions);
             };
             auto const outcome = parse_and_crepl_eval(
-                escaped_source,
+                parser_source,
                 evaluation_output,
                 std::cin,
                 false,
