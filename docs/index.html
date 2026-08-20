@@ -388,9 +388,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             color: #c33;
         }
     </style>
-    <script src="./evaluation_watchdog.js?v=2.13.0" defer></script>
-    <script src="./input_history.js?v=2.13.0" defer></script>
-    <script src="./app.js?v=2.13.0" defer></script>
+    <script src="./evaluation_watchdog.js?v=2.13.1" defer></script>
+    <script src="./input_history.js?v=2.13.1" defer></script>
+    <script src="./app.js?v=2.13.1" defer></script>
 </head>
 <body>
     <main aria-labelledby="studio-title">
@@ -901,6 +901,25 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             displays <code>= Ox</code>, <code>takeout x from Ox: O</code>,
             and <code>?=O</code>.
             Unchanged preprocessing and optimization passes are omitted.
+            After each complete takeout, Define and Abstract optimize duplicate
+            subexpressions in this order:
+            <code>A B A -&gt; N A B</code>;
+            <code>A B B -&gt; W A B</code>;
+            <code>A (B A) -&gt; O B A</code>;
+            <code>A (A B) -&gt; Z A B</code>;
+            <code>A (B B) -&gt; L A B</code>;
+            <code>(A1 A) (A2 A) -&gt; S A1 A2 A</code>; and finally
+            <code>A A -&gt; M A</code>.
+            Every placeholder may be an arbitrary combinator expression, and
+            occurrences bearing the same placeholder must be structurally
+            identical. Because <code>M</code> is the final fallback,
+            <code>(F X) (F X)</code> matches the earlier <code>S</code> rule
+            and becomes <code>S F F X</code>, not <code>M(F X)</code>.
+            The generated bird skeleton is not reconsidered during that pass.
+            Individual Ministeps stages stay raw; a changed
+            completed result is followed by one
+            <code>optimize: raw -&gt; optimized</code> line before the next
+            takeout or final <code>?=</code> result.
         </div>
         <h2 class="help-subheading">Finding Combinators</h2>
         <div class="help-section">
@@ -1099,7 +1118,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             data-dialog-initial-focus>About</h2>
         <div class="license-text">
             <!-- Keep this version and the app.js cache key in sync. -->
-            <p>Combinator Studio, version 2.13.0<br>
+            <p>Combinator Studio, version 2.13.1<br>
                 Part of the C++ Combinator DSL<br>
                 Copyright (C) 2026  David W. Gero</p>
             <p>This program is free software: you can redistribute it and/or modify

@@ -66,7 +66,7 @@
 
 namespace {
 
-constexpr std::string_view crepl_version = "2.13.0";
+constexpr std::string_view crepl_version = "2.13.1";
 constexpr std::string_view no_further_reductions_message =
     "No further reductions";
 
@@ -2272,6 +2272,19 @@ void print_help_full(std::ostream& output) {
         "y from y(xy): O[takeout y from xy]\", then \"= Ox\", \"takeout x "
         "from Ox: O\", and \"?=O\". Abstract ignores the stepping and "
         "colorize modes.");
+    write_wrapped_paragraph(
+        output,
+        "After each complete takeout, Define and Abstract optimize duplicate "
+        "subexpressions in this order: ABA -> NAB; ABB -> WAB; A(BA) -> "
+        "OBA; A(AB) -> ZAB; A(BB) -> LAB; (A1 A)(A2 A) -> S A1 A2 A; "
+        "and finally AA -> MA. Every placeholder may be an arbitrary "
+        "combinator expression, and repeated placeholders must be "
+        "structurally identical. Because M is the final fallback, (F X)(F X) "
+        "matches the earlier S rule and becomes S F F X, not M(F X). "
+        "The generated bird skeleton is not reconsidered during that pass. "
+        "Individual Ministeps stages stay raw; a "
+        "changed completed result is followed by one \"optimize: raw -> "
+        "optimized\" line before the next takeout or final ?= result.");
 
     output << "\nFinding Combinators\n\n"
            << "find [all] [<num> | among <bird>...] ?<symbol_list> = "

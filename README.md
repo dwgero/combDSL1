@@ -544,6 +544,31 @@ Undersaturated bases remain named, and preprocessing does not enter
 expression is `B`. If this preprocessing repeats an expression or exceeds its
 reduction limit, `define` safely abstracts the original body instead.
 
+After each complete `takeout` pass, and before taking out the next symbol,
+`define` and `abstract` optimize duplicate subexpressions throughout the
+result. At each original application root, the first matching rule in this
+order wins:
+
+```text
+A B A         -> N A B
+A B B         -> W A B
+A (B A)       -> O B A
+A (A B)       -> Z A B
+A (B B)       -> L A B
+(A1 A) (A2 A) -> S A1 A2 A
+A A           -> M A
+```
+
+`A`, `B`, `A1`, and `A2` may each be an arbitrary combinator expression, and
+occurrences bearing the same placeholder must be structurally identical. The
+pass descends into captured operands, but it does not reconsider the new
+`N`/`W`/`O`/`Z`/`L`/`S`/`M` skeleton during that same pass. The final `M` rule
+is therefore only a fallback after the six more specific shapes; for example,
+`(F X) (F X)` matches the earlier `S` rule and becomes `S F F X`, not
+`M(F X)`. This pass is part of `define` and `abstract`; the low-level
+`takeout()` and `search_for_*_subexp()` APIs continue to expose their raw
+takeout results.
+
 At the start of a line, preceded by optional whitespace,
 `abstract [steps | ministeps] ?symbol_list = combinator_expression` performs
 the same nonrecursive preprocessing, right-to-left contextual `takeout`
@@ -563,7 +588,10 @@ then printed on a new line beginning with `= `. Thus,
 `abstract ministeps ?xy = y(xy)` starts with
 `takeout y from y(xy): O[takeout y from xy]`, then prints `= Ox`,
 `takeout x from Ox: O`, and `?=O`. Unchanged preprocessing and optimization
-passes are omitted.
+passes are omitted. Duplicate optimization is performed only after a complete
+takeout: individual ministep lines remain raw, and a changed completed result
+is followed by one `optimize: <raw> -> <optimized>` line before it becomes the
+input to the next takeout or the final `?=` result.
 
 The names `abstract`, `all`, `among`, `captured`, `live`, `step`, `steps`,
 `ministeps`, `limit`, `set`, `define`, `show`, `remove`, `revisions`,
@@ -587,8 +615,10 @@ parse_eval("show Repeat");              // prints: arity:1 Y
 ```
 
 The resulting recursive transformation is
-`optimize(Y(optimize(takeout(rec_func, previous_takeout_result))))`. The
-optimization pass recursively replaces `C*T` with `V`, `BDD` with `E`, `BOM`
+`optimize(Y(optimize(duplicate(takeout(rec_func, previous_takeout_result)))))`,
+where `duplicate` is the ordered post-takeout pass above. For shapes that
+remain after those duplicate passes, the final optimization recursively
+replaces `C*T` with `V`, `BDD` with `E`, `BOM`
 with `U`, `B(QT)R` with `F`, `B(QT)B` with `Q1`, `BT` with `Q3`, `BW` with
 `W*`, `B W*` with `W**`, `BC` with `C*`, `B C*` with `C**`, `YO` with `Y`,
 `BB` with `D`, `SBT` with `A`, `SR` with `H`, `QM` with `L`, `DC` with `G`,
@@ -1051,7 +1081,7 @@ using the same direct syntax for interactive input, piped input, and loaded
 journals. Piped input remains line-oriented, while journal loading can group a
 quoted string that spans multiple physical lines into one record.
 When standard output is a terminal, it first prints
-`Combinator Read-Eval-Print Loop, version 2.13.0`. Long evaluations display
+`Combinator Read-Eval-Print Loop, version 2.13.1`. Long evaluations display
 the accumulated step count every 1,000 reductions by overwriting one status
 line; the line is cleared before evaluation output is printed. Its interactive
 prompt is `>`. Interactive input uses GNU Readline, so previous nonempty
@@ -1192,7 +1222,13 @@ full expression on a new line beginning with `= `. For example,
 `abstract ministeps ?xy = y(xy)` starts with
 `takeout y from y(xy): O[takeout y from xy]`, then `= Ox`,
 `takeout x from Ox: O`, and `?=O`. The command does not evaluate its result
-and ignores the stepping and color modes.
+and ignores the stepping and color modes. After each complete takeout,
+`abstract` applies the ordered duplicate rules `ABA -> NAB`, `ABB -> WAB`,
+`A(BA) -> OBA`, `A(AB) -> ZAB`, `A(BB) -> LAB`,
+`(A1 A)(A2 A) -> S A1 A2 A`, and finally `AA -> MA`; every placeholder may
+be a compound expression. Individual `ministeps` stages remain unoptimized;
+a changed completed result is shown on one `optimize:` line before the next
+takeout or final `?=` result.
 Enter `define [captured | live] <name> [<symbol_list>] =
 <combinator_expression>` to create a named basis. Enter
 `set [captured | live] <name> = [arity] <combinator_expression>` to store an

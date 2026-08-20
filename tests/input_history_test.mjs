@@ -403,6 +403,35 @@ test("documents leading-backslash basis names in Studio", () => {
     assert.match(html, /retain that direct spelling with safe\s+operand separators/);
 });
 
+test("documents ordered post-takeout duplicate optimization in Studio", () => {
+    const html = readFileSync(
+        new URL("../web/index.html", import.meta.url), "utf8");
+
+    const orderedRules = [
+        /A B A -&gt; N A B/,
+        /A B B -&gt; W A B/,
+        /A \(B A\) -&gt; O B A/,
+        /A \(A B\) -&gt; Z A B/,
+        /A \(B B\) -&gt; L A B/,
+        /\(A1 A\) \(A2 A\) -&gt; S A1 A2 A/,
+        /A A -&gt; M A/,
+    ];
+    let previous = -1;
+    for (const rule of orderedRules) {
+        const match = rule.exec(html);
+        assert.ok(match, `missing duplicate rule ${rule}`);
+        assert.ok(match.index > previous, `duplicate rule out of order ${rule}`);
+        previous = match.index;
+    }
+    assert.match(html, /Every placeholder may be an arbitrary combinator expression/);
+    assert.match(html, /occurrences bearing the same placeholder must be structurally/);
+    assert.match(html, /generated bird skeleton is not reconsidered during that pass/);
+    assert.match(html, /Individual Ministeps stages stay raw/);
+    assert.match(
+        html,
+        /completed result is followed by one\s+<code>optimize: raw -&gt; optimized<\/code>/);
+});
+
 test("completes unambiguous abstract command forms", () => {
     const completers = [
         "abstract ?",

@@ -3335,7 +3335,7 @@ int main() {
     test("abstract handles the Starling proposal example",
          parse("abstract ?xyz = xz(yz)"), "?=S");
     test("abstract takes symbols out from right to left",
-         parse("abstract ?xyz = exp"), "?=BK(BK(Cep))");
+         parse("abstract ?xyz = exp"), "?=B(ZK)(Cep)");
     test("abstract preprocesses saturated bases",
          parse("abstract ?xyz = C(CB)xyz"), "?=B");
     test("abstract does not change stored definitions",
@@ -3372,9 +3372,45 @@ int main() {
     test("abstract steps traces reverse takeout and optimization",
          parse("abstract steps ?xy = x(yx)"),
          "takeout y from x(yx): Bx(Tx)\n"
-         "takeout x from Bx(Tx): SBT\n"
+         "optimize: Bx(Tx) -> SBTx\n"
+         "takeout x from SBTx: SBT\n"
          "optimize: SBT -> A\n"
          "?=A");
+    test("abstract duplicate pass feeds the final optimizer",
+         parse("abstract ?x = BxB"),
+         "?=NB");
+    test("abstract steps aggregates duplicate normalization after takeout",
+         parse("abstract steps ?x = BxB"),
+         "takeout x from BxB: CBB\n"
+         "optimize: CBB -> WCB\n"
+         "optimize: WC -> N\n"
+         "?=NB");
+    test("abstract duplicate pass feeds the next reverse takeout",
+         parse("abstract ?xy = ya(ya)"),
+         "?=K(WS(Ta))");
+    test("abstract steps uses normalized output for the next takeout",
+         parse("abstract steps ?xy = ya(ya)"),
+         "takeout y from ya(ya): S(Ta)(Ta)\n"
+         "optimize: S(Ta)(Ta) -> WS(Ta)\n"
+         "takeout x from WS(Ta): K(WS(Ta))\n"
+         "?=K(WS(Ta))");
+    test("abstract ministeps keeps stages raw until aggregate normalization",
+         parse("abstract ministeps ?xy = ya(ya)"),
+         "takeout y from ya(ya): "
+         "S[takeout y from ya][takeout y from ya]\n"
+         "= S(Ta)[takeout y from ya]\n"
+         "= S(Ta)(Ta)\n"
+         "optimize: S(Ta)(Ta) -> WS(Ta)\n"
+         "takeout x from WS(Ta): K(WS(Ta))\n"
+         "?=K(WS(Ta))");
+    test("abstract steps omits unchanged duplicate normalization",
+         parse("abstract steps ?x = xa"),
+         "takeout x from xa: Ta\n"
+         "?=Ta");
+    test("abstract ministeps omits unchanged duplicate normalization",
+         parse("abstract ministeps ?x = xa"),
+         "takeout x from xa: Ta\n"
+         "?=Ta");
     test("abstract steps shows the expression before every takeout",
          parse("abstract steps ?xy = y"),
          "takeout y from y: I\n"
@@ -3412,6 +3448,24 @@ int main() {
          "optimize: BC -> C*\n"
          "optimize: C*T -> V\n"
          "?=V");
+
+    test("define applies duplicate normalization at its symbol boundary",
+         parse("define DupRuleW x = xa(xa)"), "DupRuleW");
+    test("show exposes duplicate-normalized define body",
+         parse("show DupRuleW"), "arity:1 WS(Ta)");
+    test("duplicate-normalized define preserves its applied behavior",
+         [] {
+             auto normalized = combdsl::detail::normalize_for_compare(
+                 parse("DupRuleW b"));
+             if (normalized) {
+                 normalized->print_to(std::cout);
+             }
+         },
+         "ba(ba)");
+    test("define applies duplicate normalization at recursive-name takeout",
+         parse("define DupRec = DupRec a(DupRec a)"), "DupRec");
+    test("show exposes duplicate-normalized recursive-name body",
+         parse("show DupRec"), "arity:0 Y(WS(Ta))");
 
     test("define infers arity from its symbols",
          parse("define Def3 xyz = xyz"), "Def3");
@@ -3500,13 +3554,13 @@ int main() {
          "MM");
     test("define accepts a repeating saturated body",
          parse("define PrepOmega x = MM"), "PrepOmega");
-    test("show preserves the repeating saturated body",
-         parse("show PrepOmega"), "arity:1 K(MM)");
+    test("show applies duplicate takeout within the constant body",
+         parse("show PrepOmega"), "arity:1 LKM");
     test("define abstracts symbols from right to left",
          parse("define DefE xyz = exp"), "DefE");
     test("basis step exposes right-to-left abstraction",
          single_step(parse("DefE a b c"), true),
-         "BK(BK(Cep))abc");
+         "B(ZK)(Cep)abc");
     test("right-to-left abstraction preserves behavior",
          single_step(parse("DefE a b c")), "eap");
     test("define applies contextual Queer selection",
@@ -3547,12 +3601,19 @@ int main() {
          parse("show DefV"), "arity:1 V");
     test("optimized Vireo preserves behavior",
          single_step(single_step(parse("DefV a b c"))), "cab");
-    test("define optimizes BB to D",
+    test("define gives duplicate takeout precedence over BB to D",
          parse("define DefD x = BBx"), "DefD");
-    test("show exposes the optimized Dove",
-         parse("show DefD"), "arity:1 D");
-    test("optimized Dove preserves behavior",
-         single_step(single_step(parse("DefD a b c d"))), "ab(cd)");
+    test("show exposes the Mockingbird Bluebird result",
+         parse("show DefD"), "arity:1 MB");
+    test("duplicate-pass Dove equivalent preserves behavior",
+         [] {
+             auto normalized = combdsl::detail::normalize_for_compare(
+                 parse("DefD a b c d"));
+             if (normalized) {
+                 normalized->print_to(std::cout);
+             }
+         },
+         "ab(cd)");
     test("define recursively chains BC and C*T to V",
          parse("define DefKV x = BCT"), "DefKV");
     test("show exposes nested Vireo optimization",
@@ -3569,10 +3630,10 @@ int main() {
          parse("define DefKCstar x = BC"), "DefKCstar");
     test("show exposes nested Cardinal star optimization",
          parse("show DefKCstar"), "arity:1 KC*");
-    test("define optimizes B C* to Cardinal star star",
+    test("define gives duplicate takeout precedence over B C*",
          parse("define OptCstarstar xyzwv = xyzvw"), "OptCstarstar");
-    test("show exposes optimized Cardinal star star",
-         parse("show OptCstarstar"), "arity:5 C**");
+    test("show exposes the Zazu Bluebird Cardinal result",
+         parse("show OptCstarstar"), "arity:5 ZBC");
     test("define recursively optimizes nested B C*",
          parse("define DefKCstarstar x = B C*"), "DefKCstarstar");
     test("show exposes nested Cardinal star star optimization",
@@ -3587,28 +3648,28 @@ int main() {
          parse("define DefKF x = B(QT)R"), "DefKF");
     test("show exposes nested Finch optimization",
          parse("show DefKF"), "arity:1 KF");
-    test("define optimizes B(QT)B to Quixotic bird",
+    test("define gives duplicate takeout precedence over B(QT)B",
          parse("define OptQ1 xyz = x(zy)"), "OptQ1");
-    test("show exposes optimized Quixotic bird",
-         parse("show OptQ1"), "arity:3 Q1");
-    test("optimized Quixotic bird preserves behavior",
+    test("show exposes the Nightingale B QT result",
+         parse("show OptQ1"), "arity:3 NB(QT)");
+    test("duplicate-pass Quixotic equivalent preserves behavior",
          single_step(single_step(parse("OptQ1 a b c"))), "a(cb)");
-    test("define recursively optimizes nested B(QT)B",
+    test("define applies duplicate takeout within constant B(QT)B",
          parse("define DefKQ1 x = B(QT)B"), "DefKQ1");
-    test("show exposes nested Quixotic optimization",
-         parse("show DefKQ1"), "arity:1 KQ1");
-    test("define optimizes BDD to Eagle",
+    test("show exposes the constant Nightingale B QT result",
+         parse("show DefKQ1"), "arity:1 K(NB(QT))");
+    test("define gives duplicate takeout precedence over BDD",
          parse("define OptE xyzwv = xy(zwv)"), "OptE");
-    test("show exposes optimized Eagle",
-         parse("show OptE"), "arity:5 E");
-    test("define recursively optimizes nested BDD",
+    test("show exposes the Owl Zazu Bluebird result",
+         parse("show OptE"), "arity:5 OZB");
+    test("define applies duplicate takeout within constant BDD",
          parse("define DefKE x = BDD"), "DefKE");
-    test("show exposes nested Eagle optimization",
-         parse("show DefKE"), "arity:1 KE");
-    test("define optimizes BOM to Turing bird",
+    test("show exposes the constant Zazu Dove result",
+         parse("show DefKE"), "arity:1 K(ZD)");
+    test("define gives duplicate takeout precedence over BOM",
          parse("define OptU xy = y(xxy)"), "OptU");
-    test("show exposes optimized Turing bird",
-         parse("show OptU"), "arity:2 U");
+    test("show exposes the Lark Owl result",
+         parse("show OptU"), "arity:2 LO");
     test("define recursively optimizes nested BOM",
          parse("define DefKU x = BOM"), "DefKU");
     test("show exposes nested Turing bird optimization",
@@ -3625,20 +3686,20 @@ int main() {
          parse("define DefKQV x = QTC"), "DefKQV");
     test("show exposes nested unoptimized QTC",
          parse("show DefKQV"), "arity:1 K(QTC)");
-    test("define recursively optimizes nested BB",
+    test("define applies duplicate takeout at constant K(BB)",
          parse("define DefKD x = BB"), "DefKD");
-    test("show exposes nested Dove optimization",
-         parse("show DefKD"), "arity:1 KD");
+    test("show exposes Lark precedence at K(BB)",
+         parse("show DefKD"), "arity:1 LKB");
     test("define produces R without the CC optimizer",
          parse("define DefR xyz = yzx"), "DefR");
     test("show exposes the takeout-produced Robin",
          parse("show DefR"), "arity:3 R");
     test("takeout-produced Robin preserves behavior",
          single_step(single_step(parse("DefR a b c"))), "bca");
-    test("define preserves nested CC",
+    test("define applies duplicate takeout at constant K(CC)",
          parse("define DefKR x = CC"), "DefKR");
-    test("show exposes nested unoptimized CC",
-         parse("show DefKR"), "arity:1 K(CC)");
+    test("show exposes Lark precedence at K(CC)",
+         parse("show DefKR"), "arity:1 LKC");
     test("define optimizes SBT to A",
          parse("define DefA xy = x(yx)"), "DefA");
     test("show exposes the optimized Albatross",
@@ -3653,10 +3714,10 @@ int main() {
          parse("define DefKH x = SR"), "DefKH");
     test("show exposes nested H optimization",
          parse("show DefKH"), "arity:1 KH");
-    test("define optimizes DC to Goldfinch",
+    test("define gives duplicate takeout precedence over DC",
          parse("define OptG xyzw = xw(yz)"), "OptG");
-    test("show exposes optimized Goldfinch",
-         parse("show OptG"), "arity:4 G");
+    test("show exposes the Mockingbird Bluebird Cardinal result",
+         parse("show OptG"), "arity:4 MBC");
     test("define recursively optimizes nested DC",
          parse("define DefKG x = DC"), "DefKG");
     test("show exposes nested Goldfinch optimization",
@@ -3713,20 +3774,20 @@ int main() {
          parse("define DefKZ x = WB"), "DefKZ");
     test("show exposes nested Zazu optimization",
          parse("show DefKZ"), "arity:1 KZ");
-    test("define optimizes BW* to Warbler star star",
+    test("define gives duplicate takeout precedence over B W*",
          parse("define OptWstarstar xyzw = xyzww"),
          "OptWstarstar");
-    test("show exposes optimized Warbler star star",
-         parse("show OptWstarstar"), "arity:4 W**");
+    test("show exposes the Zazu Bluebird Warbler result",
+         parse("show OptWstarstar"), "arity:4 ZBW");
     test("define recursively optimizes nested BW*",
          parse("define DefKWss x = B W*"), "DefKWss");
     test("show exposes nested Warbler star star optimization",
          parse("show DefKWss"), "arity:1 KW**");
-    test("define optimizes S(D(BQC))D to Jay",
+    test("define gives duplicate takeout precedence over the Jay pattern",
          parse("define OptJ xyzw = xy(xwz)"), "OptJ");
-    test("show exposes the optimized Jay",
-         parse("show OptJ"), "arity:4 J");
-    test("optimized Jay preserves behavior",
+    test("show exposes the duplicate-normalized Jay equivalent",
+         parse("show OptJ"), "arity:4 S(MB(BQC))(MB)");
+    test("duplicate-pass Jay equivalent preserves behavior",
          single_step(single_step(parse("OptJ a b c d"))),
          "ab(adc)");
     test("define recursively optimizes nested S(D(BQC))D",
@@ -3743,10 +3804,10 @@ int main() {
          parse("define DefKCQ x = CQ"), "DefKCQ");
     test("show exposes nested unoptimized CQ",
          parse("show DefKCQ"), "arity:1 K(CQ)");
-    test("define preserves CB within C",
+    test("define applies duplicate takeout within C(CB)",
          parse("define DefChainB x = C(CB)x"), "DefChainB");
-    test("show exposes the resulting C(CB)",
-         parse("show DefChainB"), "arity:1 C(CB)");
+    test("show exposes the resulting Zazu Cardinal Bluebird",
+         parse("show DefChainB"), "arity:1 ZCB");
     test("define creates the Starling",
          parse("define DefS xyz = xz(yz)"), "DefS");
     test("basis step exposes the defined Starling",
@@ -5212,7 +5273,8 @@ int main() {
              std::cout << output.str();
          },
          "takeout y from x(yx): Bx(Tx)\n"
-         "takeout x from Bx(Tx): SBT\n"
+         "optimize: Bx(Tx) -> SBTx\n"
+         "takeout x from SBTx: SBT\n"
          "optimize: SBT -> A\n"
          "?=A\n");
     test("parse and step displays an abstract ministeps trace once",
@@ -5424,6 +5486,156 @@ int main() {
          "xx\n");
     const auto quoted_ski_x = quote(S)(K)(I)(x);
     test("quote SKIx", quoted_ski_x, "SKIx");
+    const auto duplicate_compound_a = quote(a)(quote(b)(c));
+    const auto duplicate_compound_b = quote(d)(quote(e)(f));
+    const auto duplicate_compound_a1 = quote(g)(quote(h)(i));
+    const auto duplicate_compound_a2 = quote(j)(quote(k)(l));
+    auto optimize_duplicate_takeout = [](combdsl::quoted_expression value) {
+        return combdsl::detail::
+            optimize_duplicate_takeout_expressions(std::move(value));
+    };
+    test("duplicate takeout generalizes Nightingale over compounds",
+         optimize_duplicate_takeout(
+             duplicate_compound_a(duplicate_compound_b)(
+                 duplicate_compound_a)),
+         "N(a(bc))(d(ef))");
+    test("duplicate takeout generalizes Warbler over compounds",
+         optimize_duplicate_takeout(
+             duplicate_compound_a(duplicate_compound_b)(
+                 duplicate_compound_b)),
+         "W(a(bc))(d(ef))");
+    test("duplicate takeout generalizes Owl over compounds",
+         optimize_duplicate_takeout(
+             duplicate_compound_a(
+                 duplicate_compound_b(duplicate_compound_a))),
+         "O(d(ef))(a(bc))");
+    test("duplicate takeout generalizes Zazu over compounds",
+         optimize_duplicate_takeout(
+             duplicate_compound_a(
+                 duplicate_compound_a(duplicate_compound_b))),
+         "Z(a(bc))(d(ef))");
+    test("duplicate takeout generalizes Lark over compounds",
+         optimize_duplicate_takeout(
+             duplicate_compound_a(
+                 duplicate_compound_b(duplicate_compound_b))),
+         "L(a(bc))(d(ef))");
+    test("duplicate takeout generalizes Starling over compounds",
+         optimize_duplicate_takeout(
+             duplicate_compound_a1(duplicate_compound_a)(
+                 duplicate_compound_a2(duplicate_compound_a))),
+         "S(g(hi))(j(kl))(a(bc))");
+    test("duplicate takeout falls back to Mockingbird after specific rules",
+         optimize_duplicate_takeout(quote(a)(a)),
+         "Ma");
+    test("duplicate takeout gives Starling precedence for equal compounds",
+         optimize_duplicate_takeout(
+             duplicate_compound_a(duplicate_compound_a)),
+         "Saa(bc)");
+    test("duplicate takeout gives Nightingale top-down precedence",
+         optimize_duplicate_takeout(
+             duplicate_compound_a(duplicate_compound_a)(
+                 duplicate_compound_a)),
+         "N(a(bc))(a(bc))");
+    test("duplicate takeout gives Owl precedence over Zazu and Lark",
+         optimize_duplicate_takeout(
+             duplicate_compound_a(
+                 duplicate_compound_a(duplicate_compound_a))),
+         "O(a(bc))(a(bc))");
+    test("duplicate takeout gives Lark precedence and recurses "
+         "into its capture",
+         optimize_duplicate_takeout(
+             duplicate_compound_a(duplicate_compound_a)(
+                 duplicate_compound_a(duplicate_compound_a))),
+         "L(Saa(bc))(a(bc))");
+    test("duplicate takeout performs one top-down pass without a fixed point",
+         optimize_duplicate_takeout(quote(N)(N)(M)),
+         "MNM");
+    const auto duplicate_inner_n =
+        duplicate_compound_a(duplicate_compound_b)(
+            duplicate_compound_a);
+    const auto duplicate_inner_w =
+        duplicate_compound_a(duplicate_compound_b)(
+            duplicate_compound_b);
+    test("duplicate takeout recursively optimizes captured operands",
+         optimize_duplicate_takeout(
+             duplicate_inner_n(duplicate_inner_w)(duplicate_inner_n)),
+         "N(N(a(bc))(d(ef)))(W(a(bc))(d(ef)))");
+    test("duplicate takeout descends when the root has no match",
+         optimize_duplicate_takeout(
+             quote(p)(duplicate_inner_n)(duplicate_inner_w)),
+         "p(N(a(bc))(d(ef)))(W(a(bc))(d(ef)))");
+    test("duplicate takeout compares separately built compounds structurally",
+         optimize_duplicate_takeout(
+             quote(a)(quote(b)(c))(duplicate_compound_b)(
+                 quote(a)(quote(b)(c)))),
+         "N(a(bc))(d(ef))");
+    struct duplicate_takeout_parity_case {
+        std::string_view rule;
+        combdsl::quoted_expression original;
+    };
+    const std::vector<duplicate_takeout_parity_case>
+        duplicate_takeout_parity_cases{
+            {"N", duplicate_compound_a(duplicate_compound_b)(
+                      duplicate_compound_a)},
+            {"W", duplicate_compound_a(duplicate_compound_b)(
+                      duplicate_compound_b)},
+            {"O", duplicate_compound_a(
+                      duplicate_compound_b(duplicate_compound_a))},
+            {"Z", duplicate_compound_a(
+                      duplicate_compound_a(duplicate_compound_b))},
+            {"L", duplicate_compound_a(
+                      duplicate_compound_b(duplicate_compound_b))},
+            {"S", duplicate_compound_a1(duplicate_compound_a)(
+                      duplicate_compound_a2(duplicate_compound_a))},
+            {"M", quote(a)(a)},
+        };
+    for (auto const& parity_case : duplicate_takeout_parity_cases) {
+        auto title = std::string("duplicate takeout ");
+        title += parity_case.rule;
+        title += " preserves semantics after applying symbols";
+        test(
+            title,
+            [&] {
+                auto original = combdsl::detail::normalize_for_compare(
+                    parity_case.original(m)(n));
+                auto optimized = combdsl::detail::normalize_for_compare(
+                    optimize_duplicate_takeout(
+                        parity_case.original)(m)(n));
+                if (!original || !optimized) {
+                    std::cout << "normalization timed out";
+                    return;
+                }
+                std::cout <<
+                    combdsl::detail::same_parser_definition_expression(
+                        *original, *optimized);
+            },
+            "1");
+    }
+    const auto raw_duplicate_takeout_source =
+        quote(x)(a)(quote(x)(a));
+    test("public takeout keeps duplicate results raw",
+         takeout(quoted_atomic{x}, raw_duplicate_takeout_source),
+         "S(Ta)(Ta)");
+    test("contextual takeout keeps duplicate results raw",
+         combdsl::detail::takeout_with_pending_atoms(
+             quoted_atomic{x}, raw_duplicate_takeout_source, {}),
+         "S(Ta)(Ta)");
+    test("ministep takeout API keeps duplicate result and stages raw",
+         [&] {
+             auto result = combdsl::detail::
+                 takeout_with_pending_atoms_ministeps(
+                     quoted_atomic{x}, raw_duplicate_takeout_source, {});
+             result.result.print_to(std::cout);
+             std::cout << ' ' << result.stages.size();
+             for (auto const& stage : result.stages) {
+                 std::cout << '\n';
+                 stage.print_to(std::cout);
+             }
+         },
+         "S(Ta)(Ta) 3\n"
+         "S[takeout x from xa][takeout x from xa]\n"
+         "S(Ta)[takeout x from xa]\n"
+         "S(Ta)(Ta)");
     test("takeout equal symbol",
          takeout(quoted_atomic{x}, quote(x)), "I");
     test("takeout separately parsed equal symbol",
@@ -5967,6 +6179,27 @@ int main() {
              }
          },
          "9");
+    const auto duplicate_xy_subexpression_match =
+        combdsl::search_for_xy_subexp(
+            quote(B)(K)(quote(S)(M)(M)));
+    test("xy subexpression search keeps duplicate takeout raw",
+         [&] {
+             if (duplicate_xy_subexpression_match) {
+                 duplicate_xy_subexpression_match->takeout_result();
+             } else {
+                 std::cout << "not found";
+             }
+         },
+         "BK(SMM)");
+    test("raw duplicate search match retains its source expression",
+         [&] {
+             if (duplicate_xy_subexpression_match) {
+                 duplicate_xy_subexpression_match->source_expression();
+             } else {
+                 std::cout << "not found";
+             }
+         },
+         "xx(xx)");
     const auto combined_xy_subexpression_match =
         combdsl::search_for_subexp(S(B)(T));
     test("combined subexpression search tries xy first",

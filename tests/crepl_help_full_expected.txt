@@ -265,6 +265,15 @@ every recursive takeout call in its position in the full expression as "[takeout
 new line beginning "= ". For example, "abstract ministeps ?xy = y(xy)" starts
 with "takeout y from y(xy): O[takeout y from xy]", then "= Ox", "takeout x from
 Ox: O", and "?=O". Abstract ignores the stepping and colorize modes.
+After each complete takeout, Define and Abstract optimize duplicate
+subexpressions in this order: ABA -> NAB; ABB -> WAB; A(BA) -> OBA; A(AB) ->
+ZAB; A(BB) -> LAB; (A1 A)(A2 A) -> S A1 A2 A; and finally AA -> MA. Every
+placeholder may be an arbitrary combinator expression, and repeated placeholders
+must be structurally identical. Because M is the final fallback, (F X)(F X)
+matches the earlier S rule and becomes S F F X, not M(F X). The generated bird
+skeleton is not reconsidered during that pass. Individual Ministeps stages stay
+raw; a changed completed result is followed by one "optimize: raw -> optimized"
+line before the next takeout or final ?= result.
 
 Finding Combinators
 

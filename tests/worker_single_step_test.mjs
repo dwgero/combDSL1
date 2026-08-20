@@ -1018,6 +1018,65 @@ test("built Studio Wasm parses and reloads directly quoted strings",
         }
     });
 
+test("built Studio Wasm applies duplicate takeout at parser boundaries",
+    async () => {
+        const module = await loadBuiltCombdslModule();
+        let requestId = 380;
+
+        const steps = module.beginLimitedEval(
+            "abstract steps ?x = BxB",
+            ++requestId,
+            1000,
+            false,
+        );
+        assert.equal(steps.success, true, steps.error);
+        assert.equal(
+            steps.output,
+            "takeout x from BxB: CBB\n" +
+            "optimize: CBB -> WCB\n" +
+            "optimize: WC -> N\n" +
+            "?=NB\n",
+        );
+
+        const ministeps = module.parseEval(
+            "abstract ministeps ?xy = ya(ya)",
+            ++requestId,
+            false,
+            0,
+        );
+        assert.equal(ministeps.success, true, ministeps.error);
+        assert.equal(
+            ministeps.output,
+            "takeout y from ya(ya): " +
+            "S[takeout y from ya][takeout y from ya]\n" +
+            "= S(Ta)[takeout y from ya]\n" +
+            "= S(Ta)(Ta)\n" +
+            "optimize: S(Ta)(Ta) -> WS(Ta)\n" +
+            "takeout x from WS(Ta): K(WS(Ta))\n" +
+            "?=K(WS(Ta))\n",
+        );
+
+        const definition = module.beginLimitedEval(
+            "define WasmDup x = xa(xa)",
+            ++requestId,
+            1000,
+            false,
+        );
+        assert.equal(definition.success, true, definition.error);
+        assert.equal(definition.definition, true);
+        assert.equal(definition.output, "");
+
+        const shown = module.parseEval(
+            "show WasmDup", ++requestId, false, 0);
+        assert.equal(shown.success, true, shown.error);
+        assert.equal(shown.output, "arity:1 WS(Ta)\n");
+
+        const applied = module.parseEval(
+            "WasmDup b", ++requestId, false, 0);
+        assert.equal(applied.success, true, applied.error);
+        assert.equal(applied.output, "ba(ba)\n");
+    });
+
 test("built Studio Wasm rejects integer basis names without mutation",
     async () => {
         const module = await loadBuiltCombdslModule();

@@ -2924,6 +2924,10 @@ takeout_with_pending_atoms(
     quoted_expression qe,
     std::span<quoted_atomic const> pending_atoms);
 
+[[nodiscard]] inline quoted_expression
+optimize_duplicate_takeout_expressions(
+    quoted_expression expression);
+
 struct takeout_ministep_result {
     quoted_expression result;
     std::vector<quoted_expression> stages;
@@ -8306,13 +8310,29 @@ private:
                     trace << "\n= ";
                     ministeps.stages[stage].print_to(trace);
                 }
-                body = std::move(ministeps.result);
+                auto completed_takeout =
+                    std::move(ministeps.result);
+                auto optimized_takeout =
+                    optimize_duplicate_takeout_expressions(
+                        completed_takeout);
+                if (!same_parser_definition_expression(
+                        completed_takeout, optimized_takeout)) {
+                    trace << "\noptimize: ";
+                    completed_takeout.print_to(trace);
+                    trace << " -> ";
+                    optimized_takeout.print_to(trace);
+                }
+                body = std::move(optimized_takeout);
                 first_trace_line = false;
             } else {
-                body = takeout_with_pending_atoms(
-                    takeout_symbol,
-                    std::move(body),
-                    pending_atoms);
+                auto completed_takeout =
+                    takeout_with_pending_atoms(
+                        takeout_symbol,
+                        std::move(body),
+                        pending_atoms);
+                auto optimized_takeout =
+                    optimize_duplicate_takeout_expressions(
+                        completed_takeout);
                 if (show_steps) {
                     if (!first_trace_line) {
                         trace << '\n';
@@ -8321,9 +8341,18 @@ private:
                           << " from ";
                     before_takeout.print_to(trace);
                     trace << ": ";
-                    body.print_to(trace);
+                    completed_takeout.print_to(trace);
+                    if (!same_parser_definition_expression(
+                            completed_takeout,
+                            optimized_takeout)) {
+                        trace << "\noptimize: ";
+                        completed_takeout.print_to(trace);
+                        trace << " -> ";
+                        optimized_takeout.print_to(trace);
+                    }
                     first_trace_line = false;
                 }
+                body = std::move(optimized_takeout);
             }
         }
 
@@ -8472,6 +8501,8 @@ private:
                 quoted_atomic{symbol(*symbol_position)},
                 std::move(body),
                 pending_atoms);
+            body = optimize_duplicate_takeout_expressions(
+                std::move(body));
         }
 
         if (contains_quoted_atom(recursive_function, body)) {
@@ -8480,6 +8511,8 @@ private:
                 quoted_atomic{recursive_function},
                 std::move(body),
                 pending_atoms);
+            body = optimize_duplicate_takeout_expressions(
+                std::move(body));
             body = optimize_final_takeout(
                 quote(Y)(optimize_final_takeout(
                     std::move(body))));
@@ -10340,6 +10373,94 @@ namespace detail {
            contains_quoted_atom(
                pending_atoms.back().expression(),
                expression);
+}
+
+[[nodiscard]] inline quoted_application_node const*
+takeout_application(
+    quoted_expression const& expression) noexcept {
+    auto const& root = quoted_access::root(expression);
+    if (root->kind() != quoted_node_kind::application) {
+        return nullptr;
+    }
+    return std::addressof(
+        static_cast<quoted_application_node const&>(*root));
+}
+
+[[nodiscard]] inline quoted_expression
+optimize_duplicate_takeout_expressions(
+    quoted_expression expression) {
+    auto const* outer = takeout_application(expression);
+    if (outer == nullptr) {
+        return expression;
+    }
+
+    auto optimize = [](quoted_expression child) {
+        return optimize_duplicate_takeout_expressions(
+            std::move(child));
+    };
+    auto same = [](quoted_expression const& left,
+                   quoted_expression const& right) {
+        return same_parser_definition_expression(left, right);
+    };
+
+    // Match the original root in this exact order before descending.  A
+    // matched rule recursively optimizes only its captured operands; its new
+    // combinator skeleton is not reconsidered during the same pass.
+    auto const* left = takeout_application(outer->function());
+    if (left != nullptr) {
+        if (same(left->function(), outer->argument())) {
+            return quote(N)(
+                optimize(left->function()))(
+                optimize(left->argument()));
+        }
+        if (same(left->argument(), outer->argument())) {
+            return quote(W)(
+                optimize(left->function()))(
+                optimize(left->argument()));
+        }
+    }
+
+    auto const* right = takeout_application(outer->argument());
+    if (right != nullptr) {
+        if (same(outer->function(), right->argument())) {
+            return quote(O)(
+                optimize(right->function()))(
+                optimize(outer->function()));
+        }
+        if (same(outer->function(), right->function())) {
+            return quote(Z)(
+                optimize(outer->function()))(
+                optimize(right->argument()));
+        }
+        if (same(right->function(), right->argument())) {
+            return quote(L)(
+                optimize(outer->function()))(
+                optimize(right->function()));
+        }
+    }
+
+    if (left != nullptr && right != nullptr &&
+        same(left->argument(), right->argument())) {
+        return quote(S)(
+            optimize(left->function()))(
+            optimize(right->function()))(
+            optimize(left->argument()));
+    }
+
+    if (same(outer->function(), outer->argument())) {
+        return quote(M)(optimize(outer->function()));
+    }
+
+    auto function = optimize(outer->function());
+    auto argument = optimize(outer->argument());
+    if (quoted_access::root(function) ==
+            quoted_access::root(outer->function()) &&
+        quoted_access::root(argument) ==
+            quoted_access::root(outer->argument())) {
+        return expression;
+    }
+    return make_quoted_application(
+        std::move(function), std::move(argument));
 }
 
 [[nodiscard]] inline quoted_expression
