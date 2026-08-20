@@ -3385,6 +3385,36 @@ int main() {
          "optimize: CBB -> WCB\n"
          "optimize: WC -> N\n"
          "?=NB");
+    test("abstract repeatedly rescans duplicate-normalized takeout",
+         parse("abstract ?xy = xxxy"),
+         "?=WN");
+    test("abstract steps traces each duplicate optimizer rescan",
+         parse("abstract steps ?xy = xxxy"),
+         "takeout y from xxxy: xxx\n"
+         "optimize: xxx -> Nxx\n"
+         "optimize: Nxx -> WNx\n"
+         "takeout x from WNx: WN\n"
+         "?=WN");
+    test("abstract ministeps rescans only after the completed takeout",
+         parse("abstract ministeps ?xy = xxxy"),
+         "takeout y from xxxy: xxx\n"
+         "optimize: xxx -> Nxx\n"
+         "optimize: Nxx -> WNx\n"
+         "takeout x from WNx: WN\n"
+         "?=WN");
+    test("abstract repeatedly rescans nested duplicate expressions",
+         parse("abstract steps ?y = p(xxxy)"),
+         "takeout y from p(xxxy): Bp(xxx)\n"
+         "optimize: Bp(xxx) -> Bp(Nxx)\n"
+         "optimize: Bp(Nxx) -> Bp(WNx)\n"
+         "?=Bp(WNx)");
+    test("abstract steps stops after tracing a repeated cycle state",
+         parse("abstract steps ?y = NNMy"),
+         "takeout y from NNMy: NNM\n"
+         "optimize: NNM -> MNM\n"
+         "optimize: MNM -> NMN\n"
+         "optimize: NMN -> NNM\n"
+         "?=NNM");
     test("abstract duplicate pass feeds the next reverse takeout",
          parse("abstract ?xy = ya(ya)"),
          "?=K(WS(Ta))");
@@ -3466,6 +3496,19 @@ int main() {
          parse("define DupRec = DupRec a(DupRec a)"), "DupRec");
     test("show exposes duplicate-normalized recursive-name body",
          parse("show DupRec"), "arity:0 Y(WS(Ta))");
+    test("define repeatedly rescans duplicate-normalized takeout",
+         parse("define DupRescan xy = xxxy"), "DupRescan");
+    test("show exposes repeatedly normalized define body",
+         parse("show DupRescan"), "arity:2 WN");
+    test("repeatedly normalized define preserves its applied behavior",
+         [] {
+             auto normalized = combdsl::detail::normalize_for_compare(
+                 parse("DupRescan a b"));
+             if (normalized) {
+                 normalized->print_to(std::cout);
+             }
+         },
+         "aaab");
 
     test("define infers arity from its symbols",
          parse("define Def3 xyz = xyz"), "Def3");
@@ -5490,65 +5533,67 @@ int main() {
     const auto duplicate_compound_b = quote(d)(quote(e)(f));
     const auto duplicate_compound_a1 = quote(g)(quote(h)(i));
     const auto duplicate_compound_a2 = quote(j)(quote(k)(l));
-    auto optimize_duplicate_takeout = [](combdsl::quoted_expression value) {
-        return combdsl::detail::
-            optimize_duplicate_takeout_expressions(std::move(value));
-    };
+    auto optimize_duplicate_takeout_once =
+        [](combdsl::quoted_expression value) {
+            return combdsl::detail::
+                optimize_duplicate_takeout_expressions_once(
+                    std::move(value));
+        };
     test("duplicate takeout generalizes Nightingale over compounds",
-         optimize_duplicate_takeout(
+         optimize_duplicate_takeout_once(
              duplicate_compound_a(duplicate_compound_b)(
                  duplicate_compound_a)),
          "N(a(bc))(d(ef))");
     test("duplicate takeout generalizes Warbler over compounds",
-         optimize_duplicate_takeout(
+         optimize_duplicate_takeout_once(
              duplicate_compound_a(duplicate_compound_b)(
                  duplicate_compound_b)),
          "W(a(bc))(d(ef))");
     test("duplicate takeout generalizes Owl over compounds",
-         optimize_duplicate_takeout(
+         optimize_duplicate_takeout_once(
              duplicate_compound_a(
                  duplicate_compound_b(duplicate_compound_a))),
          "O(d(ef))(a(bc))");
     test("duplicate takeout generalizes Zazu over compounds",
-         optimize_duplicate_takeout(
+         optimize_duplicate_takeout_once(
              duplicate_compound_a(
                  duplicate_compound_a(duplicate_compound_b))),
          "Z(a(bc))(d(ef))");
     test("duplicate takeout generalizes Lark over compounds",
-         optimize_duplicate_takeout(
+         optimize_duplicate_takeout_once(
              duplicate_compound_a(
                  duplicate_compound_b(duplicate_compound_b))),
          "L(a(bc))(d(ef))");
     test("duplicate takeout generalizes Starling over compounds",
-         optimize_duplicate_takeout(
+         optimize_duplicate_takeout_once(
              duplicate_compound_a1(duplicate_compound_a)(
                  duplicate_compound_a2(duplicate_compound_a))),
          "S(g(hi))(j(kl))(a(bc))");
     test("duplicate takeout falls back to Mockingbird after specific rules",
-         optimize_duplicate_takeout(quote(a)(a)),
+         optimize_duplicate_takeout_once(quote(a)(a)),
          "Ma");
     test("duplicate takeout gives Starling precedence for equal compounds",
-         optimize_duplicate_takeout(
+         optimize_duplicate_takeout_once(
              duplicate_compound_a(duplicate_compound_a)),
          "Saa(bc)");
     test("duplicate takeout gives Nightingale top-down precedence",
-         optimize_duplicate_takeout(
+         optimize_duplicate_takeout_once(
              duplicate_compound_a(duplicate_compound_a)(
                  duplicate_compound_a)),
          "N(a(bc))(a(bc))");
     test("duplicate takeout gives Owl precedence over Zazu and Lark",
-         optimize_duplicate_takeout(
+         optimize_duplicate_takeout_once(
              duplicate_compound_a(
                  duplicate_compound_a(duplicate_compound_a))),
          "O(a(bc))(a(bc))");
     test("duplicate takeout gives Lark precedence and recurses "
          "into its capture",
-         optimize_duplicate_takeout(
+         optimize_duplicate_takeout_once(
              duplicate_compound_a(duplicate_compound_a)(
                  duplicate_compound_a(duplicate_compound_a))),
          "L(Saa(bc))(a(bc))");
     test("duplicate takeout performs one top-down pass without a fixed point",
-         optimize_duplicate_takeout(quote(N)(N)(M)),
+         optimize_duplicate_takeout_once(quote(N)(N)(M)),
          "MNM");
     const auto duplicate_inner_n =
         duplicate_compound_a(duplicate_compound_b)(
@@ -5557,18 +5602,88 @@ int main() {
         duplicate_compound_a(duplicate_compound_b)(
             duplicate_compound_b);
     test("duplicate takeout recursively optimizes captured operands",
-         optimize_duplicate_takeout(
+         optimize_duplicate_takeout_once(
              duplicate_inner_n(duplicate_inner_w)(duplicate_inner_n)),
          "N(N(a(bc))(d(ef)))(W(a(bc))(d(ef)))");
     test("duplicate takeout descends when the root has no match",
-         optimize_duplicate_takeout(
+         optimize_duplicate_takeout_once(
              quote(p)(duplicate_inner_n)(duplicate_inner_w)),
          "p(N(a(bc))(d(ef)))(W(a(bc))(d(ef)))");
     test("duplicate takeout compares separately built compounds structurally",
-         optimize_duplicate_takeout(
+         optimize_duplicate_takeout_once(
              quote(a)(quote(b)(c))(duplicate_compound_b)(
                  quote(a)(quote(b)(c)))),
          "N(a(bc))(d(ef))");
+    auto optimize_duplicate_takeout = [](combdsl::quoted_expression value) {
+        return combdsl::detail::
+            optimize_duplicate_takeout_expressions(std::move(value));
+    };
+    test("duplicate takeout rescans newly generated bird skeletons",
+         optimize_duplicate_takeout(quote(x)(x)(x)),
+         "WNx");
+    test("duplicate takeout stage scan omits a stable no-op",
+         [] {
+             auto optimized = combdsl::detail::
+                 optimize_duplicate_takeout_expression_stages(
+                     quote(p)(q));
+             optimized.result.print_to(std::cout);
+             std::cout << ' ' << optimized.stages.size();
+         },
+         "pq 0");
+    test("duplicate takeout stage scan omits a matching structural no-op",
+         [] {
+             auto optimized = combdsl::detail::
+                 optimize_duplicate_takeout_expression_stages(
+                     quote(N)(N)(N));
+             optimized.result.print_to(std::cout);
+             std::cout << ' ' << optimized.stages.size();
+         },
+         "NNN 0");
+    test("duplicate takeout rescans nested duplicate expressions",
+         [] {
+             auto optimized = combdsl::detail::
+                 optimize_duplicate_takeout_expression_stages(
+                     quote(p)(quote(x)(x)(x)));
+             optimized.result.print_to(std::cout);
+             std::cout << ' ' << optimized.stages.size();
+             for (auto const& stage : optimized.stages) {
+                 std::cout << '\n';
+                 stage.print_to(std::cout);
+             }
+         },
+         "p(WNx) 2\n"
+         "p(Nxx)\n"
+         "p(WNx)");
+    test("duplicate takeout aggregates disjoint rewrites into one stage",
+         [] {
+             auto optimized = combdsl::detail::
+                 optimize_duplicate_takeout_expression_stages(
+                     quote(p)(quote(a)(b)(a))(
+                         quote(c)(d)(d)));
+             std::cout << optimized.stages.size();
+             for (auto const& stage : optimized.stages) {
+                 std::cout << '\n';
+                 stage.print_to(std::cout);
+             }
+         },
+         "1\n"
+         "p(Nab)(Wcd)");
+    test("duplicate takeout stops after recording a repeated cycle state",
+         [] {
+             auto optimized = combdsl::detail::
+                 optimize_duplicate_takeout_expression_stages(
+                     quote(N)(N)(M));
+             optimized.result.print_to(std::cout);
+             std::cout << ' ' << optimized.stages.size();
+             for (auto const& stage : optimized.stages) {
+                 std::cout << '\n';
+                 stage.print_to(std::cout);
+             }
+         },
+         "NNM 3\n"
+         "MNM\n"
+         "NMN\n"
+         "NNM");
     struct duplicate_takeout_parity_case {
         std::string_view rule;
         combdsl::quoted_expression original;
@@ -5636,6 +5751,29 @@ int main() {
          "S[takeout x from xa][takeout x from xa]\n"
          "S(Ta)[takeout x from xa]\n"
          "S(Ta)(Ta)");
+    const auto raw_repeated_duplicate_source =
+        quote(x)(x)(x)(y);
+    test("public takeout does not run repeated duplicate rescans",
+         takeout(quoted_atomic{y}, raw_repeated_duplicate_source),
+         "xxx");
+    test("contextual takeout does not run repeated duplicate rescans",
+         combdsl::detail::takeout_with_pending_atoms(
+             quoted_atomic{y}, raw_repeated_duplicate_source, {}),
+         "xxx");
+    test("ministep takeout keeps a repeated-rescan candidate raw",
+         [&] {
+             auto result = combdsl::detail::
+                 takeout_with_pending_atoms_ministeps(
+                     quoted_atomic{y}, raw_repeated_duplicate_source, {});
+             result.result.print_to(std::cout);
+             std::cout << ' ' << result.stages.size();
+             for (auto const& stage : result.stages) {
+                 std::cout << '\n';
+                 stage.print_to(std::cout);
+             }
+         },
+         "xxx 1\n"
+         "xxx");
     test("takeout equal symbol",
          takeout(quoted_atomic{x}, quote(x)), "I");
     test("takeout separately parsed equal symbol",
@@ -6182,7 +6320,7 @@ int main() {
     const auto duplicate_xy_subexpression_match =
         combdsl::search_for_xy_subexp(
             quote(B)(K)(quote(S)(M)(M)));
-    test("xy subexpression search keeps duplicate takeout raw",
+    test("xy subexpression search keeps repeated duplicate takeout raw",
          [&] {
              if (duplicate_xy_subexpression_match) {
                  duplicate_xy_subexpression_match->takeout_result();

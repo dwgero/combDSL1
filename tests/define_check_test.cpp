@@ -107,6 +107,18 @@ int main() {
         quoted_atomic{v},
     };
     constexpr std::string_view symbol_names = "xyzwv";
+    constexpr std::array optimized_body_expectations{
+        std::pair{std::string_view{"C**"}, std::string_view{"ZBC"}},
+        std::pair{std::string_view{"D"}, std::string_view{"MB"}},
+        std::pair{std::string_view{"E"}, std::string_view{"OZB"}},
+        std::pair{std::string_view{"G"}, std::string_view{"MBC"}},
+        std::pair{
+            std::string_view{"J"},
+            std::string_view{"S(MB(BQC))(MB)"}},
+        std::pair{std::string_view{"Q1"}, std::string_view{"NB(QT)"}},
+        std::pair{std::string_view{"U"}, std::string_view{"LO"}},
+        std::pair{std::string_view{"W**"}, std::string_view{"ZBW"}},
+    };
 
     std::size_t failures = 0;
     for (auto const& bird : birds) {
@@ -146,6 +158,52 @@ int main() {
             " = " + expression_string(*normalized);
         auto const defined = parse(command);
         auto const defined_body = as_basis(defined).body();
+
+        auto expected_optimized_body = std::string_view{};
+        for (auto const& [name, body] :
+             optimized_body_expectations) {
+            if (name == bird_basis.name()) {
+                expected_optimized_body = body;
+                break;
+            }
+        }
+        if (!expected_optimized_body.empty()) {
+            auto const actual_body = expression_string(defined_body);
+            if (actual_body != expected_optimized_body) {
+                std::cerr << "FAILED: " << bird_basis.name()
+                          << " produced " << actual_body
+                          << "; expected optimized body "
+                          << expected_optimized_body << '\n';
+                ++failures;
+                continue;
+            }
+
+            auto optimized_semantics = defined_body;
+            auto original_semantics = bird;
+            for (std::size_t index = 0;
+                 index < bird_basis.arity();
+                 ++index) {
+                optimized_semantics = optimized_semantics(
+                    arguments[index].expression());
+                original_semantics = original_semantics(
+                    arguments[index].expression());
+            }
+            auto optimized_normalized =
+                detail::normalize_for_compare(
+                    std::move(optimized_semantics));
+            auto original_normalized =
+                detail::normalize_for_compare(
+                    std::move(original_semantics));
+            if (!optimized_normalized || !original_normalized ||
+                !detail::same_parser_definition_expression(
+                    *optimized_normalized,
+                    *original_normalized)) {
+                std::cerr << "FAILED: " << bird_basis.name()
+                          << " optimized body changed semantics\n";
+                ++failures;
+            }
+            continue;
+        }
 
         if (detail::same_parser_definition_expression(
                 defined_body, bird)) {

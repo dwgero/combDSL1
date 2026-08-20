@@ -1018,7 +1018,7 @@ test("built Studio Wasm parses and reloads directly quoted strings",
         }
     });
 
-test("built Studio Wasm applies duplicate takeout at parser boundaries",
+test("built Studio Wasm repeatedly rescans duplicate takeout at parser boundaries",
     async () => {
         const module = await loadBuiltCombdslModule();
         let requestId = 380;
@@ -1036,6 +1036,49 @@ test("built Studio Wasm applies duplicate takeout at parser boundaries",
             "optimize: CBB -> WCB\n" +
             "optimize: WC -> N\n" +
             "?=NB\n",
+        );
+
+        const rescannedSteps = module.beginLimitedEval(
+            "abstract steps ?xy = xxxy",
+            ++requestId,
+            1000,
+            false,
+        );
+        assert.equal(
+            rescannedSteps.success, true, rescannedSteps.error);
+        assert.equal(
+            rescannedSteps.output,
+            "takeout y from xxxy: xxx\n" +
+            "optimize: xxx -> Nxx\n" +
+            "optimize: Nxx -> WNx\n" +
+            "takeout x from WNx: WN\n" +
+            "?=WN\n",
+        );
+
+        const rescannedPlain = module.parseEval(
+            "abstract ?xy = xxxy", ++requestId, false, 0);
+        assert.equal(
+            rescannedPlain.success, true, rescannedPlain.error);
+        assert.equal(rescannedPlain.output, "?=WN\n");
+
+        const rescannedMinisteps = module.parseEval(
+            "abstract ministeps ?xy = xxxy",
+            ++requestId,
+            false,
+            0,
+        );
+        assert.equal(
+            rescannedMinisteps.success,
+            true,
+            rescannedMinisteps.error,
+        );
+        assert.equal(
+            rescannedMinisteps.output,
+            "takeout y from xxxy: xxx\n" +
+            "optimize: xxx -> Nxx\n" +
+            "optimize: Nxx -> WNx\n" +
+            "takeout x from WNx: WN\n" +
+            "?=WN\n",
         );
 
         const ministeps = module.parseEval(
@@ -1075,6 +1118,32 @@ test("built Studio Wasm applies duplicate takeout at parser boundaries",
             "WasmDup b", ++requestId, false, 0);
         assert.equal(applied.success, true, applied.error);
         assert.equal(applied.output, "ba(ba)\n");
+
+        const rescannedDefinition = module.beginLimitedEval(
+            "define WasmRescan xy = xxxy",
+            ++requestId,
+            1000,
+            false,
+        );
+        assert.equal(
+            rescannedDefinition.success,
+            true,
+            rescannedDefinition.error,
+        );
+        assert.equal(rescannedDefinition.definition, true);
+        assert.equal(rescannedDefinition.output, "");
+
+        const rescannedShown = module.parseEval(
+            "show WasmRescan", ++requestId, false, 0);
+        assert.equal(
+            rescannedShown.success, true, rescannedShown.error);
+        assert.equal(rescannedShown.output, "arity:2 WN\n");
+
+        const rescannedApplied = module.parseEval(
+            "WasmRescan a b", ++requestId, false, 0);
+        assert.equal(
+            rescannedApplied.success, true, rescannedApplied.error);
+        assert.equal(rescannedApplied.output, "aaab\n");
     });
 
 test("built Studio Wasm rejects integer basis names without mutation",

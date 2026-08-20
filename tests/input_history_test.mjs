@@ -425,11 +425,19 @@ test("documents ordered post-takeout duplicate optimization in Studio", () => {
     }
     assert.match(html, /Every placeholder may be an arbitrary combinator expression/);
     assert.match(html, /occurrences bearing the same placeholder must be structurally/);
-    assert.match(html, /generated bird skeleton is not reconsidered during that pass/);
+    assert.match(
+        html,
+        /generated bird\s+skeleton is reconsidered only on the next whole-expression scan/);
+    assert.match(
+        html,
+        /Rescanning stops when a scan makes no structural change or produces\s+a structurally repeated state/);
     assert.match(html, /Individual Ministeps stages stay raw/);
     assert.match(
         html,
-        /completed result is followed by one\s+<code>optimize: raw -&gt; optimized<\/code>/);
+        /one\s+<code>optimize: &lt;before&gt; -&gt; &lt;after&gt;<\/code> line for\s+every changed whole-expression scan/);
+    assert.match(
+        html,
+        /<code>abstract steps \?xy = xxxy<\/code> prints\s+<code>optimize: xxx -&gt; Nxx<\/code>, then\s+<code>optimize: Nxx -&gt; WNx<\/code>/);
 });
 
 test("completes unambiguous abstract command forms", () => {

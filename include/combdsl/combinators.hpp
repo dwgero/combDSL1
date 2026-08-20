@@ -2924,6 +2924,15 @@ takeout_with_pending_atoms(
     quoted_expression qe,
     std::span<quoted_atomic const> pending_atoms);
 
+struct duplicate_takeout_optimization_result {
+    quoted_expression result;
+    std::vector<quoted_expression> stages;
+};
+
+[[nodiscard]] inline duplicate_takeout_optimization_result
+optimize_duplicate_takeout_expression_stages(
+    quoted_expression expression);
+
 [[nodiscard]] inline quoted_expression
 optimize_duplicate_takeout_expressions(
     quoted_expression expression);
@@ -8312,17 +8321,19 @@ private:
                 }
                 auto completed_takeout =
                     std::move(ministeps.result);
-                auto optimized_takeout =
-                    optimize_duplicate_takeout_expressions(
+                auto duplicate_optimization =
+                    optimize_duplicate_takeout_expression_stages(
                         completed_takeout);
-                if (!same_parser_definition_expression(
-                        completed_takeout, optimized_takeout)) {
+                auto previous_stage = completed_takeout;
+                for (auto const& stage :
+                     duplicate_optimization.stages) {
                     trace << "\noptimize: ";
-                    completed_takeout.print_to(trace);
+                    previous_stage.print_to(trace);
                     trace << " -> ";
-                    optimized_takeout.print_to(trace);
+                    stage.print_to(trace);
+                    previous_stage = stage;
                 }
-                body = std::move(optimized_takeout);
+                body = std::move(duplicate_optimization.result);
                 first_trace_line = false;
             } else {
                 auto completed_takeout =
@@ -8330,8 +8341,8 @@ private:
                         takeout_symbol,
                         std::move(body),
                         pending_atoms);
-                auto optimized_takeout =
-                    optimize_duplicate_takeout_expressions(
+                auto duplicate_optimization =
+                    optimize_duplicate_takeout_expression_stages(
                         completed_takeout);
                 if (show_steps) {
                     if (!first_trace_line) {
@@ -8342,17 +8353,18 @@ private:
                     before_takeout.print_to(trace);
                     trace << ": ";
                     completed_takeout.print_to(trace);
-                    if (!same_parser_definition_expression(
-                            completed_takeout,
-                            optimized_takeout)) {
+                    auto previous_stage = completed_takeout;
+                    for (auto const& stage :
+                         duplicate_optimization.stages) {
                         trace << "\noptimize: ";
-                        completed_takeout.print_to(trace);
+                        previous_stage.print_to(trace);
                         trace << " -> ";
-                        optimized_takeout.print_to(trace);
+                        stage.print_to(trace);
+                        previous_stage = stage;
                     }
                     first_trace_line = false;
                 }
-                body = std::move(optimized_takeout);
+                body = std::move(duplicate_optimization.result);
             }
         }
 
@@ -10387,7 +10399,7 @@ takeout_application(
 }
 
 [[nodiscard]] inline quoted_expression
-optimize_duplicate_takeout_expressions(
+optimize_duplicate_takeout_expressions_once(
     quoted_expression expression) {
     auto const* outer = takeout_application(expression);
     if (outer == nullptr) {
@@ -10395,7 +10407,7 @@ optimize_duplicate_takeout_expressions(
     }
 
     auto optimize = [](quoted_expression child) {
-        return optimize_duplicate_takeout_expressions(
+        return optimize_duplicate_takeout_expressions_once(
             std::move(child));
     };
     auto same = [](quoted_expression const& left,
@@ -10461,6 +10473,51 @@ optimize_duplicate_takeout_expressions(
     }
     return make_quoted_application(
         std::move(function), std::move(argument));
+}
+
+[[nodiscard]] inline duplicate_takeout_optimization_result
+optimize_duplicate_takeout_expression_stages(
+    quoted_expression expression) {
+    std::vector<quoted_expression> seen;
+    seen.push_back(expression);
+
+    std::vector<quoted_expression> stages;
+    // Every rule is node-count non-increasing and introduces only one of the
+    // fixed bird atoms, so rescanning must reach either a stable structure or
+    // a structure already present in this finite sequence.
+    while (true) {
+        auto next = optimize_duplicate_takeout_expressions_once(
+            expression);
+        if (same_parser_definition_expression(expression, next)) {
+            return {
+                std::move(expression),
+                std::move(stages),
+            };
+        }
+
+        stages.push_back(next);
+        auto const repeated = std::ranges::any_of(
+            seen,
+            [&](quoted_expression const& prior) {
+                return same_parser_definition_expression(
+                    prior, next);
+            });
+        expression = std::move(next);
+        if (repeated) {
+            return {
+                std::move(expression),
+                std::move(stages),
+            };
+        }
+        seen.push_back(expression);
+    }
+}
+
+[[nodiscard]] inline quoted_expression
+optimize_duplicate_takeout_expressions(
+    quoted_expression expression) {
+    return optimize_duplicate_takeout_expression_stages(
+        std::move(expression)).result;
 }
 
 [[nodiscard]] inline quoted_expression

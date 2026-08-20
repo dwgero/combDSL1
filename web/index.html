@@ -388,9 +388,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             color: #c33;
         }
     </style>
-    <script src="./evaluation_watchdog.js?v=2.14.0" defer></script>
-    <script src="./input_history.js?v=2.14.0" defer></script>
-    <script src="./app.js?v=2.14.0" defer></script>
+    <script src="./evaluation_watchdog.js?v=2.14.1" defer></script>
+    <script src="./input_history.js?v=2.14.1" defer></script>
+    <script src="./app.js?v=2.14.1" defer></script>
 </head>
 <body>
     <main aria-labelledby="studio-title">
@@ -901,8 +901,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             displays <code>= Ox</code>, <code>takeout x from Ox: O</code>,
             and <code>?=O</code>.
             Unchanged preprocessing and optimization passes are omitted.
-            After each complete takeout, Define and Abstract optimize duplicate
-            subexpressions in this order:
+            After each complete takeout, Define and Abstract repeatedly rescan
+            the whole result for duplicate subexpressions. Each scan is
+            top-down. At each node, the first matching rule in this order wins:
             <code>A B A -&gt; N A B</code>;
             <code>A B B -&gt; W A B</code>;
             <code>A (B A) -&gt; O B A</code>;
@@ -915,11 +916,18 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             identical. Because <code>M</code> is the final fallback,
             <code>(F X) (F X)</code> matches the earlier <code>S</code> rule
             and becomes <code>S F F X</code>, not <code>M(F X)</code>.
-            The generated bird skeleton is not reconsidered during that pass.
-            Individual Ministeps stages stay raw; a changed
-            completed result is followed by one
-            <code>optimize: raw -&gt; optimized</code> line before the next
-            takeout or final <code>?=</code> result.
+            Captured operands are scanned recursively, while a generated bird
+            skeleton is reconsidered only on the next whole-expression scan.
+            Rescanning stops when a scan makes no structural change or produces
+            a structurally repeated state; the repeated state is retained.
+            Individual Ministeps stages stay raw. Steps and Ministeps print one
+            <code>optimize: &lt;before&gt; -&gt; &lt;after&gt;</code> line for
+            every changed whole-expression scan, including the transition into
+            a repeated terminal state; an unchanged terminating scan is
+            omitted. For example,
+            <code>abstract steps ?xy = xxxy</code> prints
+            <code>optimize: xxx -&gt; Nxx</code>, then
+            <code>optimize: Nxx -&gt; WNx</code>.
         </div>
         <h2 class="help-subheading">Finding Combinators</h2>
         <div class="help-section">
@@ -1118,7 +1126,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             data-dialog-initial-focus>About</h2>
         <div class="license-text">
             <!-- Keep this version and the app.js cache key in sync. -->
-            <p>Combinator Studio, version 2.14.0<br>
+            <p>Combinator Studio, version 2.14.1<br>
                 Part of the C++ Combinator DSL<br>
                 Copyright (C) 2026  David W. Gero</p>
             <p>This program is free software: you can redistribute it and/or modify

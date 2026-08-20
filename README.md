@@ -545,9 +545,9 @@ expression is `B`. If this preprocessing repeats an expression or exceeds its
 reduction limit, `define` safely abstracts the original body instead.
 
 After each complete `takeout` pass, and before taking out the next symbol,
-`define` and `abstract` optimize duplicate subexpressions throughout the
-result. At each original application root, the first matching rule in this
-order wins:
+`define` and `abstract` repeatedly rescan the whole result for duplicate
+subexpressions. Each scan is top-down. At each node, the first matching rule in
+this order wins:
 
 ```text
 A B A         -> N A B
@@ -560,14 +560,16 @@ A A           -> M A
 ```
 
 `A`, `B`, `A1`, and `A2` may each be an arbitrary combinator expression, and
-occurrences bearing the same placeholder must be structurally identical. The
-pass descends into captured operands, but it does not reconsider the new
-`N`/`W`/`O`/`Z`/`L`/`S`/`M` skeleton during that same pass. The final `M` rule
-is therefore only a fallback after the six more specific shapes; for example,
-`(F X) (F X)` matches the earlier `S` rule and becomes `S F F X`, not
-`M(F X)`. This pass is part of `define` and `abstract`; the low-level
-`takeout()` and `search_for_*_subexp()` APIs continue to expose their raw
-takeout results.
+occurrences bearing the same placeholder must be structurally identical.
+Captured operands are scanned recursively, while a generated
+`N`/`W`/`O`/`Z`/`L`/`S`/`M` skeleton is reconsidered only on the next
+whole-expression scan. Rescanning stops when a scan makes no structural change
+or produces a structurally repeated state; the repeated state is retained.
+The final `M` rule is therefore only a fallback after the six more specific
+shapes; for example, `(F X) (F X)` matches the earlier `S` rule and becomes
+`S F F X`, not `M(F X)`. This pass is part of `define` and `abstract`; the
+low-level `takeout()` and `search_for_*_subexp()` APIs continue to expose their
+raw takeout results.
 
 At the start of a line, preceded by optional whitespace,
 `abstract [steps | ministeps] ?symbol_list = combinator_expression` performs
@@ -589,9 +591,13 @@ then printed on a new line beginning with `= `. Thus,
 `takeout y from y(xy): O[takeout y from xy]`, then prints `= Ox`,
 `takeout x from Ox: O`, and `?=O`. Unchanged preprocessing and optimization
 passes are omitted. Duplicate optimization is performed only after a complete
-takeout: individual ministep lines remain raw, and a changed completed result
-is followed by one `optimize: <raw> -> <optimized>` line before it becomes the
-input to the next takeout or the final `?=` result.
+takeout: individual ministep lines remain raw, and every changed
+whole-expression scan is followed by one
+`optimize: <before> -> <after>` line before the next scan, takeout, or final
+`?=` result. For example, `abstract steps ?xy = xxxy` prints
+`optimize: xxx -> Nxx`, then `optimize: Nxx -> WNx`. The unchanged
+terminating scan is omitted; a transition into a repeated terminal state is
+shown.
 
 The names `abstract`, `all`, `among`, `captured`, `live`, `step`, `steps`,
 `ministeps`, `limit`, `set`, `define`, `show`, `remove`, `revisions`,
@@ -616,8 +622,9 @@ parse_eval("show Repeat");              // prints: arity:1 Y
 
 The resulting recursive transformation is
 `optimize(Y(optimize(duplicate(takeout(rec_func, previous_takeout_result)))))`,
-where `duplicate` is the ordered post-takeout pass above. For shapes that
-remain after those duplicate passes, the final optimization recursively
+where `duplicate` is the cycle-safe sequence of ordered post-takeout rescans
+above. For shapes that remain after those duplicate rescans, the final
+optimization recursively
 replaces `C*T` with `V`, `BDD` with `E`, `BOM`
 with `U`, `B(QT)R` with `F`, `B(QT)B` with `Q1`, `BT` with `Q3`, `BW` with
 `W*`, `B W*` with `W**`, `BC` with `C*`, `B C*` with `C**`, `YO` with `Y`,
@@ -1081,7 +1088,7 @@ using the same direct syntax for interactive input, piped input, and loaded
 journals. Piped input remains line-oriented, while journal loading can group a
 quoted string that spans multiple physical lines into one record.
 When standard output is a terminal, it first prints
-`Combinator Read-Eval-Print Loop, version 2.14.0`. Long evaluations display
+`Combinator Read-Eval-Print Loop, version 2.14.1`. Long evaluations display
 the accumulated step count every 1,000 reductions by overwriting one status
 line; the line is cleared before evaluation output is printed. Its interactive
 prompt is `>`. Interactive input uses GNU Readline, so previous nonempty
@@ -1223,12 +1230,14 @@ full expression on a new line beginning with `= `. For example,
 `takeout y from y(xy): O[takeout y from xy]`, then `= Ox`,
 `takeout x from Ox: O`, and `?=O`. The command does not evaluate its result
 and ignores the stepping and color modes. After each complete takeout,
-`abstract` applies the ordered duplicate rules `ABA -> NAB`, `ABB -> WAB`,
-`A(BA) -> OBA`, `A(AB) -> ZAB`, `A(BB) -> LAB`,
-`(A1 A)(A2 A) -> S A1 A2 A`, and finally `AA -> MA`; every placeholder may
-be a compound expression. Individual `ministeps` stages remain unoptimized;
-a changed completed result is shown on one `optimize:` line before the next
-takeout or final `?=` result.
+`abstract` repeatedly rescans the whole result using the ordered duplicate
+rules `ABA -> NAB`, `ABB -> WAB`, `A(BA) -> OBA`, `A(AB) -> ZAB`,
+`A(BB) -> LAB`, `(A1 A)(A2 A) -> S A1 A2 A`, and finally `AA -> MA`;
+every placeholder may be a compound expression. Rescanning stops when a scan
+is unchanged or reaches a structurally repeated state. Individual
+`ministeps` stages remain raw, while every changed whole-expression scan is
+shown on its own `optimize:` line before the next scan, takeout, or final
+`?=` result.
 Enter `define [captured | live] <name> [<symbol_list>] =
 <combinator_expression>` to create a named basis. Enter
 `set [captured | live] <name> = [arity] <combinator_expression>` to store an
