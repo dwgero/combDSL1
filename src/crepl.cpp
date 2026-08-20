@@ -66,7 +66,7 @@
 
 namespace {
 
-constexpr std::string_view crepl_version = "2.12.11";
+constexpr std::string_view crepl_version = "2.13.0";
 constexpr std::string_view no_further_reductions_message =
     "No further reductions";
 
