@@ -3505,6 +3505,52 @@ int main() {
          "optimize: BC -> C*\n"
          "optimize: C*T -> V\n"
          "?=V");
+    test("abstract rescans duplicate expressions after final optimization",
+         parse("abstract ?xy = yxxx"),
+         "?=HW1");
+    test("abstract steps traces the post-final duplicate rescan",
+         parse("abstract steps ?xy = yxxx"),
+         "takeout y from yxxx: C(C(Tx)x)x\n"
+         "takeout x from C(C(Tx)x)x: W(BC(W(BCT)))\n"
+         "optimize: BC -> C*\n"
+         "optimize: BC -> C*\n"
+         "optimize: C*T -> V\n"
+         "optimize: WV -> W1\n"
+         "optimize: W(C*W1) -> HW1\n"
+         "?=HW1");
+    test("abstract ministeps traces the post-final duplicate rescan",
+         parse("abstract ministeps ?xy = yxxx"),
+         "takeout y from yxxx: C[takeout y from yxx]x\n"
+         "= C(C[takeout y from yx]x)x\n"
+         "= C(C(Tx)x)x\n"
+         "takeout x from C(C(Tx)x)x: "
+         "W[takeout x from C(C(Tx)x)]\n"
+         "= W(BC[takeout x from C(Tx)x])\n"
+         "= W(BC(W[takeout x from C(Tx)]))\n"
+         "= W(BC(W(BC[takeout x from Tx])))\n"
+         "= W(BC(W(BCT)))\n"
+         "optimize: BC -> C*\n"
+         "optimize: BC -> C*\n"
+         "optimize: C*T -> V\n"
+         "optimize: WV -> W1\n"
+         "optimize: W(C*W1) -> HW1\n"
+         "?=HW1");
+    test("abstract alternates final named and structural optimization",
+         parse("abstract steps ?x = C(C*T)Vx"),
+         "preprocess: C(C*T)Vx -> C*TxV\n"
+         "takeout x from C*TxV: C(C*T)V\n"
+         "optimize: C*T -> V\n"
+         "optimize: CVV -> WCV\n"
+         "optimize: WC -> N\n"
+         "?=NV");
+    test("abstract final-phase cycle trace stops at its first repeat",
+         parse("abstract steps ?x = WCNMx"),
+         "takeout x from WCNMx: WCNM\n"
+         "optimize: WC -> N\n"
+         "optimize: NNM -> MNM\n"
+         "optimize: MNM -> NMN\n"
+         "optimize: NMN -> NNM\n"
+         "?=NNM");
 
     test("define applies duplicate normalization at its symbol boundary",
          parse("define DupRuleW x = xa(xa)"), "DupRuleW");
@@ -3536,6 +3582,21 @@ int main() {
              }
          },
          "aaab");
+    test("define rescans duplicate expressions after final optimization",
+         parse("define FinalDupRescan xy = yxxx"),
+         "FinalDupRescan");
+    test("show exposes the post-final duplicate-rescanned define body",
+         parse("show FinalDupRescan"),
+         "arity:2 HW1");
+    test("post-final duplicate-rescanned define preserves behavior",
+         [] {
+             auto normalized = combdsl::detail::normalize_for_compare(
+                 parse("FinalDupRescan a b"));
+             if (normalized) {
+                 normalized->print_to(std::cout);
+             }
+         },
+         "baaa");
     test("define applies the H optimizer at its symbol boundary",
          parse("define DupH x = C*Bxx"), "DupH");
     test("show exposes the H-optimized define body",

@@ -601,7 +601,11 @@ whole-expression scan is followed by one
 terminating scan is omitted; a transition into a repeated terminal state is
 shown. The new leading rule is visible in
 `abstract steps ?x = C*Hxx`: after takeout produces `W(C*H)`, the optimizer
-prints `W(C*H) -> HH`, then rescans and prints `HH -> MH`.
+prints `W(C*H) -> HH`, then rescans and prints `HH -> MH`. After the final
+named-bird substitutions, the ordered whole-expression scan runs again whenever
+that named pass changed the result; the two phases alternate until a named pass
+is unchanged. Thus, `abstract steps ?xy = yxxx` ends with
+`optimize: WV -> W1`, then `optimize: W(C*W1) -> HW1`, and `?=HW1`.
 
 The names `abstract`, `all`, `among`, `captured`, `live`, `step`, `steps`,
 `ministeps`, `limit`, `set`, `define`, `show`, `remove`, `revisions`,
@@ -625,10 +629,10 @@ parse_eval("show Repeat");              // prints: arity:1 Y
 ```
 
 The resulting recursive transformation is
-`optimize(Y(optimize(rescan(takeout(rec_func, previous_takeout_result)))))`,
-where `rescan` is the cycle-safe sequence of ordered post-takeout optimization
-scans above. For shapes that remain after those rescans, the final
-optimization recursively
+`settle(Y(rescan(takeout(rec_func, previous_takeout_result))))`, where
+`rescan` is the cycle-safe sequence of ordered post-takeout scans above and
+`settle` alternates the final named-bird pass with another ordered rescan until
+the named pass is unchanged. The named-bird pass recursively
 replaces `C*T` with `V`, `BDD` with `E`, `BOM`
 with `U`, `B(QT)R` with `F`, `B(QT)B` with `Q1`, `BT` with `Q3`, `BW` with
 `W*`, `B W*` with `W**`, `BC` with `C*`, `B C*` with `C**`, `YO` with `Y`,
@@ -1102,7 +1106,7 @@ using the same direct syntax for interactive input, piped input, and loaded
 journals. Piped input remains line-oriented, while journal loading can group a
 quoted string that spans multiple physical lines into one record.
 When standard output is a terminal, it first prints
-`Combinator Read-Eval-Print Loop, version 2.14.7`. Long evaluations display
+`Combinator Read-Eval-Print Loop, version 2.14.8`. Long evaluations display
 the accumulated step count every 1,000 reductions by overwriting one status
 line; the line is cleared before evaluation output is printed. Its interactive
 prompt is `>`. Interactive input uses GNU Readline, so previous nonempty
@@ -1251,7 +1255,10 @@ every placeholder may be a compound expression. Rescanning stops when a scan
 is unchanged or reaches a structurally repeated state. Individual
 `ministeps` stages remain raw, while every changed whole-expression scan is
 shown on its own `optimize:` line before the next scan, takeout, or final
-`?=` result.
+`?=` result. After final named-bird substitutions change the result, these
+whole-expression scans and named substitutions alternate until a named pass is
+unchanged. Thus, `abstract steps ?xy = yxxx` ends with
+`optimize: W(C*W1) -> HW1` and `?=HW1`.
 Enter `define [captured | live] <name> [<symbol_list>] =
 <combinator_expression>` to create a named basis. Enter
 `set [captured | live] <name> = [arity] <combinator_expression>` to store an

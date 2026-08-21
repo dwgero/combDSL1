@@ -282,7 +282,10 @@ including the transition into a repeated terminal state; an unchanged
 terminating scan is omitted. For example, "abstract steps ?xy = xxxy" prints
 "optimize: xxx -> Nxx", then "optimize: Nxx -> WNx". With "abstract steps ?x =
 C*Hxx", takeout produces W(C*H), then optimization prints W(C*H) -> HH and HH ->
-MH.
+MH. After the final named-bird substitutions, these scans run again whenever
+that named pass changed the result; the phases alternate until a named pass is
+unchanged. Thus, "abstract steps ?xy = yxxx" ends with "optimize: WV -> W1",
+then "optimize: W(C*W1) -> HW1", and "?=HW1".
 
 Finding Combinators
 

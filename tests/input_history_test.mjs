@@ -439,6 +439,12 @@ test("documents ordered post-takeout duplicate optimization in Studio", () => {
     assert.match(
         html,
         /<code>abstract steps \?xy = xxxy<\/code> prints\s+<code>optimize: xxx -&gt; Nxx<\/code>, then\s+<code>optimize: Nxx -&gt; WNx<\/code>/);
+    assert.match(
+        html,
+        /final named-bird substitutions, these scans run again/);
+    assert.match(
+        html,
+        /<code>optimize: W\(C\*W1\) -&gt; HW1<\/code>, and\s+<code>\?=HW1<\/code>/);
 });
 
 test("completes unambiguous abstract command forms", () => {

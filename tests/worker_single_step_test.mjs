@@ -1170,6 +1170,82 @@ test("built Studio Wasm repeatedly rescans duplicate takeout at parser boundarie
         assert.equal(rescannedApplied.output, "aaab\n");
     });
 
+test("built Studio Wasm rescans duplicates after final optimization",
+    async () => {
+        const module = await loadBuiltCombdslModule();
+        let requestId = 460;
+
+        const steps = module.beginLimitedEval(
+            "abstract steps ?xy = yxxx",
+            ++requestId,
+            1000,
+            false,
+        );
+        assert.equal(steps.success, true, steps.error);
+        assert.equal(
+            steps.output,
+            "takeout y from yxxx: C(C(Tx)x)x\n" +
+            "takeout x from C(C(Tx)x)x: W(BC(W(BCT)))\n" +
+            "optimize: BC -> C*\n" +
+            "optimize: BC -> C*\n" +
+            "optimize: C*T -> V\n" +
+            "optimize: WV -> W1\n" +
+            "optimize: W(C*W1) -> HW1\n" +
+            "?=HW1\n",
+        );
+
+        const plain = module.parseEval(
+            "abstract ?xy = yxxx", ++requestId, false, 0);
+        assert.equal(plain.success, true, plain.error);
+        assert.equal(plain.output, "?=HW1\n");
+
+        const ministeps = module.parseEval(
+            "abstract ministeps ?xy = yxxx",
+            ++requestId,
+            false,
+            0,
+        );
+        assert.equal(ministeps.success, true, ministeps.error);
+        assert.equal(
+            ministeps.output,
+            "takeout y from yxxx: C[takeout y from yxx]x\n" +
+            "= C(C[takeout y from yx]x)x\n" +
+            "= C(C(Tx)x)x\n" +
+            "takeout x from C(C(Tx)x)x: " +
+            "W[takeout x from C(C(Tx)x)]\n" +
+            "= W(BC[takeout x from C(Tx)x])\n" +
+            "= W(BC(W[takeout x from C(Tx)]))\n" +
+            "= W(BC(W(BC[takeout x from Tx])))\n" +
+            "= W(BC(W(BCT)))\n" +
+            "optimize: BC -> C*\n" +
+            "optimize: BC -> C*\n" +
+            "optimize: C*T -> V\n" +
+            "optimize: WV -> W1\n" +
+            "optimize: W(C*W1) -> HW1\n" +
+            "?=HW1\n",
+        );
+
+        const definition = module.beginLimitedEval(
+            "define WasmFinalDup xy = yxxx",
+            ++requestId,
+            1000,
+            false,
+        );
+        assert.equal(definition.success, true, definition.error);
+        assert.equal(definition.definition, true);
+        assert.equal(definition.output, "");
+
+        const shown = module.parseEval(
+            "show WasmFinalDup", ++requestId, false, 0);
+        assert.equal(shown.success, true, shown.error);
+        assert.equal(shown.output, "arity:2 HW1\n");
+
+        const applied = module.parseEval(
+            "WasmFinalDup a b", ++requestId, false, 0);
+        assert.equal(applied.success, true, applied.error);
+        assert.equal(applied.output, "baaa\n");
+    });
+
 test("built Studio Wasm rejects integer basis names without mutation",
     async () => {
         const module = await loadBuiltCombdslModule();

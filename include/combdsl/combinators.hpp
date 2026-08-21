@@ -8369,8 +8369,16 @@ private:
         }
 
         std::vector<optimizer_substitution> substitutions;
+        auto const before_final_named_optimization = body;
         body = optimize_final_takeout(
             std::move(body),
+            show_steps ? std::addressof(substitutions) : nullptr);
+        auto const final_named_optimization_changed =
+            !same_parser_definition_expression(
+                before_final_named_optimization, body);
+        body = finish_takeout_optimizations(
+            std::move(body),
+            final_named_optimization_changed,
             show_steps ? std::addressof(substitutions) : nullptr);
         if (!show_steps) {
             std::ostringstream output;
@@ -8517,6 +8525,7 @@ private:
                 std::move(body));
         }
 
+        bool final_named_optimization_changed = false;
         if (contains_quoted_atom(recursive_function, body)) {
             pending_atoms.clear();
             body = takeout_with_pending_atoms(
@@ -8525,13 +8534,25 @@ private:
                 pending_atoms);
             body = optimize_duplicate_takeout_expressions(
                 std::move(body));
+            auto const before_final_named_optimization =
+                quote(Y)(body);
             body = optimize_final_takeout(
                 quote(Y)(optimize_final_takeout(
                     std::move(body))));
+            final_named_optimization_changed =
+                !same_parser_definition_expression(
+                    before_final_named_optimization, body);
         } else {
+            auto const before_final_named_optimization = body;
             body = optimize_final_takeout(
                 std::move(body));
+            final_named_optimization_changed =
+                !same_parser_definition_expression(
+                    before_final_named_optimization, body);
         }
+        body = finish_takeout_optimizations(
+            std::move(body),
+            final_named_optimization_changed);
 
         auto result = make_quoted_basis_snapshot(
             name, symbols.size(), std::move(body));
@@ -9079,6 +9100,38 @@ private:
                 substitutions->push_back({expression, *optimized});
             }
             return *optimized;
+        }
+        return expression;
+    }
+
+    [[nodiscard]] quoted_expression finish_takeout_optimizations(
+        quoted_expression expression,
+        bool named_optimization_changed,
+        std::vector<optimizer_substitution>* substitutions =
+            nullptr) const {
+        // A named substitution can expose a duplicate rule, and that rule can
+        // in turn expose another named substitution.  Duplicate rescans are
+        // independently cycle-safe; every continuation of this outer loop
+        // requires a named substitution, which strictly decreases node count.
+        while (named_optimization_changed) {
+            auto duplicate_optimization =
+                optimize_duplicate_takeout_expression_stages(expression);
+            if (substitutions != nullptr) {
+                auto previous_stage = expression;
+                for (auto const& stage :
+                     duplicate_optimization.stages) {
+                    substitutions->push_back({previous_stage, stage});
+                    previous_stage = stage;
+                }
+            }
+            expression = std::move(duplicate_optimization.result);
+
+            auto const before_named_optimization = expression;
+            expression = optimize_final_takeout(
+                std::move(expression), substitutions);
+            named_optimization_changed =
+                !same_parser_definition_expression(
+                    before_named_optimization, expression);
         }
         return expression;
     }

@@ -66,7 +66,7 @@
 
 namespace {
 
-constexpr std::string_view crepl_version = "2.14.7";
+constexpr std::string_view crepl_version = "2.14.8";
 constexpr std::string_view no_further_reductions_message =
     "No further reductions";
 
@@ -2295,7 +2295,12 @@ void print_help_full(std::ostream& output) {
         "For example, \"abstract steps ?xy = xxxy\" prints \"optimize: xxx "
         "-> Nxx\", then \"optimize: Nxx -> WNx\". With \"abstract steps "
         "?x = C*Hxx\", takeout produces W(C*H), then optimization prints "
-        "W(C*H) -> HH and HH -> MH.");
+        "W(C*H) -> HH and HH -> MH. After the final named-bird "
+        "substitutions, these scans run again whenever that named pass "
+        "changed the result; the phases alternate until a named pass is "
+        "unchanged. Thus, \"abstract steps ?xy = yxxx\" ends with "
+        "\"optimize: WV -> W1\", then \"optimize: W(C*W1) -> HW1\", and "
+        "\"?=HW1\".");
 
     output << "\nFinding Combinators\n\n"
            << "find [all] [<num> | among <bird>...] ?<symbol_list> = "
