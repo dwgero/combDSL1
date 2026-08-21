@@ -388,9 +388,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             color: #c33;
         }
     </style>
-    <script src="./evaluation_watchdog.js?v=2.14.1" defer></script>
-    <script src="./input_history.js?v=2.14.1" defer></script>
-    <script src="./app.js?v=2.14.1" defer></script>
+    <script src="./evaluation_watchdog.js?v=2.14.7" defer></script>
+    <script src="./input_history.js?v=2.14.7" defer></script>
+    <script src="./app.js?v=2.14.7" defer></script>
 </head>
 <body>
     <main aria-labelledby="studio-title">
@@ -902,8 +902,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             and <code>?=O</code>.
             Unchanged preprocessing and optimization passes are omitted.
             After each complete takeout, Define and Abstract repeatedly rescan
-            the whole result for duplicate subexpressions. Each scan is
+            the whole result for optimization patterns. Each scan is
             top-down. At each node, the first matching rule in this order wins:
+            <code>W (C* A) -&gt; H A</code>;
             <code>A B A -&gt; N A B</code>;
             <code>A B B -&gt; W A B</code>;
             <code>A (B A) -&gt; O B A</code>;
@@ -918,6 +919,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             and becomes <code>S F F X</code>, not <code>M(F X)</code>.
             Captured operands are scanned recursively, while a generated bird
             skeleton is reconsidered only on the next whole-expression scan.
+            The <code>H</code> rule precedes its overlapping <code>O</code> and
+            <code>L</code> shapes.
             Rescanning stops when a scan makes no structural change or produces
             a structurally repeated state; the repeated state is retained.
             Individual Ministeps stages stay raw. Steps and Ministeps print one
@@ -928,6 +931,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             <code>abstract steps ?xy = xxxy</code> prints
             <code>optimize: xxx -&gt; Nxx</code>, then
             <code>optimize: Nxx -&gt; WNx</code>.
+            With <code>abstract steps ?x = C*Hxx</code>, takeout produces
+            <code>W(C*H)</code>, then optimization prints
+            <code>W(C*H) -&gt; HH</code> and <code>HH -&gt; MH</code>.
         </div>
         <h2 class="help-subheading">Finding Combinators</h2>
         <div class="help-section">
@@ -1126,7 +1132,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             data-dialog-initial-focus>About</h2>
         <div class="license-text">
             <!-- Keep this version and the app.js cache key in sync. -->
-            <p>Combinator Studio, version 2.14.1<br>
+            <p>Combinator Studio, version 2.14.7<br>
                 Part of the C++ Combinator DSL<br>
                 Copyright (C) 2026  David W. Gero</p>
             <p>This program is free software: you can redistribute it and/or modify

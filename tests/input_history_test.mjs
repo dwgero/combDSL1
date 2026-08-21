@@ -408,6 +408,7 @@ test("documents ordered post-takeout duplicate optimization in Studio", () => {
         new URL("../web/index.html", import.meta.url), "utf8");
 
     const orderedRules = [
+        /W \(C\* A\) -&gt; H A/,
         /A B A -&gt; N A B/,
         /A B B -&gt; W A B/,
         /A \(B A\) -&gt; O B A/,

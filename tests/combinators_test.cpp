@@ -276,17 +276,27 @@ static_assert(std::is_same_v<
               decltype(combdsl::search_for_subexp(S(B)(T))),
               std::optional<combdsl::subexpression_search_match>>);
 static_assert(
-    combdsl::check_for_pairs_match_candidate_count == 858);
+    combdsl::check_for_match_excluded_pair_count == 69);
 static_assert(
-    combdsl::check_for_trips_match_candidate_count == 49'692);
+    combdsl::check_for_match_kestrel_argument_head_count == 2);
+static_assert(
+    combdsl::check_for_match_arbitrary_tail_left_pattern_count == 6);
+static_assert(
+    combdsl::check_for_match_fixed_tail_left_pattern_count == 6);
+static_assert(
+    combdsl::check_for_match_structural_left_trip_exclusion_count == 358);
+static_assert(
+    combdsl::check_for_pairs_match_candidate_count == 831);
+static_assert(
+    combdsl::check_for_trips_match_candidate_count == 47'622);
 static_assert(
     combdsl::check_for_trips_match_shape_count == 2);
 static_assert(
     combdsl::check_for_trips_match_column_count == 1'800);
 static_assert(
-    combdsl::check_for_match_left_trip_candidate_count == 24'810);
+    combdsl::check_for_match_left_trip_candidate_count == 23'642);
 static_assert(
-    combdsl::check_for_match_right_trip_candidate_count == 24'882);
+    combdsl::check_for_match_right_trip_candidate_count == 23'980);
 static_assert(
     combdsl::check_for_quads_match_tuple_count == 810'000);
 static_assert(
@@ -294,21 +304,26 @@ static_assert(
 static_assert(
     combdsl::check_for_quads_match_column_count == 135'000);
 static_assert(
-    combdsl::check_for_quads_match_candidate_count == 3'667'992);
+    combdsl::check_for_quads_match_candidate_count == 3'487'022);
 static_assert(
     combdsl::check_for_quads_match_candidate_count ==
     combdsl::check_for_match_combinator_count *
         combdsl::check_for_match_left_trip_candidate_count +
     combdsl::check_for_pairs_match_candidate_count *
+        combdsl::check_for_pairs_match_candidate_count -
+    combdsl::check_for_match_arbitrary_tail_left_pattern_count *
         combdsl::check_for_pairs_match_candidate_count +
-    (combdsl::check_for_match_combinator_count - 1) *
-        combdsl::check_for_match_combinator_count *
+    combdsl::check_for_match_combinator_count *
+        combdsl::check_for_match_right_trip_candidate_count -
+    combdsl::check_for_match_fixed_tail_left_pattern_count *
         combdsl::check_for_pairs_match_candidate_count +
     (combdsl::check_for_match_combinator_count - 1) *
         combdsl::check_for_match_left_trip_candidate_count +
     (combdsl::check_for_match_combinator_count - 1) *
-        (combdsl::check_for_match_combinator_count - 1) *
-        combdsl::check_for_pairs_match_candidate_count);
+        combdsl::check_for_match_right_trip_candidate_count -
+    combdsl::check_for_match_right_composite_root_pattern_count *
+        combdsl::check_for_pairs_match_candidate_count +
+    combdsl::check_for_match_structural_right_trip_exclusion_count);
 static_assert(
     combdsl::detail::find_search_window ==
     std::chrono::seconds{10});
@@ -3408,6 +3423,18 @@ int main() {
          "optimize: Bp(xxx) -> Bp(Nxx)\n"
          "optimize: Bp(Nxx) -> Bp(WNx)\n"
          "?=Bp(WNx)");
+    test("abstract applies the H optimizer after a completed takeout",
+         parse("abstract ?x = C*Bxx"),
+         "?=HB");
+    test("abstract steps trace H optimization and its next rescan",
+         parse("abstract steps ?x = C*Hxx"),
+         "takeout x from C*Hxx: W(C*H)\n"
+         "optimize: W(C*H) -> HH\n"
+         "optimize: HH -> MH\n"
+         "?=MH");
+    test("abstract H optimizer captures arbitrary compound expressions",
+         parse("abstract ?x = C*(a(bc))xx"),
+         "?=H(a(bc))");
     test("abstract steps stops after tracing a repeated cycle state",
          parse("abstract steps ?y = NNMy"),
          "takeout y from NNMy: NNM\n"
@@ -3509,6 +3536,10 @@ int main() {
              }
          },
          "aaab");
+    test("define applies the H optimizer at its symbol boundary",
+         parse("define DupH x = C*Bxx"), "DupH");
+    test("show exposes the H-optimized define body",
+         parse("show DupH"), "arity:1 HB");
 
     test("define infers arity from its symbols",
          parse("define Def3 xyz = xyz"), "Def3");
@@ -4019,8 +4050,18 @@ int main() {
     test("pre-defined Eagle is registered", parse("E"), "E");
     test("show exposes the pre-defined Eagle",
          parse("show E"), "arity:5 BDD");
+    test("D-derived Eagle basis step keeps its registered body",
+         single_step(parse("Eabcde"), true), "BDDabcde");
     test("show exposes the pre-defined Jay",
          parse("show J"), "arity:4 C**(HE)");
+    test("show exposes the pre-defined Dove compact body",
+         parse("show D"), "arity:4 S(KB)");
+    test("Dove basis step exposes its compact body",
+         single_step(parse("Dabcd"), true), "S(KB)abcd");
+    test("show exposes the D-derived Goldfinch",
+         parse("show G"), "arity:4 DC");
+    test("D-derived Goldfinch basis step keeps its registered body",
+         single_step(parse("Gabcd"), true), "DCabcd");
     test("pre-defined Turing is registered", parse("U"), "U");
     test("show exposes the pre-defined Turing",
          parse("show U"), "arity:2 BOM");
@@ -5539,6 +5580,27 @@ int main() {
                 optimize_duplicate_takeout_expressions_once(
                     std::move(value));
         };
+    test("duplicate takeout recognizes the H rule over compounds",
+         optimize_duplicate_takeout_once(
+             quote(W)(quote(C_star)(duplicate_compound_a))),
+         "H(a(bc))");
+    test("duplicate takeout gives H precedence when its operand is W",
+         optimize_duplicate_takeout_once(
+             quote(W)(quote(C_star)(W))),
+         "HW");
+    test("duplicate takeout gives H precedence when its operand is C-star",
+         optimize_duplicate_takeout_once(
+             quote(W)(quote(C_star)(C_star))),
+         "HC*");
+    test("duplicate takeout H rule recursively optimizes its capture",
+         optimize_duplicate_takeout_once(
+             quote(W)(quote(C_star)(quote(a)(b)(a)))),
+         "H(Nab)");
+    test("duplicate takeout descends to nested H-rule roots",
+         optimize_duplicate_takeout_once(
+             quote(p)(quote(W)(
+                 quote(C_star)(duplicate_compound_a)))),
+         "p(H(a(bc)))");
     test("duplicate takeout generalizes Nightingale over compounds",
          optimize_duplicate_takeout_once(
              duplicate_compound_a(duplicate_compound_b)(
@@ -5621,6 +5683,38 @@ int main() {
     test("duplicate takeout rescans newly generated bird skeletons",
          optimize_duplicate_takeout(quote(x)(x)(x)),
          "WNx");
+    test("duplicate takeout rescans a newly generated H skeleton",
+         [] {
+             auto optimized = combdsl::detail::
+                 optimize_duplicate_takeout_expression_stages(
+                     quote(W)(quote(C_star)(H)));
+             optimized.result.print_to(std::cout);
+             std::cout << ' ' << optimized.stages.size();
+             for (auto const& stage : optimized.stages) {
+                 std::cout << '\n';
+                 stage.print_to(std::cout);
+             }
+         },
+         "MH 2\n"
+         "HH\n"
+         "MH");
+    test("duplicate takeout H capture rescans terminate on a cycle",
+         [] {
+             auto optimized = combdsl::detail::
+                 optimize_duplicate_takeout_expression_stages(
+                     quote(W)(quote(C_star)(quote(N)(N)(M))));
+             optimized.result.print_to(std::cout);
+             std::cout << ' ' << optimized.stages.size();
+             for (auto const& stage : optimized.stages) {
+                 std::cout << '\n';
+                 stage.print_to(std::cout);
+             }
+         },
+         "H(MNM) 4\n"
+         "H(MNM)\n"
+         "H(NMN)\n"
+         "H(NNM)\n"
+         "H(MNM)");
     test("duplicate takeout stage scan omits a stable no-op",
          [] {
              auto optimized = combdsl::detail::
@@ -5690,6 +5784,7 @@ int main() {
     };
     const std::vector<duplicate_takeout_parity_case>
         duplicate_takeout_parity_cases{
+            {"H", quote(W)(quote(C_star)(duplicate_compound_a))},
             {"N", duplicate_compound_a(duplicate_compound_b)(
                       duplicate_compound_a)},
             {"W", duplicate_compound_a(duplicate_compound_b)(
@@ -7904,11 +7999,12 @@ int main() {
         std::pair{quote(W_star), quote(K)},
         std::pair{quote(Z), quote(I)},
     };
-    test("fixed match pair exclusions include identities",
+    test("fixed match pair exclusions include every atomic M pair",
          [] {
              std::size_t excluded_count = 0;
              auto const& combinators =
                  combdsl::detail::predefined_bird_combinators();
+             bool all_atomic_m_pairs_excluded = true;
              for (auto const& function : combinators) {
                  for (auto const& argument : combinators) {
                      if (combdsl::detail::is_excluded_match_pair(
@@ -7917,20 +8013,29 @@ int main() {
                      }
                  }
              }
+             for (auto const& argument : combinators) {
+                 all_atomic_m_pairs_excluded =
+                     all_atomic_m_pairs_excluded &&
+                     combdsl::detail::is_excluded_match_pair(
+                         quote(M), argument);
+             }
              std::cout
                  << excluded_count << ' '
                  << combdsl::detail::is_excluded_match_pair(
                         quote(I), quote(A))
                  << combdsl::detail::is_excluded_match_pair(
-                        quote(I), quote(Z))
+                        quote(I), quote(Z)) << ' '
+                 << all_atomic_m_pairs_excluded
                  << combdsl::detail::is_excluded_match_pair(
-                        quote(M), quote(M))
-                 << combdsl::detail::is_excluded_match_pair(
-                        quote(M), quote(U))
+                        quote(M), quote(Y))
+                 << !combdsl::detail::is_excluded_match_pair(
+                        quote(M), quote(A)(B)) << ' '
                  << combdsl::detail::is_excluded_match_pair(
                         quote(U), quote(M))
                  << combdsl::detail::is_excluded_match_pair(
                         quote(U), quote(U))
+                 << combdsl::detail::is_excluded_match_pair(
+                        quote(U), quote(A))
                  << ' '
                  << combdsl::detail::is_excluded_match_pair(
                         quote(B), quote(I))
@@ -7952,7 +8057,290 @@ int main() {
                  << combdsl::detail::is_excluded_match_pair(
                         quote(A), quote(I));
          },
-         "42 111111 11111111 0");
+         "69 11 111 110 11111111 0");
+    test("Find prunes M and W applied to K-headed composites",
+         [] {
+             std::cout
+                 << combdsl::detail::is_excluded_match_pair(
+                        quote(M), quote(K)(A))
+                 << combdsl::detail::is_excluded_match_pair(
+                        quote(W), quote(K)(A))
+                 << combdsl::detail::is_excluded_match_pair(
+                        quote(M), quote(K)(quote(A)(B)))
+                 << combdsl::detail::is_excluded_match_pair(
+                        quote(W), quote(K)(quote(A)(B)))
+                 << ' '
+                 << !combdsl::detail::is_excluded_match_pair(
+                        quote(M), quote(A)(B))
+                 << !combdsl::detail::is_excluded_match_pair(
+                        quote(W), quote(A)(B));
+         },
+         "1111 11");
+    test("K-headed M and W exclusions preserve atomic and compound behavior",
+         [] {
+             std::array const captures{
+                 quote(A), quote(A)(B)};
+             for (auto const& capture : captures) {
+                 auto const expected =
+                     combdsl::detail::normalize_for_compare(
+                         capture(x));
+                 auto const mockingbird =
+                     combdsl::detail::normalize_for_compare(
+                         quote(M)(quote(K)(capture))(x));
+                 auto const warbler =
+                     combdsl::detail::normalize_for_compare(
+                         quote(W)(quote(K)(capture))(x));
+                 std::cout
+                     << (expected && mockingbird &&
+                         combdsl::detail::
+                             same_parser_definition_expression(
+                                 *expected, *mockingbird))
+                     << (expected && warbler &&
+                         combdsl::detail::
+                             same_parser_definition_expression(
+                                 *expected, *warbler));
+             }
+         },
+         "1111");
+    auto identity_trip_patterns = [](combdsl::quoted_expression capture) {
+        return std::array{
+            quote(B)(capture)(I),
+            quote(C)(quote(C)(capture)),
+            quote(C_star)(C)(capture),
+            quote(C_star)(quote(C_star)(capture)),
+            quote(C_star_star)(C_star)(capture),
+            quote(G)(T)(capture),
+            quote(Q)(capture)(I),
+            quote(R)(capture)(T),
+            quote(T)(capture)(I),
+            quote(W1)(capture)(K),
+            quote(Z)(C)(capture),
+        };
+    };
+    test("Find prunes every structural identity trip for arbitrary captures",
+         [&] {
+             for (auto const& capture :
+                  std::array{quote(A), quote(A)(B)}) {
+                 for (auto const& pattern :
+                      identity_trip_patterns(capture)) {
+                     auto const* application =
+                         combdsl::detail::takeout_application(pattern);
+                     std::cout <<
+                         (application != nullptr &&
+                          combdsl::detail::is_excluded_match_pair(
+                              application->function(),
+                              application->argument()));
+                 }
+             }
+         },
+         "1111111111111111111111");
+    test("Find retains near misses for structural identity trips",
+         [] {
+             std::array const near_misses{
+                 quote(B)(A)(K),
+                 quote(C)(quote(B)(A)),
+                 quote(C_star)(B)(A),
+                 quote(C_star)(quote(C)(A)),
+                 quote(C_star_star)(C)(A),
+                 quote(G)(I)(A),
+                 quote(Q)(A)(K),
+                 quote(R)(A)(I),
+                 quote(T)(A)(K),
+                 quote(W1)(A)(I),
+                 quote(Z)(B)(A),
+                 quote(Z)(D)(A),
+             };
+             for (auto const& pattern : near_misses) {
+                 auto const* application =
+                     combdsl::detail::takeout_application(pattern);
+                 std::cout <<
+                     (application != nullptr &&
+                      !combdsl::detail::is_excluded_match_pair(
+                          application->function(),
+                          application->argument()));
+             }
+         },
+         "111111111111");
+    test("structural identity trip exclusions preserve semantics",
+         [&] {
+             for (auto const& capture :
+                  std::array{quote(A), quote(A)(B)}) {
+                 auto const expected =
+                     combdsl::detail::normalize_for_compare(
+                         capture(x)(y)(z)(w));
+                 for (auto const& pattern :
+                      identity_trip_patterns(capture)) {
+                     auto const normalized =
+                         combdsl::detail::normalize_for_compare(
+                             pattern(x)(y)(z)(w));
+                     std::cout <<
+                         (expected && normalized &&
+                          combdsl::detail::
+                              same_parser_definition_expression(
+                                  *expected, *normalized));
+                 }
+             }
+         },
+         "1111111111111111111111");
+    test("Find retains Z C-star identity trips for arbitrary captures",
+         [] {
+             for (auto const& capture :
+                  std::array{quote(A), quote(A)(B)}) {
+                 auto const pattern = quote(Z)(C_star)(capture);
+                 auto const* application =
+                     combdsl::detail::takeout_application(pattern);
+                 auto const expected =
+                     combdsl::detail::normalize_for_compare(
+                         capture(x)(y)(z)(w));
+                 auto const normalized =
+                     combdsl::detail::normalize_for_compare(
+                         pattern(x)(y)(z)(w));
+                 std::cout
+                     << (application != nullptr &&
+                         !combdsl::detail::is_excluded_match_pair(
+                             application->function(),
+                             application->argument()))
+                     << (expected && normalized &&
+                         combdsl::detail::
+                             same_parser_definition_expression(
+                                 *expected, *normalized));
+             }
+         },
+         "1111");
+    test("Find prunes G K trips for arbitrary captures only",
+         [] {
+             for (auto const& capture :
+                  std::array{quote(A), quote(A)(B)}) {
+                 auto const g_k = quote(G)(K)(capture);
+                 auto const g_t = quote(G)(T)(capture);
+                 auto const z_c_star = quote(Z)(C_star)(capture);
+                 auto const* g_k_application =
+                     combdsl::detail::takeout_application(g_k);
+                 auto const* g_t_application =
+                     combdsl::detail::takeout_application(g_t);
+                 auto const* z_c_star_application =
+                     combdsl::detail::takeout_application(z_c_star);
+                 std::cout
+                     << (g_k_application != nullptr &&
+                         combdsl::detail::is_excluded_match_pair(
+                             g_k_application->function(),
+                             g_k_application->argument()))
+                     << (g_t_application != nullptr &&
+                         combdsl::detail::is_excluded_match_pair(
+                             g_t_application->function(),
+                             g_t_application->argument()))
+                     << (z_c_star_application != nullptr &&
+                         !combdsl::detail::is_excluded_match_pair(
+                             z_c_star_application->function(),
+                             z_c_star_application->argument()));
+             }
+         },
+         "111111");
+    test("G K trip exclusions remain extensionally K I",
+         [] {
+             auto const expected =
+                 combdsl::detail::normalize_for_compare(
+                     quote(K)(I)(x)(y));
+             for (auto const& capture :
+                  std::array{quote(A), quote(A)(B)}) {
+                 auto const normalized =
+                     combdsl::detail::normalize_for_compare(
+                         quote(G)(K)(capture)(x)(y));
+                 std::cout
+                     << (expected && normalized &&
+                         combdsl::detail::
+                             same_parser_definition_expression(
+                                 *expected, *normalized));
+             }
+         },
+         "11");
+    test("Find retains G K trip near misses and opposite association",
+         [] {
+             for (auto const& capture :
+                  std::array{quote(A), quote(A)(B)}) {
+                 std::array const near_misses{
+                     quote(G)(capture)(K),
+                     quote(G)(quote(K)(capture)),
+                     quote(G)(B)(capture),
+                 };
+                 for (auto const& pattern : near_misses) {
+                     auto const* application =
+                         combdsl::detail::takeout_application(pattern);
+                     std::cout
+                         << (application != nullptr &&
+                             !combdsl::detail::is_excluded_match_pair(
+                                 application->function(),
+                                 application->argument()));
+                 }
+             }
+         },
+         "111111");
+    auto constant_identity_trip_patterns =
+        [](combdsl::quoted_expression capture) {
+            return std::array{
+                quote(C)(K)(capture),
+                quote(R)(capture)(K),
+            };
+        };
+    test("Find prunes constant identity trips for arbitrary captures",
+         [&] {
+             for (auto const& capture :
+                  std::array{quote(A), quote(A)(B)}) {
+                 for (auto const& pattern :
+                      constant_identity_trip_patterns(capture)) {
+                     auto const* application =
+                         combdsl::detail::takeout_application(pattern);
+                     std::cout <<
+                         (application != nullptr &&
+                          combdsl::detail::is_excluded_match_pair(
+                              application->function(),
+                              application->argument()));
+                 }
+             }
+         },
+         "1111");
+    test("Find retains constant identity trip near misses and associations",
+         [] {
+             for (auto const& capture :
+                  std::array{quote(A), quote(A)(B)}) {
+                 std::array const near_misses{
+                     quote(C)(capture)(K),
+                     quote(C)(quote(K)(capture)),
+                     quote(R)(K)(capture),
+                     quote(R)(capture(quote(K))),
+                 };
+                 for (auto const& pattern : near_misses) {
+                     auto const* application =
+                         combdsl::detail::takeout_application(pattern);
+                     std::cout <<
+                         (application != nullptr &&
+                          !combdsl::detail::is_excluded_match_pair(
+                              application->function(),
+                              application->argument()));
+                 }
+             }
+         },
+         "11111111");
+    test("constant identity trip exclusions remain extensionally I",
+         [&] {
+             auto const expected =
+                 combdsl::detail::normalize_for_compare(quote(I)(x));
+             for (auto const& capture :
+                  std::array{quote(A), quote(A)(B)}) {
+                 for (auto const& pattern :
+                      constant_identity_trip_patterns(capture)) {
+                     auto const normalized =
+                         combdsl::detail::normalize_for_compare(
+                             pattern(x));
+                     std::cout <<
+                         (expected && normalized &&
+                          combdsl::detail::
+                              same_parser_definition_expression(
+                                  *expected, *normalized));
+                 }
+             }
+         },
+         "1111");
     test("excluded identity pairs still match I extensionally",
          [&] {
              std::array const symbols{
@@ -8069,11 +8457,233 @@ int main() {
                  << right_quad_pair_excluded;
          },
          "11 111111");
+    test("M pruning keeps non-K composite arguments in nested shapes",
+         [] {
+             auto print_mask = [](std::uint8_t mask,
+                                  std::size_t shape_count) {
+                 for (std::size_t shape = 0;
+                      shape < shape_count;
+                      ++shape) {
+                     std::cout <<
+                         ((mask & (std::uint8_t{1} << shape)) != 0);
+                 }
+             };
+             print_mask(
+                 combdsl::detail::predefined_bird_trip_shape_mask(
+                     quote(M), quote(A), quote(B)),
+                 combdsl::check_for_trips_match_shape_count);
+             std::cout << ' ';
+             print_mask(
+                 combdsl::detail::predefined_bird_trip_shape_mask(
+                     quote(A), quote(M), quote(B)),
+                 combdsl::check_for_trips_match_shape_count);
+             std::cout << " | ";
+             print_mask(
+                 combdsl::detail::predefined_bird_quad_shape_mask(
+                     quote(M), quote(A), quote(B), quote(C)),
+                 combdsl::check_for_quads_match_shape_count);
+             std::cout << ' ';
+             print_mask(
+                 combdsl::detail::predefined_bird_quad_shape_mask(
+                     quote(A), quote(M), quote(B), quote(C)),
+                 combdsl::check_for_quads_match_shape_count);
+             std::cout << ' ';
+             print_mask(
+                 combdsl::detail::predefined_bird_quad_shape_mask(
+                     quote(A), quote(B), quote(M), quote(C)),
+                 combdsl::check_for_quads_match_shape_count);
+         },
+         "01 10 | 00111 11001 10110");
+    test("K-headed M and W pruning reaches every nested shape",
+         [] {
+             auto print_mask = [](std::uint8_t mask,
+                                  std::size_t shape_count) {
+                 for (std::size_t shape = 0;
+                      shape < shape_count;
+                      ++shape) {
+                     std::cout <<
+                         ((mask & (std::uint8_t{1} << shape)) != 0);
+                 }
+             };
+             print_mask(
+                 combdsl::detail::predefined_bird_trip_shape_mask(
+                     quote(M), quote(K), quote(A)),
+                 combdsl::check_for_trips_match_shape_count);
+             std::cout << ' ';
+             print_mask(
+                 combdsl::detail::predefined_bird_trip_shape_mask(
+                     quote(W), quote(K), quote(A)),
+                 combdsl::check_for_trips_match_shape_count);
+             std::cout << ' ';
+             print_mask(
+                 combdsl::detail::predefined_bird_trip_shape_mask(
+                     quote(M), quote(K), quote(A)(B)),
+                 combdsl::check_for_trips_match_shape_count);
+             std::cout << ' ';
+             print_mask(
+                 combdsl::detail::predefined_bird_trip_shape_mask(
+                     quote(W), quote(K), quote(A)(B)),
+                 combdsl::check_for_trips_match_shape_count);
+             std::cout << " | ";
+             print_mask(
+                 combdsl::detail::predefined_bird_quad_shape_mask(
+                     quote(M), quote(K), quote(A), quote(B)),
+                 combdsl::check_for_quads_match_shape_count);
+             std::cout << ' ';
+             print_mask(
+                 combdsl::detail::predefined_bird_quad_shape_mask(
+                     quote(W), quote(K), quote(A), quote(B)),
+                 combdsl::check_for_quads_match_shape_count);
+             std::cout << ' ';
+             print_mask(
+                 combdsl::detail::predefined_bird_quad_shape_mask(
+                     quote(A), quote(M), quote(K), quote(B)),
+                 combdsl::check_for_quads_match_shape_count);
+             std::cout << ' ';
+             print_mask(
+                 combdsl::detail::predefined_bird_quad_shape_mask(
+                     quote(A), quote(W), quote(K), quote(B)),
+                 combdsl::check_for_quads_match_shape_count);
+             std::cout << ' ';
+             print_mask(
+                 combdsl::detail::predefined_bird_quad_shape_mask(
+                     quote(M), quote(K), quote(A)(B), quote(C)),
+                 combdsl::check_for_quads_match_shape_count);
+             std::cout << ' ';
+             print_mask(
+                 combdsl::detail::predefined_bird_quad_shape_mask(
+                     quote(W), quote(K), quote(A)(B), quote(C)),
+                 combdsl::check_for_quads_match_shape_count);
+         },
+         "00 00 00 00 | "
+         "00000 00000 11000 11000 00000 00000");
+    test("identity trip pruning preserves the opposite trip shape",
+         [] {
+             auto print_mask = [](std::uint8_t mask) {
+                 for (std::size_t shape = 0;
+                      shape <
+                          combdsl::check_for_trips_match_shape_count;
+                      ++shape) {
+                     std::cout <<
+                         ((mask & (std::uint8_t{1} << shape)) != 0);
+                 }
+             };
+             bool first_capture = true;
+             for (auto const& capture :
+                  std::array{quote(A), quote(A)(B)}) {
+                 if (!first_capture) {
+                     std::cout << " | ";
+                 }
+                 first_capture = false;
+                 auto const cases = std::array{
+                     std::array{quote(B), capture, quote(I)},
+                     std::array{quote(C), quote(C), capture},
+                     std::array{quote(C_star), quote(C), capture},
+                     std::array{quote(C_star), quote(C_star), capture},
+                     std::array{quote(C_star_star), quote(C_star), capture},
+                     std::array{quote(G), quote(T), capture},
+                     std::array{quote(Q), capture, quote(I)},
+                     std::array{quote(R), capture, quote(T)},
+                     std::array{quote(T), capture, quote(I)},
+                     std::array{quote(W1), capture, quote(K)},
+                     std::array{quote(Z), quote(C), capture},
+                 };
+                 bool first_case = true;
+                 for (auto const& trip : cases) {
+                     if (!first_case) {
+                         std::cout << ' ';
+                     }
+                     first_case = false;
+                     print_mask(
+                         combdsl::detail::
+                             predefined_bird_trip_shape_mask(
+                                 trip[0], trip[1], trip[2]));
+                 }
+             }
+         },
+         "01 10 01 10 01 01 01 01 01 01 01 | "
+         "01 10 01 10 01 01 01 01 01 01 01");
+    test("Z C-star identity trips keep both trip associations",
+         [] {
+             auto print_mask = [](std::uint8_t mask) {
+                 for (std::size_t shape = 0;
+                      shape <
+                          combdsl::check_for_trips_match_shape_count;
+                      ++shape) {
+                     std::cout <<
+                         ((mask & (std::uint8_t{1} << shape)) != 0);
+                 }
+             };
+             print_mask(
+                 combdsl::detail::predefined_bird_trip_shape_mask(
+                     quote(Z), quote(C_star), quote(A)));
+             std::cout << ' ';
+             print_mask(
+                 combdsl::detail::predefined_bird_trip_shape_mask(
+                     quote(Z), quote(C_star), quote(A)(B)));
+         },
+         "11 11");
+    test("G K pruning preserves the opposite trip association",
+         [] {
+             auto print_mask = [](std::uint8_t mask) {
+                 for (std::size_t shape = 0;
+                      shape <
+                          combdsl::check_for_trips_match_shape_count;
+                      ++shape) {
+                     std::cout <<
+                         ((mask & (std::uint8_t{1} << shape)) != 0);
+                 }
+             };
+             print_mask(
+                 combdsl::detail::predefined_bird_trip_shape_mask(
+                     quote(G), quote(K), quote(A)));
+             std::cout << ' ';
+             print_mask(
+                 combdsl::detail::predefined_bird_trip_shape_mask(
+                     quote(G), quote(K), quote(A)(B)));
+         },
+         "01 01");
+    test("constant identity trip pruning preserves opposite associations",
+         [] {
+             auto print_mask = [](std::uint8_t mask) {
+                 for (std::size_t shape = 0;
+                      shape <
+                          combdsl::check_for_trips_match_shape_count;
+                      ++shape) {
+                     std::cout <<
+                         ((mask & (std::uint8_t{1} << shape)) != 0);
+                 }
+             };
+             bool first_capture = true;
+             for (auto const& capture :
+                  std::array{quote(A), quote(A)(B)}) {
+                 if (!first_capture) {
+                     std::cout << " | ";
+                 }
+                 first_capture = false;
+                 print_mask(
+                     combdsl::detail::predefined_bird_trip_shape_mask(
+                         quote(C), quote(K), capture));
+                 std::cout << ' ';
+                 print_mask(
+                     combdsl::detail::predefined_bird_trip_shape_mask(
+                         quote(R), capture, quote(K)));
+             }
+         },
+         "01 01 | 01 01");
     std::vector<combdsl::quoted_expression> first_pairs;
     first_pairs.reserve(2);
     std::size_t generated_pair_count = 0;
+    bool generated_m_headed_pair = false;
     combdsl::detail::for_each_predefined_bird_pair(
         [&](combdsl::quoted_expression pair) {
+            auto const* application =
+                combdsl::detail::takeout_application(pair);
+            generated_m_headed_pair =
+                generated_m_headed_pair ||
+                (application != nullptr &&
+                 combdsl::detail::same_parser_definition_expression(
+                     application->function(), quote(M)));
             if (first_pairs.size() < 2) {
                 first_pairs.push_back(std::move(pair));
             }
@@ -8081,7 +8691,8 @@ int main() {
         });
     test("pair generator skips fixed terrible twos",
          [&] {
-             std::cout << generated_pair_count << ' ';
+             std::cout << generated_pair_count << ' '
+                       << generated_m_headed_pair << ' ';
              if (first_pairs.size() >= 2) {
                  first_pairs[0].print_to(std::cout);
                  std::cout << ' ';
@@ -8090,16 +8701,431 @@ int main() {
                  std::cout << first_pairs.size();
              }
          },
-         "858 AA AB");
+         "831 0 AA AB");
     auto const j_pair_matches =
         combdsl::check_for_pairs_match(
             j_match_symbols,
             j_match_expression);
-    test("pair matching searches 858 ordered pairs without Y",
+    test("pair matching searches 831 ordered pairs without Y",
          [&] {
              std::cout << j_pair_matches.size();
          },
          "0");
+    test("restricted Find keeps untargeted M composites",
+         [] {
+             std::array const catalog{quote(M), quote(A)};
+             std::size_t pair_count = 0;
+             std::size_t trip_count = 0;
+             bool contains_flat_m_a = false;
+             bool contains_m_composite = false;
+             auto const deadline =
+                 combdsl::detail::find_clock::time_point::max();
+             static_cast<void>(combdsl::detail::
+                 for_each_catalog_candidate_of_size(
+                     2,
+                     std::span<combdsl::quoted_expression const>{catalog},
+                     deadline,
+                     [&](combdsl::quoted_expression candidate) {
+                         ++pair_count;
+                         contains_flat_m_a =
+                             contains_flat_m_a ||
+                             combdsl::detail::
+                                 same_parser_definition_expression(
+                                     candidate, quote(M)(A));
+                         return true;
+                     }));
+             static_cast<void>(combdsl::detail::
+                 for_each_catalog_candidate_of_size(
+                     3,
+                     std::span<combdsl::quoted_expression const>{catalog},
+                     deadline,
+                     [&](combdsl::quoted_expression candidate) {
+                         ++trip_count;
+                         contains_m_composite =
+                             contains_m_composite ||
+                             combdsl::detail::
+                                 same_parser_definition_expression(
+                                     candidate,
+                                     quote(M)(quote(A)(A)));
+                         return true;
+                     }));
+             std::cout << pair_count << ' ' << trip_count << ' '
+                       << contains_flat_m_a << ' '
+                       << contains_m_composite;
+         },
+         "2 8 0 1");
+    test("restricted Find prunes K-headed M and W composites",
+         [] {
+             std::array const catalog{
+                 quote(M), quote(W), quote(K), quote(A)};
+             std::size_t trip_count = 0;
+             bool contains_m_k_a = false;
+             bool contains_w_k_a = false;
+             bool contains_saturated_k = false;
+             bool contains_m_k_composite = false;
+             bool contains_w_k_composite = false;
+             bool contains_saturated_k_composite = false;
+             auto const deadline =
+                 combdsl::detail::find_clock::time_point::max();
+             static_cast<void>(combdsl::detail::
+                 for_each_catalog_candidate_of_size(
+                     3,
+                     std::span<combdsl::quoted_expression const>{catalog},
+                     deadline,
+                     [&](combdsl::quoted_expression candidate) {
+                         ++trip_count;
+                         contains_m_k_a = contains_m_k_a ||
+                             combdsl::detail::
+                                 same_parser_definition_expression(
+                                     candidate,
+                                     quote(M)(quote(K)(A)));
+                         contains_w_k_a = contains_w_k_a ||
+                             combdsl::detail::
+                                 same_parser_definition_expression(
+                                     candidate,
+                                     quote(W)(quote(K)(A)));
+                         contains_saturated_k =
+                             contains_saturated_k ||
+                             combdsl::detail::
+                                 same_parser_definition_expression(
+                                     candidate, quote(K)(A)(A));
+                         return true;
+                     }));
+             static_cast<void>(combdsl::detail::
+                 for_each_catalog_candidate_of_size(
+                     4,
+                     std::span<combdsl::quoted_expression const>{catalog},
+                     deadline,
+                     [&](combdsl::quoted_expression candidate) {
+                         contains_m_k_composite =
+                             contains_m_k_composite ||
+                             combdsl::detail::
+                                 same_parser_definition_expression(
+                                     candidate,
+                                     quote(M)(quote(K)(
+                                         quote(A)(A))));
+                         contains_w_k_composite =
+                             contains_w_k_composite ||
+                             combdsl::detail::
+                                 same_parser_definition_expression(
+                                     candidate,
+                                     quote(W)(quote(K)(
+                                         quote(A)(A))));
+                         contains_saturated_k_composite =
+                             contains_saturated_k_composite ||
+                             combdsl::detail::
+                                 same_parser_definition_expression(
+                                     candidate,
+                                     quote(K)(quote(A)(A))(A));
+                         return true;
+                     }));
+             std::cout << trip_count << ' '
+                       << contains_m_k_a
+                       << contains_w_k_a
+                       << contains_saturated_k << ' '
+                       << contains_m_k_composite
+                       << contains_w_k_composite
+                       << contains_saturated_k_composite;
+         },
+         "80 001 001");
+    test("restricted Find prunes structural identity trips at every size",
+         [&] {
+             std::array const catalog{
+                 quote(A), quote(B), quote(C), quote(C_star),
+                 quote(C_star_star), quote(G), quote(I), quote(K),
+                 quote(Q), quote(R), quote(T), quote(W1), quote(Z)};
+             auto const atomic_patterns =
+                 identity_trip_patterns(quote(A));
+             auto const compound_patterns =
+                 identity_trip_patterns(quote(A)(A));
+             std::array<bool, atomic_patterns.size()> found_atomic{};
+             std::array<bool, compound_patterns.size()> found_compound{};
+             bool found_atomic_positive = false;
+             bool found_compound_positive = false;
+             auto const deadline =
+                 combdsl::detail::find_clock::time_point::max();
+             auto const atomic_status = combdsl::detail::
+                 for_each_catalog_candidate_of_size(
+                     3,
+                     std::span<combdsl::quoted_expression const>{catalog},
+                     deadline,
+                     [&](combdsl::quoted_expression candidate) {
+                         for (std::size_t index = 0;
+                              index < atomic_patterns.size();
+                              ++index) {
+                             found_atomic[index] =
+                                 found_atomic[index] ||
+                                 combdsl::detail::
+                                     same_parser_definition_expression(
+                                         candidate,
+                                         atomic_patterns[index]);
+                         }
+                         found_atomic_positive =
+                             found_atomic_positive ||
+                             combdsl::detail::
+                                 same_parser_definition_expression(
+                                     candidate, quote(K)(A)(A));
+                         return true;
+                     });
+             auto const compound_status = combdsl::detail::
+                 for_each_catalog_candidate_of_size(
+                     4,
+                     std::span<combdsl::quoted_expression const>{catalog},
+                     deadline,
+                     [&](combdsl::quoted_expression candidate) {
+                         for (std::size_t index = 0;
+                              index < compound_patterns.size();
+                              ++index) {
+                             found_compound[index] =
+                                 found_compound[index] ||
+                                 combdsl::detail::
+                                     same_parser_definition_expression(
+                                         candidate,
+                                         compound_patterns[index]);
+                         }
+                         found_compound_positive =
+                             found_compound_positive ||
+                             combdsl::detail::
+                                 same_parser_definition_expression(
+                                     candidate,
+                                     quote(K)(quote(A)(A))(A));
+                         return true;
+                     });
+             std::cout
+                 << (atomic_status == combdsl::detail::
+                         catalog_find_enumeration_status::completed)
+                 << std::ranges::any_of(found_atomic, std::identity{})
+                 << found_atomic_positive << ' '
+                 << (compound_status == combdsl::detail::
+                         catalog_find_enumeration_status::completed)
+                 << std::ranges::any_of(found_compound, std::identity{})
+                 << found_compound_positive;
+         },
+         "101 101");
+    test("restricted Find keeps Z C-star while pruning Z C",
+         [] {
+             std::array const catalog{
+                 quote(A), quote(C), quote(C_star), quote(Z)};
+             auto const deadline =
+                 combdsl::detail::find_clock::time_point::max();
+             bool found_atomic_z_c = false;
+             bool found_atomic_z_c_star = false;
+             auto const atomic_status = combdsl::detail::
+                 for_each_catalog_candidate_of_size(
+                     3,
+                     std::span<combdsl::quoted_expression const>{catalog},
+                     deadline,
+                     [&](combdsl::quoted_expression candidate) {
+                         found_atomic_z_c = found_atomic_z_c ||
+                             combdsl::detail::
+                                 same_parser_definition_expression(
+                                     candidate, quote(Z)(C)(A));
+                         found_atomic_z_c_star =
+                             found_atomic_z_c_star ||
+                             combdsl::detail::
+                                 same_parser_definition_expression(
+                                     candidate, quote(Z)(C_star)(A));
+                         return true;
+                     });
+             bool found_compound_z_c = false;
+             bool found_compound_z_c_star = false;
+             auto const compound_status = combdsl::detail::
+                 for_each_catalog_candidate_of_size(
+                     4,
+                     std::span<combdsl::quoted_expression const>{catalog},
+                     deadline,
+                     [&](combdsl::quoted_expression candidate) {
+                         found_compound_z_c = found_compound_z_c ||
+                             combdsl::detail::
+                                 same_parser_definition_expression(
+                                     candidate,
+                                     quote(Z)(C)(quote(A)(A)));
+                         found_compound_z_c_star =
+                             found_compound_z_c_star ||
+                             combdsl::detail::
+                                 same_parser_definition_expression(
+                                     candidate,
+                                     quote(Z)(C_star)(
+                                         quote(A)(A)));
+                         return true;
+                     });
+             std::cout
+                 << (atomic_status == combdsl::detail::
+                         catalog_find_enumeration_status::completed)
+                 << found_atomic_z_c
+                 << found_atomic_z_c_star << ' '
+                 << (compound_status == combdsl::detail::
+                         catalog_find_enumeration_status::completed)
+                 << found_compound_z_c
+                 << found_compound_z_c_star;
+         },
+         "101 101");
+    test("restricted Find prunes G K while retaining its association",
+         [] {
+             std::array const catalog{
+                 quote(A), quote(G), quote(I), quote(K)};
+             auto const deadline =
+                 combdsl::detail::find_clock::time_point::max();
+             bool found_atomic_g_k = false;
+             bool found_atomic_opposite = false;
+             bool found_atomic_control = false;
+             auto const atomic_status = combdsl::detail::
+                 for_each_catalog_candidate_of_size(
+                     3,
+                     std::span<combdsl::quoted_expression const>{catalog},
+                     deadline,
+                     [&](combdsl::quoted_expression candidate) {
+                         found_atomic_g_k = found_atomic_g_k ||
+                             combdsl::detail::
+                                 same_parser_definition_expression(
+                                     candidate, quote(G)(K)(A));
+                         found_atomic_opposite =
+                             found_atomic_opposite ||
+                             combdsl::detail::
+                                 same_parser_definition_expression(
+                                     candidate,
+                                     quote(G)(quote(K)(A)));
+                         found_atomic_control =
+                             found_atomic_control ||
+                             combdsl::detail::
+                                 same_parser_definition_expression(
+                                     candidate, quote(A)(I)(K));
+                         return true;
+                     });
+             bool found_compound_g_k = false;
+             bool found_compound_opposite = false;
+             bool found_compound_control = false;
+             auto const compound_status = combdsl::detail::
+                 for_each_catalog_candidate_of_size(
+                     4,
+                     std::span<combdsl::quoted_expression const>{catalog},
+                     deadline,
+                     [&](combdsl::quoted_expression candidate) {
+                         found_compound_g_k = found_compound_g_k ||
+                             combdsl::detail::
+                                 same_parser_definition_expression(
+                                     candidate,
+                                     quote(G)(K)(quote(A)(A)));
+                         found_compound_opposite =
+                             found_compound_opposite ||
+                             combdsl::detail::
+                                 same_parser_definition_expression(
+                                     candidate,
+                                     quote(G)(quote(K)(
+                                         quote(A)(A))));
+                         found_compound_control =
+                             found_compound_control ||
+                             combdsl::detail::
+                                 same_parser_definition_expression(
+                                     candidate,
+                                     quote(K)(quote(K)(I))(A));
+                         return true;
+                     });
+             std::cout
+                 << (atomic_status == combdsl::detail::
+                         catalog_find_enumeration_status::completed)
+                 << found_atomic_g_k
+                 << found_atomic_opposite
+                 << found_atomic_control << ' '
+                 << (compound_status == combdsl::detail::
+                         catalog_find_enumeration_status::completed)
+                 << found_compound_g_k
+                 << found_compound_opposite
+                 << found_compound_control;
+         },
+         "1011 1011");
+    test("restricted Find prunes constant identity trips at every size",
+         [&] {
+             std::array const catalog{
+                 quote(A), quote(C), quote(K), quote(R)};
+             auto const atomic_patterns =
+                 constant_identity_trip_patterns(quote(A));
+             auto const compound_patterns =
+                 constant_identity_trip_patterns(quote(A)(A));
+             std::array<bool, atomic_patterns.size()> found_atomic{};
+             std::array<bool, compound_patterns.size()> found_compound{};
+             std::array<bool, 2> found_atomic_opposite{};
+             std::array<bool, 2> found_compound_opposite{};
+             auto const deadline =
+                 combdsl::detail::find_clock::time_point::max();
+             auto const atomic_status = combdsl::detail::
+                 for_each_catalog_candidate_of_size(
+                     3,
+                     std::span<combdsl::quoted_expression const>{catalog},
+                     deadline,
+                     [&](combdsl::quoted_expression candidate) {
+                         for (std::size_t index = 0;
+                              index < atomic_patterns.size();
+                              ++index) {
+                             found_atomic[index] =
+                                 found_atomic[index] ||
+                                 combdsl::detail::
+                                     same_parser_definition_expression(
+                                         candidate,
+                                         atomic_patterns[index]);
+                         }
+                         found_atomic_opposite[0] =
+                             found_atomic_opposite[0] ||
+                             combdsl::detail::
+                                 same_parser_definition_expression(
+                                     candidate,
+                                     quote(C)(quote(K)(A)));
+                         found_atomic_opposite[1] =
+                             found_atomic_opposite[1] ||
+                             combdsl::detail::
+                                 same_parser_definition_expression(
+                                     candidate,
+                                     quote(R)(quote(A)(K)));
+                         return true;
+                     });
+             auto const compound_status = combdsl::detail::
+                 for_each_catalog_candidate_of_size(
+                     4,
+                     std::span<combdsl::quoted_expression const>{catalog},
+                     deadline,
+                     [&](combdsl::quoted_expression candidate) {
+                         for (std::size_t index = 0;
+                              index < compound_patterns.size();
+                              ++index) {
+                             found_compound[index] =
+                                 found_compound[index] ||
+                                 combdsl::detail::
+                                     same_parser_definition_expression(
+                                         candidate,
+                                         compound_patterns[index]);
+                         }
+                         found_compound_opposite[0] =
+                             found_compound_opposite[0] ||
+                             combdsl::detail::
+                                 same_parser_definition_expression(
+                                     candidate,
+                                     quote(C)(quote(K)(
+                                         quote(A)(A))));
+                         found_compound_opposite[1] =
+                             found_compound_opposite[1] ||
+                             combdsl::detail::
+                                 same_parser_definition_expression(
+                                     candidate,
+                                     quote(R)(
+                                         quote(A)(A)(K)));
+                         return true;
+                     });
+             std::cout
+                 << (atomic_status == combdsl::detail::
+                         catalog_find_enumeration_status::completed)
+                 << std::ranges::any_of(found_atomic, std::identity{})
+                 << std::ranges::all_of(
+                        found_atomic_opposite, std::identity{}) << ' '
+                 << (compound_status == combdsl::detail::
+                         catalog_find_enumeration_status::completed)
+                 << std::ranges::any_of(found_compound, std::identity{})
+                 << std::ranges::all_of(
+                        found_compound_opposite, std::identity{});
+         },
+         "101 101");
+    test("native restricted Find omits M applied to an atomic bird",
+         parse("find among M A ?xyz = MAxyz"),
+         "?=AA");
     std::vector<combdsl::quoted_expression> first_trips;
     first_trips.reserve(2);
     std::size_t generated_trip_count = 0;
@@ -8108,6 +9134,20 @@ int main() {
     bool generated_left_sk = false;
     bool generated_right_sk = false;
     bool generated_right_identity = false;
+    bool generated_left_flat_m = false;
+    bool generated_right_flat_m = false;
+    bool generated_right_composite_m = false;
+    bool generated_right_m_k_a = false;
+    bool generated_right_w_k_a = false;
+    auto const excluded_identity_trips =
+        identity_trip_patterns(quote(A));
+    auto const excluded_constant_identity_trips =
+        constant_identity_trip_patterns(quote(A));
+    bool generated_excluded_identity_trip = false;
+    bool generated_excluded_constant_identity_trip = false;
+    bool generated_z_c_trip = false;
+    bool generated_z_c_star_trip = false;
+    bool generated_g_k_trip = false;
     combdsl::detail::for_each_predefined_bird_trip(
         [&](combdsl::quoted_expression trip) {
             generated_saturated_k =
@@ -8130,6 +9170,53 @@ int main() {
                 generated_right_identity ||
                 combdsl::detail::same_parser_definition_expression(
                     trip, quote(I)(quote(H)(E)));
+            generated_left_flat_m =
+                generated_left_flat_m ||
+                combdsl::detail::same_parser_definition_expression(
+                    trip, quote(M)(A)(B));
+            generated_right_flat_m =
+                generated_right_flat_m ||
+                combdsl::detail::same_parser_definition_expression(
+                    trip, quote(A)(quote(M)(B)));
+            generated_right_composite_m =
+                generated_right_composite_m ||
+                combdsl::detail::same_parser_definition_expression(
+                    trip, quote(M)(quote(A)(B)));
+            generated_right_m_k_a =
+                generated_right_m_k_a ||
+                combdsl::detail::same_parser_definition_expression(
+                    trip, quote(M)(quote(K)(A)));
+            generated_right_w_k_a =
+                generated_right_w_k_a ||
+                combdsl::detail::same_parser_definition_expression(
+                    trip, quote(W)(quote(K)(A)));
+            generated_excluded_identity_trip =
+                generated_excluded_identity_trip ||
+                std::ranges::any_of(
+                    excluded_identity_trips,
+                    [&](auto const& excluded) {
+                        return combdsl::detail::
+                            same_parser_definition_expression(
+                                trip, excluded);
+                    });
+            generated_excluded_constant_identity_trip =
+                generated_excluded_constant_identity_trip ||
+                std::ranges::any_of(
+                    excluded_constant_identity_trips,
+                    [&](auto const& excluded) {
+                        return combdsl::detail::
+                            same_parser_definition_expression(
+                                trip, excluded);
+                    });
+            generated_z_c_trip = generated_z_c_trip ||
+                combdsl::detail::same_parser_definition_expression(
+                    trip, quote(Z)(C)(A));
+            generated_z_c_star_trip = generated_z_c_star_trip ||
+                combdsl::detail::same_parser_definition_expression(
+                    trip, quote(Z)(C_star)(A));
+            generated_g_k_trip = generated_g_k_trip ||
+                combdsl::detail::same_parser_definition_expression(
+                    trip, quote(G)(K)(A));
             if (first_trips.size() < 2) {
                 first_trips.push_back(std::move(trip));
             }
@@ -8142,7 +9229,18 @@ int main() {
                        << generated_right_partial_k
                        << generated_left_sk
                        << generated_right_sk
-                       << generated_right_identity << ' ';
+                       << generated_right_identity << ' '
+                       << generated_left_flat_m
+                       << generated_right_flat_m
+                       << generated_right_composite_m << ' '
+                       << generated_right_m_k_a
+                       << generated_right_w_k_a << ' '
+                       << generated_excluded_identity_trip
+                       << generated_excluded_constant_identity_trip << ' '
+                       << generated_z_c_trip
+                       << generated_z_c_star_trip << ' '
+                       << generated_g_k_trip
+                       << ' ';
              if (first_trips.size() >= 2) {
                  first_trips[0].print_to(std::cout);
                  std::cout << ' ';
@@ -8151,7 +9249,7 @@ int main() {
                  std::cout << first_trips.size();
              }
          },
-         "49692 01010 AAA A(AA)");
+         "47622 01010 001 00 00 01 0 AAA A(AA)");
     constexpr auto trip_candidate_slot_count =
         combdsl::check_for_match_combinator_count *
         combdsl::check_for_match_combinator_count *
@@ -8190,7 +9288,7 @@ int main() {
                        << nonempty_trip_column_count << ' '
                        << duplicate_trip_column_candidate;
          },
-         "49692 1710 0");
+         "47622 1674 0");
 #if !defined(__EMSCRIPTEN__)
     test("native find dispatch uses worker threads",
          [] {
@@ -8506,7 +9604,7 @@ int main() {
                  parallel_trip_matches[1].print_to(std::cout);
              }
          },
-         "30 AAA A(AA)");
+         "26 AAA A(AA)");
     test("AAA and A(AA) both match the same target",
          [&] {
              std::cout << combdsl::check_for_match(
@@ -8560,15 +9658,25 @@ int main() {
             return present;
         };
     constexpr std::size_t a_index = 0;
+    constexpr std::size_t b_index = 1;
+    constexpr std::size_t c_index = 2;
+    constexpr std::size_t c_star_index = 3;
     constexpr std::size_t c_star_star_index = 4;
     constexpr std::size_t e_index = 6;
+    constexpr std::size_t g_index = 8;
     constexpr std::size_t h_index = 9;
     constexpr std::size_t i_index = 10;
     constexpr std::size_t k_index = 12;
     constexpr std::size_t l_index = 13;
     constexpr std::size_t m_index = 14;
+    constexpr std::size_t q_index = 17;
+    constexpr std::size_t r_index = 20;
     constexpr std::size_t s_index = 21;
+    constexpr std::size_t t_index = 22;
     constexpr std::size_t u_index = 23;
+    constexpr std::size_t w_index = 25;
+    constexpr std::size_t w1_index = 28;
+    constexpr std::size_t z_index = 29;
     constexpr auto combinator_count =
         combdsl::check_for_match_combinator_count;
     auto const l_question_k_s_column_index =
@@ -8629,7 +9737,140 @@ int main() {
                  l_question_k_s_column.back().print_to(std::cout);
              }
          },
-         "26 0 1 1 L(AK)S L(ZK)S");
+         "25 0 1 1 L(AK)S L(ZK)S");
+    test("quad generator prunes K-headed M and W applications",
+         [&] {
+             auto print_presence = [](auto const& presence) {
+                 for (auto const present : presence) {
+                     std::cout << present;
+                 }
+             };
+             print_presence(quad_shape_presence(
+                 m_index, k_index, a_index, a_index));
+             std::cout << ' ';
+             print_presence(quad_shape_presence(
+                 w_index, k_index, a_index, a_index));
+             std::cout << ' ';
+             print_presence(quad_shape_presence(
+                 a_index, m_index, k_index, a_index));
+             std::cout << ' ';
+             print_presence(quad_shape_presence(
+                 a_index, w_index, k_index, a_index));
+         },
+         "00000 00000 11000 11000");
+    test("quad generator prunes every nested structural identity trip",
+         [&] {
+             std::array const middle_capture_cases{
+                 std::pair{b_index, i_index},
+                 std::pair{q_index, i_index},
+                 std::pair{r_index, t_index},
+                 std::pair{t_index, i_index},
+                 std::pair{w1_index, k_index},
+             };
+             bool middle_capture_pruned = true;
+             for (auto const [first, terminal] :
+                  middle_capture_cases) {
+                 middle_capture_pruned =
+                     middle_capture_pruned &&
+                     !quad_shape_presence(
+                         first, a_index, terminal, b_index)[0] &&
+                     !quad_shape_presence(
+                         first, a_index, b_index, terminal)[2] &&
+                     !quad_shape_presence(
+                         b_index, first, a_index, terminal)[3];
+             }
+
+             std::array const last_capture_cases{
+                 std::pair{c_star_index, c_index},
+                 std::pair{c_star_star_index, c_star_index},
+                 std::pair{g_index, t_index},
+                 std::pair{z_index, c_index},
+             };
+             bool last_capture_pruned = true;
+             for (auto const [first, second] :
+                  last_capture_cases) {
+                 auto const leading = quad_shape_presence(
+                     first, second, a_index, b_index);
+                 last_capture_pruned =
+                     last_capture_pruned &&
+                     !leading[0] && !leading[1] &&
+                     !quad_shape_presence(
+                         b_index, first, second, a_index)[3];
+             }
+
+             std::array const right_capture_cases{
+                 std::pair{c_index, c_index},
+                 std::pair{c_star_index, c_star_index},
+             };
+             bool right_capture_pruned = true;
+             for (auto const [first, second] :
+                  right_capture_cases) {
+                 auto const leading = quad_shape_presence(
+                     first, second, a_index, b_index);
+                 right_capture_pruned =
+                     right_capture_pruned &&
+                     !leading[2] && !leading[4] &&
+                     !quad_shape_presence(
+                         b_index, first, second, a_index)[4];
+             }
+
+             std::cout
+                 << middle_capture_cases.size() << ':'
+                 << middle_capture_pruned << ' '
+                 << last_capture_cases.size() << ':'
+                 << last_capture_pruned << ' '
+                 << right_capture_cases.size() << ':'
+                 << right_capture_pruned;
+         },
+         "5:1 4:1 2:1");
+    test("quad generator keeps Z C-star identity trips in every shape",
+         [&] {
+             auto const direct = quad_shape_presence(
+                 z_index, c_star_index, a_index, b_index);
+             auto const nested = quad_shape_presence(
+                 b_index, z_index, c_star_index, a_index);
+             std::cout
+                 << direct[0] << direct[1] << ' '
+                 << nested[3];
+         },
+         "11 1");
+    test("quad generator prunes G K trips in every affected shape",
+         [&] {
+             auto print_presence = [](auto const& presence) {
+                 for (auto const present : presence) {
+                     std::cout << present;
+                 }
+             };
+             print_presence(quad_shape_presence(
+                 g_index, k_index, a_index, b_index));
+             std::cout << ' ';
+             print_presence(quad_shape_presence(
+                 b_index, g_index, k_index, a_index));
+         },
+         "00101 11101");
+    test("quad generator prunes constant identity trips in every shape",
+         [&] {
+             auto print_presence = [](auto const& presence) {
+                 for (auto const present : presence) {
+                     std::cout << present;
+                 }
+             };
+             print_presence(quad_shape_presence(
+                 c_index, k_index, a_index, b_index));
+             std::cout << ' ';
+             print_presence(quad_shape_presence(
+                 b_index, c_index, k_index, a_index));
+             std::cout << " | ";
+             print_presence(quad_shape_presence(
+                 r_index, a_index, k_index, b_index));
+             std::cout << ' ';
+             print_presence(quad_shape_presence(
+                 r_index, a_index, b_index, k_index));
+             std::cout << ' ';
+             print_presence(quad_shape_presence(
+                 b_index, r_index, a_index, k_index));
+         },
+         "00101 11101 | 01111 11011 11101");
     test("quad exclusions cover every pair and triplet position",
          [&] {
              auto print_presence =
@@ -8695,9 +9936,9 @@ int main() {
                  a_index, s_index, k_index, a_index));
          },
          "00000 11000 10110 11111 | "
+         "00001 10000 10110 | "
          "00111 11001 10110 | "
-         "00111 11001 10110 | "
-         "00111 11001 10110 | "
+         "00001 10000 10110 | "
          "00111 11001 10110 | "
          "01111 11101 | "
          "01101 11101");

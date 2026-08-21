@@ -1055,6 +1055,30 @@ test("built Studio Wasm repeatedly rescans duplicate takeout at parser boundarie
             "?=WN\n",
         );
 
+        const hSteps = module.beginLimitedEval(
+            "abstract steps ?x = C*Hxx",
+            ++requestId,
+            1000,
+            false,
+        );
+        assert.equal(hSteps.success, true, hSteps.error);
+        assert.equal(
+            hSteps.output,
+            "takeout x from C*Hxx: W(C*H)\n" +
+            "optimize: W(C*H) -> HH\n" +
+            "optimize: HH -> MH\n" +
+            "?=MH\n",
+        );
+
+        const hCompound = module.parseEval(
+            "abstract ?x = C*(a(bc))xx",
+            ++requestId,
+            false,
+            0,
+        );
+        assert.equal(hCompound.success, true, hCompound.error);
+        assert.equal(hCompound.output, "?=H(a(bc))\n");
+
         const rescannedPlain = module.parseEval(
             "abstract ?xy = xxxy", ++requestId, false, 0);
         assert.equal(
@@ -1359,6 +1383,450 @@ test("built prepared Find reuses one target across serial and sharded sizes",
         assert.equal(afterReset.success, false);
         assert.match(afterReset.error, /no find among command is prepared/);
         assert.deepEqual(takeFindAmongShardMatches(afterReset), []);
+    });
+
+test("built prepared Find prunes only targeted M and W shapes",
+    async () => {
+        const module = await loadBuiltCombdslModule();
+
+        const flatPreparation = module.prepareFindAmong(
+            "find among M K ?x = MKx", 10000);
+        assert.equal(
+            flatPreparation.success, true, flatPreparation.error);
+        assert.equal(flatPreparation.searchable, true);
+        const flatResult = module.findAmongPreparedSizeShard(
+            2, 0, 1, 10000);
+        assert.equal(flatResult.success, true, flatResult.error);
+        assert.equal(flatResult.timedOut, false);
+        const flatMatches = takeFindAmongShardMatches(flatResult);
+        assert.equal(
+            flatMatches.some(match => match.expression === "MK"),
+            false,
+            "M applied to an atomic catalog bird must be pruned",
+        );
+        assert.equal(
+            flatMatches.some(match => match.expression === "KK"),
+            true,
+            "an equivalent unpruned candidate should still be found",
+        );
+
+        const compositePreparation = module.prepareFindAmong(
+            "find all among M A ?x = M(AA)x", 10000);
+        assert.equal(
+            compositePreparation.success,
+            true,
+            compositePreparation.error,
+        );
+        assert.equal(compositePreparation.searchable, true);
+        const compositeResult = module.findAmongPreparedSizeShard(
+            3, 0, 1, 10000);
+        assert.equal(
+            compositeResult.success, true, compositeResult.error);
+        assert.equal(compositeResult.timedOut, false);
+        const compositeMatches =
+            takeFindAmongShardMatches(compositeResult);
+        assert.equal(
+            compositeMatches.some(
+                match => match.expression === "M(AA)"),
+            true,
+            "an unrelated M-composite must remain eligible",
+        );
+
+        const kAtomicPreparation = module.prepareFindAmong(
+            "find all among M W K A ?x = Ax", 10000);
+        assert.equal(
+            kAtomicPreparation.success,
+            true,
+            kAtomicPreparation.error,
+        );
+        assert.equal(kAtomicPreparation.searchable, true);
+        const kAtomicResult = module.findAmongPreparedSizeShard(
+            3, 0, 1, 10000);
+        assert.equal(
+            kAtomicResult.success, true, kAtomicResult.error);
+        assert.equal(kAtomicResult.timedOut, false);
+        const kAtomicMatches =
+            takeFindAmongShardMatches(kAtomicResult);
+        assert.equal(
+            kAtomicMatches.some(
+                match => match.expression === "M(KA)"),
+            false,
+            "M(K A) must be pruned",
+        );
+        assert.equal(
+            kAtomicMatches.some(
+                match => match.expression === "W(KA)"),
+            false,
+            "W(K A) must be pruned",
+        );
+        assert.equal(
+            kAtomicMatches.some(
+                match => match.expression === "KAA"),
+            true,
+            "an equivalent untargeted size-three candidate must remain",
+        );
+
+        const kCompositePreparation = module.prepareFindAmong(
+            "find all among M W K A ?x = AAx", 10000);
+        assert.equal(
+            kCompositePreparation.success,
+            true,
+            kCompositePreparation.error,
+        );
+        assert.equal(kCompositePreparation.searchable, true);
+        const kCompositeResult = module.findAmongPreparedSizeShard(
+            4, 0, 1, 10000);
+        assert.equal(
+            kCompositeResult.success,
+            true,
+            kCompositeResult.error,
+        );
+        assert.equal(kCompositeResult.timedOut, false);
+        const kCompositeMatches =
+            takeFindAmongShardMatches(kCompositeResult);
+        assert.equal(
+            kCompositeMatches.some(
+                match => match.expression === "M(K(AA))"),
+            false,
+            "M(K A) must be pruned for compound A",
+        );
+        assert.equal(
+            kCompositeMatches.some(
+                match => match.expression === "W(K(AA))"),
+            false,
+            "W(K A) must be pruned for compound A",
+        );
+        assert.equal(
+            kCompositeMatches.some(
+                match => match.expression === "K(AA)A"),
+            true,
+            "an equivalent untargeted size-four candidate must remain",
+        );
+    });
+
+test("built prepared Find prunes structural identity trips",
+    async () => {
+        const module = await loadBuiltCombdslModule();
+        const atomicPreparation = module.prepareFindAmong(
+            "find all among A B C C* C** G I K Q R T W1 Z " +
+            "?xyzw = Axyzw",
+            10000,
+        );
+        assert.equal(
+            atomicPreparation.success,
+            true,
+            atomicPreparation.error,
+        );
+        assert.equal(atomicPreparation.searchable, true);
+        const atomicResult = module.findAmongPreparedSizeShard(
+            3, 0, 1, 10000);
+        assert.equal(atomicResult.success, true, atomicResult.error);
+        assert.equal(atomicResult.timedOut, false);
+        const atomicMatches = takeFindAmongShardMatches(atomicResult);
+        const atomicExpressions = new Set(
+            atomicMatches.map(match => match.expression));
+        for (const excluded of [
+            "BAI",
+            "C(CA)",
+            "C*CA",
+            "C*(C*A)",
+            "C**C*A",
+            "GTA",
+            "QAI",
+            "RAT",
+            "TAI",
+            "W1 AK",
+            "ZCA",
+        ]) {
+            assert.equal(
+                atomicExpressions.has(excluded),
+                false,
+                `${excluded} must be pruned`,
+            );
+        }
+        assert.equal(
+            atomicExpressions.has("KAA"),
+            true,
+            "an equivalent untargeted atomic-capture candidate must remain",
+        );
+
+        const compoundPreparation = module.prepareFindAmong(
+            "find all among A B C C* I K Z ?xyzw = AAxyzw",
+            10000,
+        );
+        assert.equal(
+            compoundPreparation.success,
+            true,
+            compoundPreparation.error,
+        );
+        assert.equal(compoundPreparation.searchable, true);
+        const compoundResult = module.findAmongPreparedSizeShard(
+            4, 0, 1, 10000);
+        assert.equal(
+            compoundResult.success, true, compoundResult.error);
+        assert.equal(compoundResult.timedOut, false);
+        const compoundExpressions = new Set(
+            takeFindAmongShardMatches(compoundResult).map(
+                match => match.expression));
+        for (const excluded of [
+            "B(AA)I",
+            "C(C(AA))",
+            "C*C(AA)",
+            "ZC(AA)",
+        ]) {
+            assert.equal(
+                compoundExpressions.has(excluded),
+                false,
+                `${excluded} must be pruned`,
+            );
+        }
+        assert.equal(
+            compoundExpressions.has("K(AA)A"),
+            true,
+            "an equivalent untargeted compound-capture candidate must remain",
+        );
+    });
+
+test("built prepared Find retains Z C-star identity trips",
+    async () => {
+        const module = await loadBuiltCombdslModule();
+        const atomicPreparation = module.prepareFindAmong(
+            "find all among A C C* K Z ?xyzw = Axyzw",
+            10000,
+        );
+        assert.equal(
+            atomicPreparation.success,
+            true,
+            atomicPreparation.error,
+        );
+        assert.equal(atomicPreparation.searchable, true);
+        const atomicResult = module.findAmongPreparedSizeShard(
+            3, 0, 1, 10000);
+        assert.equal(atomicResult.success, true, atomicResult.error);
+        assert.equal(atomicResult.timedOut, false);
+        const atomicExpressions = new Set(
+            takeFindAmongShardMatches(atomicResult).map(
+                match => match.expression));
+        assert.equal(
+            atomicExpressions.has("ZCA"),
+            false,
+            "ZCA must stay pruned",
+        );
+        assert.equal(
+            atomicExpressions.has("ZC*A"),
+            true,
+            "ZC*A must remain an eligible identity trip",
+        );
+        assert.equal(
+            atomicExpressions.has("KAA"),
+            true,
+            "an eligible atomic-capture control must remain",
+        );
+
+        const compoundPreparation = module.prepareFindAmong(
+            "find all among A C C* K Z ?xyzw = AAxyzw",
+            10000,
+        );
+        assert.equal(
+            compoundPreparation.success,
+            true,
+            compoundPreparation.error,
+        );
+        assert.equal(compoundPreparation.searchable, true);
+        const compoundResult = module.findAmongPreparedSizeShard(
+            4, 0, 1, 10000);
+        assert.equal(
+            compoundResult.success, true, compoundResult.error);
+        assert.equal(compoundResult.timedOut, false);
+        const compoundExpressions = new Set(
+            takeFindAmongShardMatches(compoundResult).map(
+                match => match.expression));
+        assert.equal(
+            compoundExpressions.has("ZC(AA)"),
+            false,
+            "ZC(AA) must stay pruned",
+        );
+        assert.equal(
+            compoundExpressions.has("ZC*(AA)"),
+            true,
+            "ZC*(AA) must remain eligible for a compound capture",
+        );
+        assert.equal(
+            compoundExpressions.has("K(AA)A"),
+            true,
+            "an eligible compound-capture control must remain",
+        );
+    });
+
+test("built prepared Find prunes G K trips exactly",
+    async () => {
+        const module = await loadBuiltCombdslModule();
+        const targetCommand =
+            "find all among A G I K ?xy = y";
+
+        const atomicPreparation = module.prepareFindAmong(
+            targetCommand, 10000);
+        assert.equal(
+            atomicPreparation.success,
+            true,
+            atomicPreparation.error,
+        );
+        assert.equal(atomicPreparation.searchable, true);
+        const atomicResult = module.findAmongPreparedSizeShard(
+            3, 0, 1, 10000);
+        assert.equal(atomicResult.success, true, atomicResult.error);
+        assert.equal(atomicResult.timedOut, false);
+        const atomicExpressions = new Set(
+            takeFindAmongShardMatches(atomicResult).map(
+                match => match.expression));
+        assert.equal(
+            atomicExpressions.has("GKA"),
+            false,
+            "GKA must be pruned",
+        );
+        assert.equal(
+            atomicExpressions.has("AIK"),
+            true,
+            "an eligible size-three K-I equivalent must remain",
+        );
+
+        const compoundPreparation = module.prepareFindAmong(
+            targetCommand, 10000);
+        assert.equal(
+            compoundPreparation.success,
+            true,
+            compoundPreparation.error,
+        );
+        assert.equal(compoundPreparation.searchable, true);
+        const compoundResult = module.findAmongPreparedSizeShard(
+            4, 0, 1, 10000);
+        assert.equal(
+            compoundResult.success, true, compoundResult.error);
+        assert.equal(compoundResult.timedOut, false);
+        const compoundExpressions = new Set(
+            takeFindAmongShardMatches(compoundResult).map(
+                match => match.expression));
+        assert.equal(
+            compoundExpressions.has("GK(AA)"),
+            false,
+            "GK(AA) must be pruned",
+        );
+        assert.equal(
+            compoundExpressions.has("K(KI)A"),
+            true,
+            "an eligible size-four K-I equivalent must remain",
+        );
+
+        const oppositePreparation = module.prepareFindAmong(
+            "find all among A G K ?xyzw = G(KA)xyzw",
+            10000,
+        );
+        assert.equal(
+            oppositePreparation.success,
+            true,
+            oppositePreparation.error,
+        );
+        assert.equal(oppositePreparation.searchable, true);
+        const oppositeResult = module.findAmongPreparedSizeShard(
+            3, 0, 1, 10000);
+        assert.equal(
+            oppositeResult.success, true, oppositeResult.error);
+        assert.equal(oppositeResult.timedOut, false);
+        assert.equal(
+            takeFindAmongShardMatches(oppositeResult).some(
+                match => match.expression === "G(KA)"),
+            true,
+            "G(KA) must retain its opposite association",
+        );
+    });
+
+test("built prepared Find prunes constant identity trips exactly",
+    async () => {
+        const module = await loadBuiltCombdslModule();
+        const identityCommand =
+            "find all among A C I K R ?xyzw = xyzw";
+
+        const atomicPreparation = module.prepareFindAmong(
+            identityCommand, 10000);
+        assert.equal(
+            atomicPreparation.success,
+            true,
+            atomicPreparation.error,
+        );
+        assert.equal(atomicPreparation.searchable, true);
+        const atomicResult = module.findAmongPreparedSizeShard(
+            3, 0, 1, 10000);
+        assert.equal(atomicResult.success, true, atomicResult.error);
+        assert.equal(atomicResult.timedOut, false);
+        const atomicExpressions = new Set(
+            takeFindAmongShardMatches(atomicResult).map(
+                match => match.expression));
+        for (const excluded of ["CKA", "RAK"]) {
+            assert.equal(
+                atomicExpressions.has(excluded),
+                false,
+                `${excluded} must be pruned`,
+            );
+        }
+        assert.equal(
+            atomicExpressions.has("KIA"),
+            true,
+            "an eligible size-three identity must remain",
+        );
+
+        const compoundPreparation = module.prepareFindAmong(
+            identityCommand, 10000);
+        assert.equal(
+            compoundPreparation.success,
+            true,
+            compoundPreparation.error,
+        );
+        assert.equal(compoundPreparation.searchable, true);
+        const compoundResult = module.findAmongPreparedSizeShard(
+            4, 0, 1, 10000);
+        assert.equal(
+            compoundResult.success, true, compoundResult.error);
+        assert.equal(compoundResult.timedOut, false);
+        const compoundExpressions = new Set(
+            takeFindAmongShardMatches(compoundResult).map(
+                match => match.expression));
+        for (const excluded of ["CK(AA)", "R(AA)K"]) {
+            assert.equal(
+                compoundExpressions.has(excluded),
+                false,
+                `${excluded} must be pruned`,
+            );
+        }
+        assert.equal(
+            compoundExpressions.has("AIII"),
+            true,
+            "an eligible size-four identity must remain",
+        );
+
+        for (const [command, retained] of [
+            [
+                "find all among A C K ?xyzw = C(KA)xyzw",
+                "C(KA)",
+            ],
+            [
+                "find all among A K R ?xyzw = R(AK)xyzw",
+                "R(AK)",
+            ],
+        ]) {
+            const preparation = module.prepareFindAmong(command, 10000);
+            assert.equal(preparation.success, true, preparation.error);
+            assert.equal(preparation.searchable, true);
+            const result = module.findAmongPreparedSizeShard(
+                3, 0, 1, 10000);
+            assert.equal(result.success, true, result.error);
+            assert.equal(result.timedOut, false);
+            assert.equal(
+                takeFindAmongShardMatches(result).some(
+                    match => match.expression === retained),
+                true,
+                `${retained} must retain its opposite association`,
+            );
+        }
     });
 
 test("built prepared Find reports shared-budget exhaustion transactionally",

@@ -66,7 +66,7 @@
 
 namespace {
 
-constexpr std::string_view crepl_version = "2.14.1";
+constexpr std::string_view crepl_version = "2.14.7";
 constexpr std::string_view no_further_reductions_message =
     "No further reductions";
 
@@ -2275,14 +2275,16 @@ void print_help_full(std::ostream& output) {
     write_wrapped_paragraph(
         output,
         "After each complete takeout, Define and Abstract repeatedly rescan "
-        "the whole result for duplicate subexpressions. Each scan is "
+        "the whole result for optimization patterns. Each scan is "
         "top-down. At each node, the first matching rule in this order wins: "
-        "ABA -> NAB; ABB -> WAB; A(BA) -> OBA; A(AB) -> ZAB; A(BB) -> LAB; "
+        "W(C* A) -> HA; ABA -> NAB; ABB -> WAB; A(BA) -> OBA; A(AB) -> ZAB; "
+        "A(BB) -> LAB; "
         "(A1 A)(A2 A) -> S A1 A2 A; and finally AA -> MA. Every placeholder "
         "may be an arbitrary combinator expression, and repeated placeholders "
         "must be structurally identical. Captured operands are scanned "
         "recursively, while a generated bird skeleton is reconsidered only "
-        "on the next whole-expression scan. Rescanning stops when a scan "
+        "on the next whole-expression scan. The H rule precedes its "
+        "overlapping O and L shapes. Rescanning stops when a scan "
         "makes no structural change or produces a structurally repeated "
         "state; the repeated state is retained. Because M is the final "
         "fallback, (F X)(F X) matches the earlier S rule and becomes S F F X, "
@@ -2291,7 +2293,9 @@ void print_help_full(std::ostream& output) {
         "changed whole-expression scan, including the transition into a "
         "repeated terminal state; an unchanged terminating scan is omitted. "
         "For example, \"abstract steps ?xy = xxxy\" prints \"optimize: xxx "
-        "-> Nxx\", then \"optimize: Nxx -> WNx\".");
+        "-> Nxx\", then \"optimize: Nxx -> WNx\". With \"abstract steps "
+        "?x = C*Hxx\", takeout produces W(C*H), then optimization prints "
+        "W(C*H) -> HH and HH -> MH.");
 
     output << "\nFinding Combinators\n\n"
            << "find [all] [<num> | among <bird>...] ?<symbol_list> = "

@@ -545,11 +545,12 @@ expression is `B`. If this preprocessing repeats an expression or exceeds its
 reduction limit, `define` safely abstracts the original body instead.
 
 After each complete `takeout` pass, and before taking out the next symbol,
-`define` and `abstract` repeatedly rescan the whole result for duplicate
-subexpressions. Each scan is top-down. At each node, the first matching rule in
-this order wins:
+`define` and `abstract` repeatedly rescan the whole result for optimization
+patterns. Each scan is top-down. At each node, the first matching rule in this
+order wins:
 
 ```text
+W (C* A)      -> H A
 A B A         -> N A B
 A B B         -> W A B
 A (B A)       -> O B A
@@ -562,12 +563,13 @@ A A           -> M A
 `A`, `B`, `A1`, and `A2` may each be an arbitrary combinator expression, and
 occurrences bearing the same placeholder must be structurally identical.
 Captured operands are scanned recursively, while a generated
-`N`/`W`/`O`/`Z`/`L`/`S`/`M` skeleton is reconsidered only on the next
+`H`/`N`/`W`/`O`/`Z`/`L`/`S`/`M` skeleton is reconsidered only on the next
 whole-expression scan. Rescanning stops when a scan makes no structural change
 or produces a structurally repeated state; the repeated state is retained.
-The final `M` rule is therefore only a fallback after the six more specific
-shapes; for example, `(F X) (F X)` matches the earlier `S` rule and becomes
-`S F F X`, not `M(F X)`. This pass is part of `define` and `abstract`; the
+The `H` rule precedes its overlapping `O` and `L` shapes. The final `M` rule is
+therefore only a fallback after the seven more specific shapes; for example,
+`(F X) (F X)` matches the earlier `S` rule and becomes `S F F X`, not
+`M(F X)`. This pass is part of `define` and `abstract`; the
 low-level `takeout()` and `search_for_*_subexp()` APIs continue to expose their
 raw takeout results.
 
@@ -597,7 +599,9 @@ whole-expression scan is followed by one
 `?=` result. For example, `abstract steps ?xy = xxxy` prints
 `optimize: xxx -> Nxx`, then `optimize: Nxx -> WNx`. The unchanged
 terminating scan is omitted; a transition into a repeated terminal state is
-shown.
+shown. The new leading rule is visible in
+`abstract steps ?x = C*Hxx`: after takeout produces `W(C*H)`, the optimizer
+prints `W(C*H) -> HH`, then rescans and prints `HH -> MH`.
 
 The names `abstract`, `all`, `among`, `captured`, `live`, `step`, `steps`,
 `ministeps`, `limit`, `set`, `define`, `show`, `remove`, `revisions`,
@@ -621,9 +625,9 @@ parse_eval("show Repeat");              // prints: arity:1 Y
 ```
 
 The resulting recursive transformation is
-`optimize(Y(optimize(duplicate(takeout(rec_func, previous_takeout_result)))))`,
-where `duplicate` is the cycle-safe sequence of ordered post-takeout rescans
-above. For shapes that remain after those duplicate rescans, the final
+`optimize(Y(optimize(rescan(takeout(rec_func, previous_takeout_result)))))`,
+where `rescan` is the cycle-safe sequence of ordered post-takeout optimization
+scans above. For shapes that remain after those rescans, the final
 optimization recursively
 replaces `C*T` with `V`, `BDD` with `E`, `BOM`
 with `U`, `B(QT)R` with `F`, `B(QT)B` with `Q1`, `BT` with `Q3`, `BW` with
@@ -658,13 +662,12 @@ auto none = search_for_subexp(parse("C(CB)"));      // std::nullopt
 the ordinary evaluator rules, and compares the resulting quoted expression
 trees. `check_for_singles_match(symbol_list, expression)` checks every bird in
 the matcher catalog. `check_for_pairs_match(symbol_list, expression)` runs
-that check for all 858 ordered pairs, with repetition, made from the 30
+that check for all 831 ordered pairs, with repetition, made from the 30
 combinators in Bird Info other than `Y`, and returns every matching pair.
-Every pair headed by
-`I`, along with the identity-equivalent pairs `BI`, `CT`, `MI`, `NK`, `QI`,
-`WK`, `W*K`, and `ZI`, and the nonterminating pairs `MM`, `MU`, `UM`, and
-`UU`, is excluded.
-`check_for_trips_match(symbol_list, expression)` similarly checks 49,692
+Every pair headed by `I` or `M`, along with the remaining identity-equivalent
+pairs `BI`, `CT`, `NK`, `QI`, `WK`, `W*K`, and `ZI`, and the nonterminating
+pairs `UM` and `UU`, is excluded.
+`check_for_trips_match(symbol_list, expression)` similarly checks 47,622
 ordered trip applications in both the left-associated and right-associated
 application-tree shapes. It skips `(AB)C` when `AB` is excluded and
 independently skips `A(BC)` when `BC` is excluded. In the left-associated
@@ -672,12 +675,21 @@ independently skips `A(BC)` when `BC` is excluded. In the left-associated
 the partially applied `K(BC)` right-associated shape remains eligible. It also
 skips `SK<anything>` in the `ABC` shape while retaining `S(K<anything>)`, and
 skips right-associated `I(BC)` because `I` is applied to the composite `BC`.
-`check_for_quads_match(symbol_list, expression)` checks 3,667,992 eligible
+Unlike a flat `M B` pair, a non-`K`-headed composite such as `M(AB)` remains
+eligible. The following exact structural forms are excluded, with `A`
+matching any atomic or compound expression: `M(K A)`, `W(K A)`, `(B A)I`,
+`(C K)A`, `C(C A)`, `(C* C)A`, `C*(C* A)`, `(C** C*)A`, `(G K)A`,
+`(G T)A`, `(Q A)I`, `(R A)K`, `(R A)T`, `(T A)I`, `(W1 A)K`, and
+`(Z C)A`. Application still associates left; the parentheses only make each
+matched tree explicit. In particular, `(Z C*)A` remains eligible.
+`check_for_quads_match(symbol_list, expression)` checks 3,487,022 eligible
 quad applications across the five application trees `ABCD`, `AB(CD)`,
 `A(BC)D`, `A(BCD)`, and `A(B(CD))`. It inherits the pair and trip exclusions
 at every pair or trip subtree. Both pair subtrees in `AB(CD)` must be eligible,
-every application of `I` is excluded even when its argument is composite, and
-the `Kxx` and `SKx` exclusions are checked in both left-associated triplet
+every application of `I` is excluded even when its argument is composite,
+while `M` is excluded when its direct argument is an atomic catalog bird or a
+`K`-headed application. `W` is likewise excluded on a `K`-headed application.
+The `Kxx` and `SKx` exclusions are checked in both left-associated triplet
 positions, `ABC` and `BCD`. The exhaustive quad search is not run
 automatically; call `check_for_quads_match` explicitly when its potentially
 minutes-long search is wanted.
@@ -704,12 +716,14 @@ even if they normalize to the same result. The pair, trip, and quad pools omit
 `Y` to avoid recursive candidates; `J` and every other pre-defined bird are
 included. `check_for_match` itself accepts any combinator.
 The `I`-headed exclusions avoid redundant matches because `Ix` reduces to
-`x`; the eight identity-equivalent pair exclusions avoid the same redundancy
-because each is extensionally equal to `I`. The fixed `MM`, `MU`, `UM`, and
-`UU` exclusions avoid pairs that do not reach normal form under the matcher's
+`x`; the seven remaining identity-equivalent pair exclusions avoid the same
+redundancy because each is extensionally equal to `I`. The `M`-headed pruning
+omits duplicator applications to atomic birds. The additional exact structural
+forms listed above are omitted for arbitrary `A`. The fixed `UM` and `UU`
+exclusions avoid pairs that do not reach normal form under the matcher's
 bounded normalization. This trip and quad subtree pruning checks every
-position for all excluded pairs and is deliberately heuristic because
-surrounding application context can make an excluded pair normalize.
+position for all exclusions and is deliberately heuristic because surrounding
+application context can make an excluded subtree normalize.
 Each normalization is limited to
 `check_for_match_reduction_limit` reductions, currently 256, and also stops on
 a repeated or excessively large expression. A stopped normalization is treated
@@ -1088,7 +1102,7 @@ using the same direct syntax for interactive input, piped input, and loaded
 journals. Piped input remains line-oriented, while journal loading can group a
 quoted string that spans multiple physical lines into one record.
 When standard output is a terminal, it first prints
-`Combinator Read-Eval-Print Loop, version 2.14.1`. Long evaluations display
+`Combinator Read-Eval-Print Loop, version 2.14.7`. Long evaluations display
 the accumulated step count every 1,000 reductions by overwriting one status
 line; the line is cleared before evaluation output is printed. Its interactive
 prompt is `>`. Interactive input uses GNU Readline, so previous nonempty
@@ -1230,8 +1244,8 @@ full expression on a new line beginning with `= `. For example,
 `takeout y from y(xy): O[takeout y from xy]`, then `= Ox`,
 `takeout x from Ox: O`, and `?=O`. The command does not evaluate its result
 and ignores the stepping and color modes. After each complete takeout,
-`abstract` repeatedly rescans the whole result using the ordered duplicate
-rules `ABA -> NAB`, `ABB -> WAB`, `A(BA) -> OBA`, `A(AB) -> ZAB`,
+`abstract` repeatedly rescans the whole result using the ordered optimization
+rules `W(C* A) -> HA`, `ABA -> NAB`, `ABB -> WAB`, `A(BA) -> OBA`, `A(AB) -> ZAB`,
 `A(BB) -> LAB`, `(A1 A)(A2 A) -> S A1 A2 A`, and finally `AA -> MA`;
 every placeholder may be a compound expression. Rescanning stops when a scan
 is unchanged or reaches a structurally repeated state. Individual

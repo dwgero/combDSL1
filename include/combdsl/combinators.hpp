@@ -10322,7 +10322,7 @@ BASIS(Q, 3, S(K(S(B)))(K));
 BASIS(Q1, 3, B(C)(B));
 BASIS(Q3, 3, B(T));
 BASIS(V, 3, S(S(K(S))(S(K(K))(S(K(S))(T))))(K(K)));
-BASIS(D, 4, S(K(S(K(S))))(S(K(K))));
+BASIS(D, 4, S(K(B)));
 BASIS(L, 2, S(B)(K(M)));
 BASIS(W1, 2, C(W));
 BASIS(Z, 2, S(B)(I));
@@ -10418,6 +10418,13 @@ optimize_duplicate_takeout_expressions_once(
     // Match the original root in this exact order before descending.  A
     // matched rule recursively optimizes only its captured operands; its new
     // combinator skeleton is not reconsidered during the same pass.
+    auto const* right = takeout_application(outer->argument());
+    if (right != nullptr &&
+        same(outer->function(), quote(W)) &&
+        same(right->function(), quote(C_star))) {
+        return quote(H)(optimize(right->argument()));
+    }
+
     auto const* left = takeout_application(outer->function());
     if (left != nullptr) {
         if (same(left->function(), outer->argument())) {
@@ -10432,7 +10439,6 @@ optimize_duplicate_takeout_expressions_once(
         }
     }
 
-    auto const* right = takeout_application(outer->argument());
     if (right != nullptr) {
         if (same(outer->function(), right->argument())) {
             return quote(O)(
@@ -10886,7 +10892,23 @@ inline constexpr std::size_t search_for_subexp_candidate_count =
     search_for_xyz_subexp_candidate_count;
 inline constexpr std::size_t check_for_match_reduction_limit = 256;
 inline constexpr std::size_t check_for_match_combinator_count = 30;
-inline constexpr std::size_t check_for_match_excluded_pair_count = 42;
+inline constexpr std::size_t check_for_match_excluded_pair_count = 69;
+inline constexpr std::size_t
+    check_for_match_kestrel_argument_head_count = 2;
+inline constexpr std::size_t
+    check_for_match_arbitrary_tail_left_pattern_count = 6;
+inline constexpr std::size_t
+    check_for_match_fixed_tail_left_pattern_count = 6;
+inline constexpr std::size_t
+    check_for_match_right_trip_pattern_count = 2;
+inline constexpr std::size_t
+    check_for_match_structural_left_trip_exclusion_count = 358;
+inline constexpr std::size_t
+    check_for_match_structural_right_trip_exclusion_count = 59;
+inline constexpr std::size_t
+    check_for_match_right_composite_root_pattern_count =
+        check_for_match_kestrel_argument_head_count +
+        check_for_match_right_trip_pattern_count;
 inline constexpr std::size_t check_for_pairs_match_candidate_count =
     check_for_match_combinator_count *
         check_for_match_combinator_count -
@@ -10897,11 +10919,15 @@ inline constexpr std::size_t
             check_for_pairs_match_candidate_count -
         check_for_match_combinator_count *
             check_for_match_combinator_count -
-        check_for_match_combinator_count;
+        check_for_match_combinator_count -
+        check_for_match_structural_left_trip_exclusion_count;
 inline constexpr std::size_t
     check_for_match_right_trip_candidate_count =
         (check_for_match_combinator_count - 1) *
-        check_for_pairs_match_candidate_count;
+            check_for_pairs_match_candidate_count -
+        check_for_match_kestrel_argument_head_count *
+            check_for_match_combinator_count -
+        check_for_match_structural_right_trip_exclusion_count;
 inline constexpr std::size_t check_for_trips_match_candidate_count =
     check_for_match_left_trip_candidate_count +
     check_for_match_right_trip_candidate_count;
@@ -10920,15 +10946,20 @@ inline constexpr std::size_t check_for_quads_match_candidate_count =
     check_for_match_combinator_count *
         check_for_match_left_trip_candidate_count +
     check_for_pairs_match_candidate_count *
+        check_for_pairs_match_candidate_count -
+    check_for_match_arbitrary_tail_left_pattern_count *
         check_for_pairs_match_candidate_count +
-    (check_for_match_combinator_count - 1) *
-        check_for_match_combinator_count *
+    check_for_match_combinator_count *
+        check_for_match_right_trip_candidate_count -
+    check_for_match_fixed_tail_left_pattern_count *
         check_for_pairs_match_candidate_count +
     (check_for_match_combinator_count - 1) *
         check_for_match_left_trip_candidate_count +
     (check_for_match_combinator_count - 1) *
-        (check_for_match_combinator_count - 1) *
-        check_for_pairs_match_candidate_count;
+        check_for_match_right_trip_candidate_count -
+    check_for_match_right_composite_root_pattern_count *
+        check_for_pairs_match_candidate_count +
+    check_for_match_structural_right_trip_exclusion_count;
 inline constexpr std::size_t check_for_quads_match_column_count =
     check_for_quads_match_shape_count *
     check_for_match_combinator_count *
@@ -11453,37 +11484,151 @@ predefined_bird_combinators() {
     return combinators;
 }
 
+[[nodiscard]] inline std::string_view match_combinator_name(
+    quoted_expression const& expression) noexcept {
+    auto const& root = quoted_access::root(expression);
+    switch (root->kind()) {
+    case quoted_node_kind::identity:
+        return "I";
+    case quoted_node_kind::constant:
+        return "K";
+    case quoted_node_kind::basis:
+        return static_cast<quoted_basis_node_base const&>(*root)
+            .definition_name();
+    default:
+        return {};
+    }
+}
+
 [[nodiscard]] inline bool is_identity_combinator(
     quoted_expression const& expression) noexcept {
     return quoted_access::root(expression)->kind() ==
            quoted_node_kind::identity;
 }
 
+[[nodiscard]] inline bool is_atomic_match_bird(
+    quoted_expression const& expression) noexcept {
+    switch (quoted_access::root(expression)->kind()) {
+    case quoted_node_kind::identity:
+    case quoted_node_kind::constant:
+    case quoted_node_kind::substitution:
+    case quoted_node_kind::fixed_point:
+    case quoted_node_kind::basis:
+        return true;
+    default:
+        return false;
+    }
+}
+
+[[nodiscard]] inline bool
+is_excluded_kestrel_argument_pair_head(
+    quoted_expression const& function,
+    quoted_expression const& argument_function) noexcept {
+    auto const function_name = match_combinator_name(function);
+    return (function_name == "M" || function_name == "W") &&
+           match_combinator_name(argument_function) == "K";
+}
+
+[[nodiscard]] inline bool
+is_excluded_kestrel_argument_pair(
+    quoted_expression const& function,
+    quoted_expression const& argument) noexcept {
+    auto const* application = takeout_application(argument);
+    return application != nullptr &&
+           is_excluded_kestrel_argument_pair_head(
+               function, application->function());
+}
+
+[[nodiscard]] inline bool
+is_excluded_fixed_tail_left_pattern(
+    quoted_expression const& first,
+    quoted_expression const& third) noexcept {
+    static constexpr std::array patterns{
+        std::pair<std::string_view, std::string_view>{"B", "I"},
+        std::pair<std::string_view, std::string_view>{"Q", "I"},
+        std::pair<std::string_view, std::string_view>{"R", "K"},
+        std::pair<std::string_view, std::string_view>{"R", "T"},
+        std::pair<std::string_view, std::string_view>{"T", "I"},
+        std::pair<std::string_view, std::string_view>{"W1", "K"},
+    };
+    return std::ranges::find(
+               patterns,
+               std::pair{
+                   match_combinator_name(first),
+                   match_combinator_name(third)}) != patterns.end();
+}
+
+[[nodiscard]] inline bool
+is_excluded_arbitrary_tail_left_pattern(
+    quoted_expression const& first,
+    quoted_expression const& second) noexcept {
+    static constexpr std::array patterns{
+        std::pair<std::string_view, std::string_view>{"C", "K"},
+        std::pair<std::string_view, std::string_view>{"C*", "C"},
+        std::pair<std::string_view, std::string_view>{"C**", "C*"},
+        std::pair<std::string_view, std::string_view>{"G", "K"},
+        std::pair<std::string_view, std::string_view>{"G", "T"},
+        std::pair<std::string_view, std::string_view>{"Z", "C"},
+    };
+    return std::ranges::find(
+               patterns,
+               std::pair{
+                   match_combinator_name(first),
+                   match_combinator_name(second)}) != patterns.end();
+}
+
+[[nodiscard]] inline bool
+is_excluded_right_trip_pattern(
+    quoted_expression const& first,
+    quoted_expression const& second) noexcept {
+    static constexpr std::array patterns{
+        std::pair<std::string_view, std::string_view>{"C", "C"},
+        std::pair<std::string_view, std::string_view>{"C*", "C*"},
+    };
+    return std::ranges::find(
+               patterns,
+               std::pair{
+                   match_combinator_name(first),
+                   match_combinator_name(second)}) != patterns.end();
+}
+
+[[nodiscard]] inline bool
+is_excluded_structural_trip_pair(
+    quoted_expression const& function,
+    quoted_expression const& argument) noexcept {
+    auto const* left = takeout_application(function);
+    if (left != nullptr &&
+        (is_excluded_fixed_tail_left_pattern(
+             left->function(), argument) ||
+         is_excluded_arbitrary_tail_left_pattern(
+             left->function(), left->argument()))) {
+        return true;
+    }
+
+    auto const* right = takeout_application(argument);
+    return right != nullptr &&
+           is_excluded_right_trip_pattern(
+               function, right->function());
+}
+
 [[nodiscard]] inline bool is_excluded_match_pair(
     quoted_expression const& function,
     quoted_expression const& argument) noexcept {
-    auto combinator_name =
-        [](quoted_expression const& expression) noexcept
-            -> std::string_view {
-            auto const& root = quoted_access::root(expression);
-            switch (root->kind()) {
-            case quoted_node_kind::identity:
-                return "I";
-            case quoted_node_kind::constant:
-                return "K";
-            case quoted_node_kind::basis:
-                return static_cast<quoted_basis_node_base const&>(*root)
-                    .definition_name();
-            default:
-                return {};
-            }
-        };
-    auto const function_name = combinator_name(function);
-    auto const argument_name = combinator_name(argument);
+    auto const function_name = match_combinator_name(function);
+    auto const argument_name = match_combinator_name(argument);
     if (function_name == "I") {
         return true;
     }
-    if ((function_name == "M" || function_name == "U") &&
+    if (function_name == "M" && is_atomic_match_bird(argument)) {
+        return true;
+    }
+    if (is_excluded_kestrel_argument_pair(function, argument)) {
+        return true;
+    }
+    if (is_excluded_structural_trip_pair(function, argument)) {
+        return true;
+    }
+    if (function_name == "U" &&
         (argument_name == "M" || argument_name == "U")) {
         return true;
     }
@@ -11518,10 +11663,13 @@ is_allowed_predefined_bird_left_trip_head(
 [[nodiscard]] inline bool
 is_allowed_predefined_bird_left_trip(
     quoted_expression const& first,
-    quoted_expression const& second) noexcept {
+    quoted_expression const& second,
+    quoted_expression const& third) noexcept {
     return !is_excluded_match_pair(first, second) &&
            is_allowed_predefined_bird_left_trip_head(
-               first, second);
+               first, second) &&
+           !is_excluded_fixed_tail_left_pattern(first, third) &&
+           !is_excluded_arbitrary_tail_left_pattern(first, second);
 }
 
 [[nodiscard]] inline bool
@@ -11530,6 +11678,9 @@ is_allowed_predefined_bird_right_trip(
     quoted_expression const& second,
     quoted_expression const& third) noexcept {
     return !is_identity_combinator(first) &&
+           !is_excluded_kestrel_argument_pair_head(
+               first, second) &&
+           !is_excluded_right_trip_pattern(first, second) &&
            !is_excluded_match_pair(second, third);
 }
 
@@ -11571,7 +11722,7 @@ predefined_bird_trip_shape_mask(
     quoted_expression const& third) noexcept {
     std::uint8_t result = 0;
     if (is_allowed_predefined_bird_left_trip(
-            first, second)) {
+            first, second, third)) {
         result |= std::uint8_t{1} << 0;
     }
     if (is_allowed_predefined_bird_right_trip(
@@ -11666,41 +11817,44 @@ predefined_bird_quad_shape_mask(
     quoted_expression const& fourth) noexcept {
     auto const pair_ab =
         !is_excluded_match_pair(first, second);
-    auto const pair_bc =
-        !is_excluded_match_pair(second, third);
     auto const pair_cd =
         !is_excluded_match_pair(third, fourth);
     auto const first_is_identity =
         is_identity_combinator(first);
-    auto const second_is_identity =
-        is_identity_combinator(second);
+    auto const first_has_excluded_right_argument =
+        is_excluded_kestrel_argument_pair_head(
+            first, second) ||
+        is_excluded_right_trip_pattern(first, second);
     auto const left_trip_abc =
-        pair_ab &&
-        is_allowed_predefined_bird_left_trip_head(
-            first, second);
+        is_allowed_predefined_bird_left_trip(
+            first, second, third);
     auto const right_trip_abc =
-        !first_is_identity && pair_bc;
+        is_allowed_predefined_bird_right_trip(
+            first, second, third);
     auto const left_trip_bcd =
-        pair_bc &&
-        is_allowed_predefined_bird_left_trip_head(
-            second, third);
+        is_allowed_predefined_bird_left_trip(
+            second, third, fourth);
     auto const right_trip_bcd =
-        !second_is_identity && pair_cd;
+        is_allowed_predefined_bird_right_trip(
+            second, third, fourth);
 
     std::uint8_t result = 0;
     if (left_trip_abc) {
         result |= std::uint8_t{1} << 0;
     }
-    if (pair_ab && pair_cd) {
+    if (pair_ab && pair_cd &&
+        !is_excluded_arbitrary_tail_left_pattern(first, second)) {
         result |= std::uint8_t{1} << 1;
     }
-    if (right_trip_abc) {
+    if (right_trip_abc &&
+        !is_excluded_fixed_tail_left_pattern(first, fourth)) {
         result |= std::uint8_t{1} << 2;
     }
     if (left_trip_bcd && !first_is_identity) {
         result |= std::uint8_t{1} << 3;
     }
-    if (right_trip_bcd && !first_is_identity) {
+    if (right_trip_bcd && !first_is_identity &&
+        !first_has_excluded_right_argument) {
         result |= std::uint8_t{1} << 4;
     }
     return result;
