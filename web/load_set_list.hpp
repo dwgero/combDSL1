@@ -37,6 +37,7 @@ struct file_parse_diagnostic {
     std::size_t line;
     std::size_t position;
     std::string detail;
+    bool is_command = false;
 };
 
 struct set_list_load_result {
@@ -152,7 +153,8 @@ inline constexpr std::size_t maximum_file_parse_errors = 15;
             diagnostics.push_back({
                 error_line,
                 error.position(),
-                std::string(error.detail())});
+                std::string(error.detail()),
+                error.is_command()});
             if (diagnostics.size() >=
                 maximum_file_parse_errors) {
                 aborted = true;
@@ -266,7 +268,9 @@ inline void append_load_message(
     result += std::to_string(diagnostic.line);
     result += " at position ";
     result += std::to_string(displayed_position);
-    result += ": ";
+    result += diagnostic.is_command
+        ? " of command: "
+        : ": ";
     result += diagnostic.detail;
     return result;
 }

@@ -137,7 +137,8 @@ def main():
         output = reader.read_until(b">")
         require_red_message(
             output,
-            b"Parse error at position 6: x is not a defined name")
+            b"Parse error at position 6 of command: "
+            b"x is not a defined name")
 
         write_all(master, b"references live\n")
         reader.read_until(b">")
@@ -151,7 +152,8 @@ def main():
         output += reader.read_until(b">")
         require_red_message(
             output,
-            b"Parse error at position 5: RedCircleA would have a "
+            b"Parse error at position 5 of command: "
+            b"RedCircleA would have a "
             b"circular definition\r\n"
             b"RedCircleA -> RedCircleB -> RedCircleA")
 

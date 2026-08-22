@@ -66,7 +66,7 @@
 
 namespace {
 
-constexpr std::string_view crepl_version = "2.14.10";
+constexpr std::string_view crepl_version = "2.14.11";
 constexpr std::string_view no_further_reductions_message =
     "No further reductions";
 
@@ -1712,7 +1712,9 @@ parse_mode_command(std::string_view source) {
     skip_whitespace();
     if (position != source.size()) {
         throw combdsl::parse_error(
-            position, "unexpected input after stepping option");
+            position,
+            "unexpected input after stepping option",
+            combdsl::parse_error_context::command);
     }
     if (option == "on") {
         return mode_command{*requested_kind, true};
@@ -1721,7 +1723,9 @@ parse_mode_command(std::string_view source) {
         return mode_command{*requested_kind, false};
     }
     throw combdsl::parse_error(
-        option_position, "expected 'on' or 'off'");
+        option_position,
+        "expected 'on' or 'off'",
+        combdsl::parse_error_context::command);
 }
 
 [[nodiscard]] std::optional<help_detail>
@@ -1757,7 +1761,9 @@ parse_help_command(std::string_view source) {
     skip_whitespace();
     if (position != source.size()) {
         throw combdsl::parse_error(
-            position, "unexpected input after help option");
+            position,
+            "unexpected input after help option",
+            combdsl::parse_error_context::command);
     }
     if (option == "brief") {
         return help_detail::brief;
@@ -1766,7 +1772,9 @@ parse_help_command(std::string_view source) {
         return help_detail::full;
     }
     throw combdsl::parse_error(
-        option_position, "expected 'brief' or 'full'");
+        option_position,
+        "expected 'brief' or 'full'",
+        combdsl::parse_error_context::command);
 }
 
 [[nodiscard]] std::optional<std::string>
@@ -1801,7 +1809,9 @@ parse_filename_command(
     }
     if (filename_start == filename_end) {
         throw combdsl::parse_error(
-            filename_start, "missing filename");
+            filename_start,
+            "missing filename",
+            combdsl::parse_error_context::command);
     }
     return std::string(
         source.substr(filename_start, filename_end - filename_start));

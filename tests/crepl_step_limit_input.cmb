@@ -16,4 +16,6 @@ step limit off
 single step off
 I(Ix)
 step limit
+help verbose
+single step maybe
 quit

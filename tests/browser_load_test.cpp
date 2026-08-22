@@ -128,10 +128,31 @@ int main() {
           "Parse error in file broken.cmb on line 4 at position 1: "
           "unknown operand\n"
           "Errors are preventing any changes from being made");
+    check("plain file-expression errors retain expression context",
+          continued.diagnostics.size() == 2 &&
+          !continued.diagnostics[0].is_command &&
+          !continued.diagnostics[1].is_command);
     check("a failed load rolls back an earlier valid definition",
           !defined_name("FileBefore"));
     check("a failed load rolls back a later valid definition",
           !defined_name("FileAfter"));
+
+    auto const mixed_context = load_set_list(
+        "set FileBroken = @\n"
+        "showx @\n");
+    check("a mixed file load retains command context per record",
+          !mixed_context.success &&
+          mixed_context.diagnostics.size() == 2 &&
+          mixed_context.diagnostics[0].is_command &&
+          !mixed_context.diagnostics[1].is_command);
+    check("mixed file diagnostics distinguish commands from expressions",
+          format_file_load_diagnostics(
+              "mixed.cmb", mixed_context) ==
+          "Parse error in file mixed.cmb on line 1 at position 18 "
+          "of command: unknown operand\n"
+          "Parse error in file mixed.cmb on line 2 at position 7: "
+          "unknown operand\n"
+          "Errors are preventing any changes from being made");
 
     auto fourteen_source = repeated_error_lines(14);
     fourteen_source += "set FourteenEnd = 0 I\n";
@@ -300,9 +321,11 @@ int main() {
     check("lowercase-name file errors use one-based display positions",
           format_file_load_diagnostics(
               "lowercase.cmb", lowercase_names) ==
-          "Parse error in file lowercase.cmb on line 2 at position 5: "
+          "Parse error in file lowercase.cmb on line 2 at position 5 "
+          "of command: "
           "combdsl::basis names cannot begin with a lowercase ASCII letter\n"
-          "Parse error in file lowercase.cmb on line 3 at position 8: "
+          "Parse error in file lowercase.cmb on line 3 at position 8 "
+          "of command: "
           "combdsl::basis names cannot begin with a lowercase ASCII letter\n"
           "Errors are preventing any changes from being made");
     check("a lowercase-name file failure rolls back every valid record",

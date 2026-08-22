@@ -391,7 +391,8 @@ test("built Studio Wasm reserves lowercase-leading text for symbols",
             assert.equal(inspection.success, false, source);
             assert.equal(
                 inspection.error,
-                `Parse error at position ${position}: ${lowercaseNameError}`,
+                `Parse error at position ${position} of command: ` +
+                    lowercaseNameError,
                 source,
             );
         }
@@ -399,7 +400,8 @@ test("built Studio Wasm reserves lowercase-leading text for symbols",
         assert.equal(showLower.success, false);
         assert.equal(
             showLower.error,
-            "Parse error at position 6: lower is not a defined name",
+            "Parse error at position 6 of command: " +
+                "lower is not a defined name",
         );
         assert.equal(module.setList(), "",
             "rejected lowercase-leading names must not be registered");
@@ -415,9 +417,11 @@ test("built Studio Wasm reserves lowercase-leading text for symbols",
         assert.equal(invalidLoad.loaded, 0);
         assert.equal(
             invalidLoad.error,
-            "Parse error in file lowercase names on line 2 at position 5: " +
+            "Parse error in file lowercase names on line 2 at position 5 " +
+            "of command: " +
             lowercaseNameError + "\n" +
-            "Parse error in file lowercase names on line 3 at position 8: " +
+            "Parse error in file lowercase names on line 3 at position 8 " +
+            "of command: " +
             lowercaseNameError + "\n" +
             "Errors are preventing any changes from being made",
         );
@@ -444,7 +448,7 @@ test("built Studio Wasm routes and reloads equals-prefixed basis names",
         assert.equal(malformed.success, false);
         assert.match(
             malformed.error,
-            /Parse error at position 7: expected '='/,
+            /Parse error at position 7 of command: expected '='/,
         );
 
         let requestId = 280;
@@ -504,13 +508,13 @@ test("built Studio Wasm keeps ampersand under ordinary punctuation rules",
         assert.equal(malformed.success, false);
         assert.match(
             malformed.error,
-            /Parse error at position 7: expected '='/,
+            /Parse error at position 7 of command: expected '='/,
         );
         const missingAssignment = module.inspectDefinition("set && 3 C");
         assert.equal(missingAssignment.success, false);
         assert.match(
             missingAssignment.error,
-            /Parse error at position 8: expected '='/,
+            /Parse error at position 8 of command: expected '='/,
         );
         const adjacentAssignment = module.inspectDefinition("set &=1 I");
         assert.equal(adjacentAssignment.success, true,
@@ -617,7 +621,9 @@ test("built Studio Wasm routes, queries, and reloads question-prefixed names",
             const malformed = module.inspectDefinition(source);
             assert.equal(malformed.success, false, source);
             assert.match(malformed.error,
-                new RegExp(`Parse error at position ${position}: expected '='`),
+                new RegExp(
+                    `Parse error at position ${position} of command: ` +
+                    "expected '='"),
                 source);
         }
         for (const [source, position, diagnostic] of [
@@ -633,14 +639,16 @@ test("built Studio Wasm routes, queries, and reloads question-prefixed names",
             const invalid = module.inspectDefinition(source);
             assert.equal(invalid.success, false, source);
             assert.match(invalid.error,
-                new RegExp(`Parse error at position ${position}:`), source);
+                new RegExp(
+                    `Parse error at position ${position} of command:`),
+                source);
             assert.match(invalid.error, new RegExp(diagnostic), source);
         }
         const unregisteredSoleMarker = module.inspectDefinition(
             "find among ?x=xx");
         assert.equal(unregisteredSoleMarker.success, false);
         assert.match(unregisteredSoleMarker.error,
-            /Parse error at position 12: expected at least one bird name/);
+            /Parse error at position 12 of command: expected at least one bird name/);
 
         let requestId = 340;
         for (const source of [
@@ -674,7 +682,7 @@ test("built Studio Wasm routes, queries, and reloads question-prefixed names",
             "find among ?foo=bar");
         assert.equal(longerExactNameOnly.success, false);
         assert.match(longerExactNameOnly.error,
-            /Parse error at position 20: expected '\?'/);
+            /Parse error at position 20 of command: expected '\?'/);
         const interiorQuestion = module.parseEval(
             "?foo?bar x", ++requestId, false, 0);
         assert.equal(interiorQuestion.success, true, interiorQuestion.error);
@@ -720,14 +728,14 @@ test("built Studio Wasm routes, queries, and reloads question-prefixed names",
             const empty = module.inspectDefinition(source);
             assert.equal(empty.success, false, source);
             assert.match(empty.error,
-                /Parse error at position 12: expected at least one bird name/,
+                /Parse error at position 12 of command: expected at least one bird name/,
                 source);
         }
         const undefinedBeforeMarker = module.inspectDefinition(
             "find among ?x= Missing ?z=zz");
         assert.equal(undefinedBeforeMarker.success, false);
         assert.match(undefinedBeforeMarker.error,
-            /Parse error at position 17: issing is not a defined name/);
+            /Parse error at position 17 of command: issing is not a defined name/);
 
         applyBuiltDefinition(module, "set ?foo=barI = K", ++requestId);
         const exactWholeCompact = module.inspectDefinition(
@@ -740,7 +748,7 @@ test("built Studio Wasm routes, queries, and reloads question-prefixed names",
             "find among I?z=zz");
         assert.equal(compactSuffixMarker.success, false);
         assert.match(compactSuffixMarker.error,
-            /Parse error at position 14: z=zz is not a defined name/);
+            /Parse error at position 14 of command: z=zz is not a defined name/);
 
         applyBuiltDefinition(module, "set ?space = I", ++requestId);
         for (const phase of ["current", "removed singleton"]) {
@@ -748,7 +756,7 @@ test("built Studio Wasm routes, queries, and reloads question-prefixed names",
                 "find among I ?space = ?q=K");
             assert.equal(spacedRegisteredName.success, false, phase);
             assert.match(spacedRegisteredName.error,
-                /Parse error at position 21: = is not a defined name/,
+                /Parse error at position 21 of command: = is not a defined name/,
                 phase);
             if (phase === "current") {
                 applyBuiltDefinition(module, "remove ?space", ++requestId);
@@ -779,23 +787,23 @@ test("built Studio Wasm routes, queries, and reloads question-prefixed names",
             "find among ?x=xx");
         assert.equal(registeredSoleMarker.success, false);
         assert.match(registeredSoleMarker.error,
-            /Parse error at position 15: xx is not a defined name/);
+            /Parse error at position 15 of command: xx is not a defined name/);
         const registeredShortTarget = module.inspectDefinition(
             "find among ?x=x");
         assert.equal(registeredShortTarget.success, false);
         assert.match(registeredShortTarget.error,
-            /Parse error at position 15: x is not a defined name/);
+            /Parse error at position 15 of command: x is not a defined name/);
         const spacedRegisteredPrefix = module.inspectDefinition(
             "find among ?x =x");
         assert.equal(spacedRegisteredPrefix.success, false);
         assert.match(spacedRegisteredPrefix.error,
-            /Parse error at position 12: expected at least one bird name/);
+            /Parse error at position 12 of command: expected at least one bird name/);
         applyBuiltDefinition(module, "set ?z= = 1 I", ++requestId);
         const registeredMarkerNameIsCatalog = module.inspectDefinition(
             "find among ?x= ?y= ?z=zz");
         assert.equal(registeredMarkerNameIsCatalog.success, false);
         assert.match(registeredMarkerNameIsCatalog.error,
-            /Parse error at position 23: zz is not a defined name/);
+            /Parse error at position 23 of command: zz is not a defined name/);
         applyBuiltDefinition(module, "remove ?y=", ++requestId);
         const retainedRevision = module.inspectDefinition(
             "find among ?x= ?y=@1 ?u=uu");
@@ -807,7 +815,7 @@ test("built Studio Wasm routes, queries, and reloads question-prefixed names",
             "find among ?x=xx");
         assert.equal(retainedBareSingleton.success, false);
         assert.match(retainedBareSingleton.error,
-            /Parse error at position 15: xx is not a defined name/);
+            /Parse error at position 15 of command: xx is not a defined name/);
 
         const compared = module.parseEval(
             "compare ?x ?foo=bar x = x",
@@ -955,6 +963,21 @@ test("built Studio Wasm preserves literal and named leading backslashes",
         assert.equal(maximumLength.success, true, maximumLength.error);
         assert.equal(maximumLength.output, "x\n",
             "a direct slash plus fourteen bytes must fit the name limit");
+
+        const ambiguousInspect = module.parseEval(
+            `inspect ${slash}foobar`, ++requestId, false, 0);
+        assert.equal(ambiguousInspect.success, false);
+        assert.equal(
+            ambiguousInspect.error,
+            "Parse error at position 9 of command: unknown operand",
+        );
+        const ambiguousExpression = module.parseEval(
+            `${slash}foobar`, ++requestId, false, 0);
+        assert.equal(ambiguousExpression.success, false);
+        assert.equal(
+            ambiguousExpression.error,
+            "Parse error at position 1: unknown operand",
+        );
 
         const explicitLiteral = module.parseEval(
             `I ${quotedSlash}`, ++requestId, false, 0);
@@ -1484,7 +1507,8 @@ test("built Studio Wasm rejects integer basis names without mutation",
             assert.match(inspection.error, numericNameError, source);
             assert.match(
                 inspection.error,
-                new RegExp(`Parse error at position ${position}:`),
+                new RegExp(
+                    `Parse error at position ${position} of command:`),
                 source,
             );
         }

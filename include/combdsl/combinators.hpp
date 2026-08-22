@@ -6565,12 +6565,28 @@ inline constexpr force_value force{};
     return result;
 }
 
+enum class parse_error_context {
+    expression,
+    command,
+};
+
 class parse_error : public std::invalid_argument {
 public:
     parse_error(std::size_t position, std::string_view message)
-        : std::invalid_argument(make_message(position, message)),
+        : parse_error(
+              position,
+              message,
+              parse_error_context::expression) {}
+
+    parse_error(
+        std::size_t position,
+        std::string_view message,
+        parse_error_context context)
+        : std::invalid_argument(
+              make_message(position, message, context)),
           position_(position),
-          detail_(message) {}
+          detail_(message),
+          context_(context) {}
 
     [[nodiscard]] std::size_t position() const noexcept {
         return position_;
@@ -6580,23 +6596,31 @@ public:
         return detail_;
     }
 
+    [[nodiscard]] bool is_command() const noexcept {
+        return context_ == parse_error_context::command;
+    }
+
 private:
     [[nodiscard]] static std::string make_message(
         std::size_t position,
-        std::string_view message) {
+        std::string_view message,
+        parse_error_context context) {
         auto result = std::string("Parse error at position ");
         auto const displayed_position =
             position == std::numeric_limits<std::size_t>::max()
                 ? position
                 : position + 1;
         result += std::to_string(displayed_position);
-        result += ": ";
+        result += context == parse_error_context::command
+            ? " of command: "
+            : ": ";
         result += message;
         return result;
     }
 
     std::size_t position_;
     std::string detail_;
+    parse_error_context context_;
 };
 
 struct step_limit_command {
@@ -6636,12 +6660,16 @@ parse_step_limit_command(std::string_view source) {
     if (subcommand != "limit") {
         throw parse_error(
             subcommand.empty() ? position : subcommand_position,
-            "expected 'limit'");
+            "expected 'limit'",
+            parse_error_context::command);
     }
 
     auto const [option, option_position] = next_word();
     if (option.empty()) {
-        throw parse_error(position, "expected 'off' or a number");
+        throw parse_error(
+            position,
+            "expected 'off' or a number",
+            parse_error_context::command);
     }
 
     step_limit_command result;
@@ -6652,7 +6680,9 @@ parse_step_limit_command(std::string_view source) {
         for (char digit_character : option) {
             if (digit_character < '0' || digit_character > '9') {
                 throw parse_error(
-                    option_position, "expected 'off' or a number");
+                    option_position,
+                    "expected 'off' or a number",
+                    parse_error_context::command);
             }
             auto const digit = static_cast<std::size_t>(
                 digit_character - '0');
@@ -6660,14 +6690,17 @@ parse_step_limit_command(std::string_view source) {
                 (std::numeric_limits<std::size_t>::max() - digit) /
                     10) {
                 throw parse_error(
-                    option_position, "step limit is too large");
+                    option_position,
+                    "step limit is too large",
+                    parse_error_context::command);
             }
             value = value * 10 + digit;
         }
         if (value == 0) {
             throw parse_error(
                 option_position,
-                "step limit must be greater than zero");
+                "step limit must be greater than zero",
+                parse_error_context::command);
         }
         result.enabled = true;
         result.limit = value;
@@ -6676,7 +6709,9 @@ parse_step_limit_command(std::string_view source) {
     skip_whitespace();
     if (position != source.size()) {
         throw parse_error(
-            position, "unexpected input after step limit");
+            position,
+            "unexpected input after step limit",
+            parse_error_context::command);
     }
     return result;
 }
@@ -6866,11 +6901,11 @@ public:
             fail("unexpected ')'");
         }
 
-        if (is_argumentless_command("load") ||
-            is_argumentless_command("save")) {
-            throw parse_error(source_.size(), "missing filename");
-        }
-
+        auto const is_load_command = begins_command("load");
+        auto const is_save_command = begins_command("save");
+        auto const is_missing_filename_command =
+            (is_load_command && is_argumentless_command("load")) ||
+            (is_save_command && is_argumentless_command("save"));
         auto const is_set_definition =
             begins_command("set");
         auto const is_define_definition =
@@ -6905,54 +6940,76 @@ public:
             is_set_definition || is_define_definition ||
             is_remove_definition || is_references_command ||
             is_legacy_snapshot_command;
-        auto result = is_set_definition
-            ? parse_set_definition()
-            : is_define_definition
-                ? parse_define_definition()
-                : is_remove_definition
-                    ? parse_remove_definition()
-                    : is_references_command
-                        ? parse_references_command(false)
-                        : is_legacy_snapshot_command
-                            ? parse_references_command(true)
-                            : is_show_command
-                                ? parse_show_command()
-                                : is_revisions_command
-                                    ? parse_revisions_command()
-                                    : is_inspect_command
-                                        ? parse_inspect_command()
-                                        : is_compare_command
-                                            ? parse_compare_command()
-                                            : is_find_command
-                                                ? parse_find_command()
-                                                : is_abstract_command
-                                                    ? parse_abstract_command()
-                                                    : is_depended_on_by_command
-                                                        ? parse_dependency_command(
-                                                              parser_dependency_direction::
-                                                                  depended_on_by)
-                                                        : is_uses_command
+        auto const is_command =
+            is_missing_filename_command || is_definition ||
+            is_show_command || is_revisions_command ||
+            is_inspect_command || is_compare_command ||
+            is_find_command || is_abstract_command ||
+            is_depended_on_by_command || is_uses_command;
+
+        try {
+            if (is_missing_filename_command) {
+                throw parse_error(
+                    source_.size(), "missing filename");
+            }
+
+            auto result = is_set_definition
+                ? parse_set_definition()
+                : is_define_definition
+                    ? parse_define_definition()
+                    : is_remove_definition
+                        ? parse_remove_definition()
+                        : is_references_command
+                            ? parse_references_command(false)
+                            : is_legacy_snapshot_command
+                                ? parse_references_command(true)
+                                : is_show_command
+                                    ? parse_show_command()
+                                    : is_revisions_command
+                                        ? parse_revisions_command()
+                                        : is_inspect_command
+                                            ? parse_inspect_command()
+                                            : is_compare_command
+                                                ? parse_compare_command()
+                                                : is_find_command
+                                                    ? parse_find_command()
+                                                    : is_abstract_command
+                                                        ? parse_abstract_command()
+                                                        : is_depended_on_by_command
                                                             ? parse_dependency_command(
                                                                   parser_dependency_direction::
-                                                                      uses)
-                                                            : parse_plain_expression();
-        skip_whitespace();
-        if (!at_end()) {
-            fail("unexpected ')'");
+                                                                      depended_on_by)
+                                                            : is_uses_command
+                                                                ? parse_dependency_command(
+                                                                      parser_dependency_direction::
+                                                                          uses)
+                                                                : parse_plain_expression();
+            skip_whitespace();
+            if (!at_end()) {
+                fail("unexpected ')'");
+            }
+            return {
+                std::move(result),
+                is_definition,
+                is_show_command || is_revisions_command ||
+                    is_inspect_command || is_compare_command ||
+                    is_find_command ||
+                    is_abstract_command ||
+                    is_depended_on_by_command || is_uses_command,
+                is_show_all_,
+                is_find_command,
+                is_find_no_match_,
+                std::move(replaced_definition_),
+                std::move(catalog_find_command_)};
+        } catch (parse_error const& error) {
+            if (!is_command || error.is_command()) {
+                throw;
+            }
+            throw parse_error(
+                error.position(),
+                error.detail(),
+                parse_error_context::command);
         }
-        return {
-            std::move(result),
-            is_definition,
-            is_show_command || is_revisions_command ||
-                is_inspect_command || is_compare_command ||
-                is_find_command ||
-                is_abstract_command ||
-                is_depended_on_by_command || is_uses_command,
-            is_show_all_,
-            is_find_command,
-            is_find_no_match_,
-            std::move(replaced_definition_),
-            std::move(catalog_find_command_)};
     }
 
 private:

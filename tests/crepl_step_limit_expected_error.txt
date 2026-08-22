@@ -1,2 +1,4 @@
-Parse error at position 12: step limit must be greater than zero
-Parse error at position 11: expected 'off' or a number
+Parse error at position 12 of command: step limit must be greater than zero
+Parse error at position 11 of command: expected 'off' or a number
+Parse error at position 6 of command: expected 'brief' or 'full'
+Parse error at position 13 of command: expected 'on' or 'off'

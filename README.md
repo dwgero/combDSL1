@@ -1118,7 +1118,7 @@ using the same direct syntax for interactive input, piped input, and loaded
 journals. Piped input remains line-oriented, while journal loading can group a
 quoted string that spans multiple physical lines into one record.
 When standard output is a terminal, it first prints
-`Combinator Read-Eval-Print Loop, version 2.14.10`. Long evaluations display
+`Combinator Read-Eval-Print Loop, version 2.14.11`. Long evaluations display
 the accumulated step count every 1,000 reductions by overwriting one status
 line; the line is cleared before evaluation output is printed. Its interactive
 prompt is `>`. Interactive input uses GNU Readline, so previous nonempty
@@ -1381,7 +1381,11 @@ Malformed or empty input throws `combdsl::parse_error`. Its `position()` is the
 zero-based byte position of the error; an error at the end of input reports the
 input length. Its human-readable `what()` message displays that position
 one-based, so the first byte is position 1 and the end of input is the input
-length plus 1. `parse_and_step` uses the same `std::cout` and `std::cin`
+length plus 1. Errors in recognized commands are reported as
+`Parse error at position N of command: detail`, and `is_command()` returns
+`true`; errors in ordinary expressions retain
+`Parse error at position N: detail` and return `false`. `parse_and_step` uses
+the same `std::cout` and `std::cin`
 defaults, including the same Ctrl-C pause behavior, as `single_step_run`.
 `parse_and_key_step` uses those stream defaults with `single_step_loop`.
 

@@ -3838,7 +3838,7 @@ test("keeps a circular definition path in the red error entry", () => {
     const source = harness.element("source");
     const worker = harness.workers[0];
     const error =
-        "Parse error at position 5: CircleA would have a " +
+        "Parse error at position 5 of command: CircleA would have a " +
         "circular definition\nCircleA -> CircleB -> CircleA";
 
     worker.send({type: "ready", setList: ""});

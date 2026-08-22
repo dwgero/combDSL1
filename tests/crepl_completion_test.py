@@ -194,28 +194,32 @@ def main():
             b"combdsl::basis names cannot begin with a lowercase ASCII letter")
         write_all(master, b"set lower = 1 I\n")
         output = reader.read_until(b">")
-        if (b"Parse error at position 5: " + lowercase_name_error + b"\n"
+        if (b"Parse error at position 5 of command: " +
+                lowercase_name_error + b"\n"
                 not in normalized(output)):
             raise AssertionError(
                 f"expected lowercase set-name rejection; received {output!r}")
 
         write_all(master, b"define lower x=x\n")
         output = reader.read_until(b">")
-        if (b"Parse error at position 8: " + lowercase_name_error + b"\n"
+        if (b"Parse error at position 8 of command: " +
+                lowercase_name_error + b"\n"
                 not in normalized(output)):
             raise AssertionError(
                 f"expected lowercase define-name rejection; received {output!r}")
 
         write_all(master, b"revisions lower\n")
         output = reader.read_until(b">")
-        if (b"Parse error at position 11: " + lowercase_name_error + b"\n"
+        if (b"Parse error at position 11 of command: " +
+                lowercase_name_error + b"\n"
                 not in normalized(output)):
             raise AssertionError(
                 f"expected lowercase revisions-name rejection; received {output!r}")
 
         write_all(master, b"show lower\n")
         output = reader.read_until(b">")
-        if (b"Parse error at position 6: lower is not a defined name\n"
+        if (b"Parse error at position 6 of command: "
+                b"lower is not a defined name\n"
                 not in normalized(output)):
             raise AssertionError(
                 f"expected show to remain a name lookup; received {output!r}")
@@ -373,6 +377,33 @@ def main():
             raise AssertionError(
                 f"expected literal-backslash inspect report; "
                 f"received {output!r}")
+
+        write_all(master, b"set \\ = 3 C\n")
+        output = reader.read_until(b">")
+        if b"Parse error" in normalized(output):
+            raise AssertionError(
+                f"expected bare backslash registration; received {output!r}")
+
+        write_all(master, b"set \\foo = 3 C\n")
+        output = reader.read_until(b">")
+        if b"Parse error" in normalized(output):
+            raise AssertionError(
+                f"expected longer backslash registration; received {output!r}")
+
+        write_all(master, b"inspect \\foobar\n")
+        output = reader.read_until(b">")
+        if (b"Parse error at position 9 of command: unknown operand\n"
+                not in normalized(output)):
+            raise AssertionError(
+                f"expected command-relative wording at absolute position 9; "
+                f"received {output!r}")
+
+        write_all(master, b"\\foobar\n")
+        output = reader.read_until(b">")
+        if (b"Parse error at position 1: unknown operand\n"
+                not in normalized(output)):
+            raise AssertionError(
+                f"expected plain-expression error wording; received {output!r}")
 
         write_all(master, b"dependso\ta\tDepSource\n")
         output = reader.read_until(b">")

@@ -37,7 +37,7 @@ if(NOT missing_output STREQUAL "")
         "unexpected missing-filename output:\n${missing_output}")
 endif()
 set(expected_missing_error
-    "Parse error at position 5: missing filename\n")
+    "Parse error at position 5 of command: missing filename\n")
 if(NOT missing_error STREQUAL expected_missing_error)
     message(FATAL_ERROR
         "unexpected missing-filename error\n"
@@ -220,8 +220,8 @@ if(NOT lowercase_rollback_output STREQUAL
         "${lowercase_rollback_output}")
 endif()
 string(CONCAT expected_lowercase_rollback_error
-    "Parse error in file broken lowercase definitions.cmb on line 2 at position 5: combdsl::basis names cannot begin with a lowercase ASCII letter\n"
-    "Parse error in file broken lowercase definitions.cmb on line 3 at position 8: combdsl::basis names cannot begin with a lowercase ASCII letter\n"
+    "Parse error in file broken lowercase definitions.cmb on line 2 at position 5 of command: combdsl::basis names cannot begin with a lowercase ASCII letter\n"
+    "Parse error in file broken lowercase definitions.cmb on line 3 at position 8 of command: combdsl::basis names cannot begin with a lowercase ASCII letter\n"
     "Errors are preventing any changes from being made\n")
 if(NOT lowercase_rollback_error STREQUAL
         expected_lowercase_rollback_error)
@@ -276,10 +276,10 @@ if(NOT question_rollback_output STREQUAL "x\n")
 endif()
 string(CONCAT expected_question_rollback_error
     "Parse error in file broken question definitions.cmb on line 2 at "
-    "position 5: combdsl::basis names cannot end with @\n"
+    "position 5 of command: combdsl::basis names cannot end with @\n"
     "Errors are preventing any changes from being made\n"
-    "Parse error at position 6: ?LoadBefore is not a defined name\n"
-    "Parse error at position 6: ?LoadAfter is not a defined name\n")
+    "Parse error at position 6 of command: ?LoadBefore is not a defined name\n"
+    "Parse error at position 6 of command: ?LoadAfter is not a defined name\n")
 if(NOT question_rollback_error STREQUAL
         expected_question_rollback_error)
     message(FATAL_ERROR

@@ -735,17 +735,59 @@ void test_parse_failure(
     try {
         static_cast<void>(parse(source));
     } catch (parse_error const& error) {
+        auto is_whitespace = [](char value) noexcept {
+            return value == ' ' || value == '\t' || value == '\n' ||
+                   value == '\r' || value == '\f' || value == '\v';
+        };
+        auto first = std::size_t{0};
+        while (first < source.size() && is_whitespace(source[first])) {
+            ++first;
+        }
+        auto const remaining = source.substr(first);
+        auto begins_command = [&](std::string_view keyword) noexcept {
+            return remaining.starts_with(keyword) &&
+                   (remaining.size() == keyword.size() ||
+                    (remaining.size() > keyword.size() &&
+                     is_whitespace(remaining[keyword.size()])));
+        };
+        constexpr std::string_view command_names[] = {
+            "set", "define", "remove", "references", "snapshot",
+            "show", "revisions", "inspect", "compare", "find",
+            "abstract", "dependson", "depends-on", "depends",
+            "usedby", "used-by", "used",
+        };
+        auto is_argumentless_command = [&](std::string_view keyword) {
+            if (!begins_command(keyword)) {
+                return false;
+            }
+            auto position = keyword.size();
+            while (position < remaining.size() &&
+                   is_whitespace(remaining[position])) {
+                ++position;
+            }
+            return position == remaining.size();
+        };
+        auto const is_command =
+            std::ranges::any_of(command_names, begins_command) ||
+            is_argumentless_command("load") ||
+            is_argumentless_command("save");
         auto expected_message =
             std::string("Parse error at position ");
         expected_message += std::to_string(expected_position + 1);
-        expected_message += ": ";
+        expected_message += is_command ? " of command: " : ": ";
         expected_message += expected_detail;
         if (error.position() != expected_position ||
+            error.is_command() != is_command ||
             (!expected_detail.empty() &&
              error.what() != expected_message)) {
             std::cerr << "FAILED:   " << title << '\n'
                       << "expected position: " << expected_position << '\n'
-                      << "actual position:   " << error.position() << '\n';
+                      << "actual position:   " << error.position() << '\n'
+                      << "expected context:  "
+                      << (is_command ? "command" : "expression") << '\n'
+                      << "actual context:    "
+                      << (error.is_command() ? "command" : "expression")
+                      << '\n';
             if (!expected_detail.empty()) {
                 std::cerr << "expected message:  " << expected_message << '\n'
                           << "actual message:    " << error.what() << '\n';
@@ -5162,6 +5204,17 @@ int main() {
              }
          },
          "11:step limit must be greater than zero");
+    test("step limit error identifies its command context",
+         [] {
+             try {
+                 static_cast<void>(
+                     combdsl::parse_step_limit_command("step limit 0"));
+             } catch (parse_error const& error) {
+                 std::cout << error.is_command() << ' ' << error.what();
+             }
+         },
+         "1 Parse error at position 12 of command: "
+         "step limit must be greater than zero");
     test("step limit parser ignores another command prefix",
          [] {
              std::cout << !combdsl::parse_step_limit_command(
@@ -5630,7 +5683,7 @@ int main() {
                  std::cout << error.what();
              }
          },
-         "Parse error at position 7: missing combinator name");
+         "Parse error at position 7 of command: missing combinator name");
     test("parse eval show displays a definition without reducing it",
          [&] { parse_eval("show ShRed"); }, "arity:0 Kxy\n");
     test("parse eval show identifies a fundamental name",
@@ -5645,7 +5698,7 @@ int main() {
                 std::cout << error.what();
             }
         },
-        "Parse error at position 6: Ix is not a defined name");
+        "Parse error at position 6 of command: Ix is not a defined name");
     test("parse eval does not mistake showx for a command",
          [&] { parse_eval("showx"); }, "showx\n");
     test("parse eval reports a missing show name",
@@ -5656,7 +5709,7 @@ int main() {
                  std::cout << error.what();
              }
          },
-         "Parse error at position 5: missing combinator name");
+         "Parse error at position 5 of command: missing combinator name");
     test("parse eval uses a set basis",
          [&] { parse_eval("SetK x y"); }, "x\n");
     test("parse eval treats q as a symbol", [&] { parse_eval("q"); }, "q\n");
@@ -13465,6 +13518,21 @@ int main() {
          parse(R"(\foo x)"), R"(\foo x)");
     test("the longer backslash-prefixed name evaluates normally",
          [] { parse_eval(R"(\foo x)"); }, "x\n");
+    test_parse_failure(
+        "inspect reports an ambiguous compact backslash token as a command",
+        R"(inspect \foobar)", 8, "unknown operand");
+    test_parse_failure(
+        "inspect keeps an absolute command position after leading whitespace",
+        R"(  inspect \foobar)", 10, "unknown operand");
+    test_parse_failure(
+        "the same ambiguous backslash token remains a plain expression error",
+        R"(\foobar)", 0, "unknown operand");
+    test_parse_failure(
+        "a command-looking plain expression retains expression wording",
+        "showx @", 6, "unknown operand");
+    test_parse_failure(
+        "a filename-bearing load falls through as a plain expression",
+        "load x @", 7, "unknown operand");
     test("define distinguishes a bare backslash name from its symbols",
          parse(R"(define \ bar = rab)"), R"(\)");
     test("the backslash define binds every symbol after the name",

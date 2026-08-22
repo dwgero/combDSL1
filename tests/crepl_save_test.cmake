@@ -37,7 +37,7 @@ if(NOT missing_output STREQUAL "")
         "unexpected missing-filename output:\n${missing_output}")
 endif()
 set(expected_missing_error
-    "Parse error at position 5: missing filename\n")
+    "Parse error at position 5 of command: missing filename\n")
 if(NOT missing_error STREQUAL expected_missing_error)
     message(FATAL_ERROR
         "unexpected missing-filename error\n"
@@ -598,10 +598,10 @@ if(NOT invalid_backslash_load_output STREQUAL "x\n")
 endif()
 string(CONCAT expected_invalid_backslash_load_error
     "Parse error in file invalid backslash definitions.cmb on line 2 at "
-    "position 20: combdsl::basis names are limited to 15 characters\n"
+    "position 20 of command: combdsl::basis names are limited to 15 characters\n"
     "Errors are preventing any changes from being made\n"
-    "Parse error at position 6: SlashLoadBefore is not a defined name\n"
-    "Parse error at position 6: SlashLoadAfter is not a defined name\n")
+    "Parse error at position 6 of command: SlashLoadBefore is not a defined name\n"
+    "Parse error at position 6 of command: SlashLoadAfter is not a defined name\n")
 if(NOT invalid_backslash_load_error STREQUAL
         expected_invalid_backslash_load_error)
     message(FATAL_ERROR
@@ -638,19 +638,19 @@ if(NOT malformed_question_output STREQUAL "")
         "${malformed_question_output}")
 endif()
 string(CONCAT expected_malformed_question_error
-    "Parse error at position 7: expected '='\n"
-    "Parse error at position 8: expected '='\n"
-    "Parse error at position 8: expected '='\n"
-    "Parse error at position 12: expected '='\n")
+    "Parse error at position 7 of command: expected '='\n"
+    "Parse error at position 8 of command: expected '='\n"
+    "Parse error at position 8 of command: expected '='\n"
+    "Parse error at position 12 of command: expected '='\n")
 if(NOT malformed_question_error STREQUAL
         expected_malformed_question_error)
     message(FATAL_ERROR
         "unexpected malformed question-name error\n"
         "expected:\n"
-        "Parse error at position 7: expected '='\n"
-        "Parse error at position 8: expected '='\n"
-        "Parse error at position 8: expected '='\n"
-        "Parse error at position 12: expected '='\n"
+        "Parse error at position 7 of command: expected '='\n"
+        "Parse error at position 8 of command: expected '='\n"
+        "Parse error at position 8 of command: expected '='\n"
+        "Parse error at position 12 of command: expected '='\n"
         "actual:\n${malformed_question_error}")
 endif()
 
@@ -671,7 +671,7 @@ execute_process(
 if(NOT unregistered_question_marker_result EQUAL 0 OR
         NOT unregistered_question_marker_output STREQUAL "" OR
         NOT unregistered_question_marker_error STREQUAL
-            "Parse error at position 12: expected at least one bird name\n")
+            "Parse error at position 12 of command: expected at least one bird name\n")
     message(FATAL_ERROR
         "unexpected unregistered question-marker result\n"
         "stdout:\n${unregistered_question_marker_output}"
@@ -703,7 +703,7 @@ execute_process(
 if(NOT registered_question_marker_result EQUAL 0 OR
         NOT registered_question_marker_output STREQUAL "?=K ?y=\n" OR
         NOT registered_question_marker_error STREQUAL
-            "Parse error at position 15: xx is not a defined name\nParse error at position 15: x is not a defined name\nParse error at position 17: issing is not a defined name\nParse error at position 15: xx is not a defined name\n")
+            "Parse error at position 15 of command: xx is not a defined name\nParse error at position 15 of command: x is not a defined name\nParse error at position 17 of command: issing is not a defined name\nParse error at position 15 of command: xx is not a defined name\n")
     message(FATAL_ERROR
         "unexpected registered question-marker result\n"
         "stdout:\n${registered_question_marker_output}"
@@ -730,7 +730,7 @@ execute_process(
 if(NOT spaced_question_marker_result EQUAL 0 OR
         NOT spaced_question_marker_output STREQUAL "" OR
         NOT spaced_question_marker_error STREQUAL
-            "Parse error at position 21: = is not a defined name\nParse error at position 21: = is not a defined name\n")
+            "Parse error at position 21 of command: = is not a defined name\nParse error at position 21 of command: = is not a defined name\n")
     message(FATAL_ERROR
         "unexpected spaced question-marker result\n"
         "stdout:\n${spaced_question_marker_output}"
@@ -762,10 +762,10 @@ if(NOT malformed_equals_output STREQUAL "")
         "${malformed_equals_output}")
 endif()
 if(NOT malformed_equals_error STREQUAL
-        "Parse error at position 7: expected '='\n")
+        "Parse error at position 7 of command: expected '='\n")
     message(FATAL_ERROR
         "unexpected malformed equals-name error\n"
-        "expected:\nParse error at position 7: expected '='\n"
+        "expected:\nParse error at position 7 of command: expected '='\n"
         "actual:\n${malformed_equals_error}")
 endif()
 
@@ -812,21 +812,21 @@ if(NOT numeric_output STREQUAL
         "actual:\n${numeric_output}")
 endif()
 string(CONCAT expected_numeric_error
-    "Parse error at position 5: combdsl::basis names cannot be "
+    "Parse error at position 5 of command: combdsl::basis names cannot be "
     "non-negative integer literals\n"
-    "Parse error at position 5: combdsl::basis names cannot be "
+    "Parse error at position 5 of command: combdsl::basis names cannot be "
     "non-negative integer literals\n"
-    "Parse error at position 5: combdsl::basis names cannot be "
+    "Parse error at position 5 of command: combdsl::basis names cannot be "
     "non-negative integer literals\n"
-    "Parse error at position 8: combdsl::basis names cannot be "
+    "Parse error at position 8 of command: combdsl::basis names cannot be "
     "non-negative integer literals\n"
-    "Parse error at position 8: combdsl::basis names cannot be "
+    "Parse error at position 8 of command: combdsl::basis names cannot be "
     "non-negative integer literals\n"
-    "Parse error at position 11: combdsl::basis names cannot be "
+    "Parse error at position 11 of command: combdsl::basis names cannot be "
     "non-negative integer literals\n"
-    "Parse error at position 11: combdsl::basis names cannot be "
+    "Parse error at position 11 of command: combdsl::basis names cannot be "
     "non-negative integer literals\n"
-    "Parse error at position 6: 0 is not a defined name\n")
+    "Parse error at position 6 of command: 0 is not a defined name\n")
 if(NOT numeric_error STREQUAL expected_numeric_error)
     message(FATAL_ERROR
         "unexpected numeric-name CREPL error\n"
@@ -920,10 +920,10 @@ if(NOT invalid_numeric_load_output STREQUAL "x\n")
 endif()
 string(CONCAT expected_invalid_numeric_load_error
     "Parse error in file invalid numeric definitions.cmb on line 2 at "
-    "position 5: combdsl::basis names cannot be non-negative integer literals\n"
+    "position 5 of command: combdsl::basis names cannot be non-negative integer literals\n"
     "Errors are preventing any changes from being made\n"
-    "Parse error at position 6: LoadBefore is not a defined name\n"
-    "Parse error at position 6: LoadAfter is not a defined name\n")
+    "Parse error at position 6 of command: LoadBefore is not a defined name\n"
+    "Parse error at position 6 of command: LoadAfter is not a defined name\n")
 if(NOT invalid_numeric_load_error STREQUAL
         expected_invalid_numeric_load_error)
     message(FATAL_ERROR
