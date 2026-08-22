@@ -8288,6 +8288,25 @@ private:
             first_trace_line = false;
         }
 
+        auto initial_duplicate_optimization =
+            optimize_duplicate_takeout_expression_stages(body);
+        if (show_steps) {
+            auto previous_stage = body;
+            for (auto const& stage :
+                 initial_duplicate_optimization.stages) {
+                if (!first_trace_line) {
+                    trace << '\n';
+                }
+                trace << "optimize: ";
+                previous_stage.print_to(trace);
+                trace << " -> ";
+                stage.print_to(trace);
+                previous_stage = stage;
+                first_trace_line = false;
+            }
+        }
+        body = std::move(initial_duplicate_optimization.result);
+
         std::vector<quoted_atomic> pending_atoms;
         pending_atoms.reserve(symbols.size());
         for (auto const symbol_name : symbols) {
@@ -8507,6 +8526,8 @@ private:
             name.view(), symbols, source_.substr(body_position));
 
         body = reduce_saturated_bases(std::move(body));
+        body = optimize_duplicate_takeout_expressions(
+            std::move(body));
         std::vector<quoted_atomic> pending_atoms;
         pending_atoms.reserve(symbols.size() + 1);
         pending_atoms.emplace_back(recursive_function);
@@ -8781,6 +8802,14 @@ private:
                is_named_basis(application->argument(), "T");
     }
 
+    [[nodiscard]] static bool is_cardinal_owl(
+        quoted_expression const& expression) noexcept {
+        auto const* application = as_application(expression);
+        return application != nullptr &&
+               is_named_basis(application->function(), "C") &&
+               is_named_basis(application->argument(), "O");
+    }
+
     [[nodiscard]] static bool is_bluebird_double_dove(
         quoted_expression const& expression) noexcept {
         auto const* outer = as_application(expression);
@@ -9004,6 +9033,9 @@ private:
         quoted_expression const& expression) const {
         if (is_cardinal_star_thrush(expression)) {
             return registered_basis_expression("V");
+        }
+        if (is_cardinal_owl(expression)) {
+            return registered_basis_expression("A");
         }
         if (is_bluebird_double_dove(expression)) {
             return registered_basis_expression("E");

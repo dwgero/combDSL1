@@ -1,16 +1,24 @@
 ?=A
-takeout y from x(yx): Bx(Tx)
-optimize: Bx(Tx) -> SBTx
-takeout x from SBTx: SBT
-optimize: SBT -> A
+optimize: x(yx) -> Oyx
+takeout y from Oyx: COx
+takeout x from COx: CO
+optimize: CO -> A
 ?=A
 preprocess: Mx -> xx
-takeout x from xx: M
+optimize: xx -> Mx
+takeout x from Mx: M
 ?=M
 takeout y from y: I
 takeout x from I: KI
 ?=KI
-takeout y from y(xy): O[takeout y from xy]
-= Ox
+optimize: y(xy) -> Oxy
+takeout y from Oxy: Ox
 takeout x from Ox: O
 ?=O
+optimize: abbx -> Wabx
+takeout x from Wabx: Wab
+?=Wab
+preprocess: Wabx -> abbx
+optimize: abbx -> Wabx
+takeout x from Wabx: Wab
+?=Wab

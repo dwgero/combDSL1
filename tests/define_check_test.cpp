@@ -116,8 +116,9 @@ int main() {
             std::string_view{"J"},
             std::string_view{"S(MB(BQC))(MB)"}},
         std::pair{std::string_view{"Q1"}, std::string_view{"NB(QT)"}},
-        std::pair{std::string_view{"U"}, std::string_view{"LO"}},
+        std::pair{std::string_view{"U"}, std::string_view{"U"}},
         std::pair{std::string_view{"W**"}, std::string_view{"ZBW"}},
+        std::pair{std::string_view{"W1"}, std::string_view{"CW"}},
     };
 
     std::size_t failures = 0;

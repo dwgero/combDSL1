@@ -464,13 +464,15 @@ def main():
                 f"expected abstract steps trace; received {output!r}")
 
         write_all(master, b"abstract   m\t  \txy = y(xy)\n")
-        output = reader.read_until(b">")
+        # The initial optimization trace contains ``->``, so wait for
+        # readline's bracketed-paste prompt marker rather than that arrow.
+        output = reader.read_until(b"\x1b[?2004h>")
         require_completed_line(
             output, b"abstract   ministeps   ?xy = y(xy)\n")
         normalized_output = normalized(output)
         expected_ministeps = (
-            b"takeout y from y(xy): O[takeout y from xy]\n"
-            b"= Ox\n"
+            b"optimize: y(xy) -> Oxy\n"
+            b"takeout y from Oxy: Ox\n"
             b"takeout x from Ox: O\n"
             b"?=O\n"
         )

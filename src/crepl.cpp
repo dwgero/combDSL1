@@ -66,7 +66,7 @@
 
 namespace {
 
-constexpr std::string_view crepl_version = "2.14.8";
+constexpr std::string_view crepl_version = "2.14.9";
 constexpr std::string_view no_further_reductions_message =
     "No further reductions";
 
@@ -2268,39 +2268,46 @@ void print_help_full(std::ostream& output) {
         "recursive takeout call in its position in the full expression as "
         "\"[takeout <symbol> from <sub-expression>]\", followed by the "
         "resolved full expression on a new line beginning \"= \". For "
-        "example, \"abstract ministeps ?xy = y(xy)\" starts with \"takeout "
-        "y from y(xy): O[takeout y from xy]\", then \"= Ox\", \"takeout x "
-        "from Ox: O\", and \"?=O\". Abstract ignores the stepping and "
+        "example, \"abstract ministeps ?x = a(b(xc))\" starts with \"takeout "
+        "x from a(b(xc)): Ba[takeout x from b(xc)]\", then "
+        "\"= Ba(Bb[takeout x from xc])\", \"= Ba(Bb(Tc))\", and "
+        "\"?=Ba(Bb(Tc))\". Abstract ignores the stepping and "
         "colorize modes.");
     write_wrapped_paragraph(
         output,
-        "After each complete takeout, Define and Abstract repeatedly rescan "
-        "the whole result for optimization patterns. Each scan is "
+        "After preprocessing and before the first takeout, then again after "
+        "each complete takeout, Define and Abstract repeatedly rescan the "
+        "whole result for optimization patterns. Each scan is "
         "top-down. At each node, the first matching rule in this order wins: "
         "W(C* A) -> HA; ABA -> NAB; ABB -> WAB; A(BA) -> OBA; A(AB) -> ZAB; "
         "A(BB) -> LAB; "
         "(A1 A)(A2 A) -> S A1 A2 A; and finally AA -> MA. Every placeholder "
         "may be an arbitrary combinator expression, and repeated placeholders "
-        "must be structurally identical. Captured operands are scanned "
+        "must be structurally identical. The initial right-hand-side scan and "
+        "every post-takeout scan use only these eight structural rules; "
+        "named-bird substitutions remain final. Captured operands are scanned "
         "recursively, while a generated bird skeleton is reconsidered only "
         "on the next whole-expression scan. The H rule precedes its "
         "overlapping O and L shapes. Rescanning stops when a scan "
         "makes no structural change or produces a structurally repeated "
         "state; the repeated state is retained. Because M is the final "
         "fallback, (F X)(F X) matches the earlier S rule and becomes S F F X, "
-        "not M(F X). Individual Ministeps stages stay raw. Steps and "
+        "not M(F X). Define also performs this initial right-hand-side scan "
+        "when its signature has no symbols and requires no takeout. "
+        "Individual Ministeps stages stay raw. Steps and "
         "Ministeps print one \"optimize: <before> -> <after>\" line for every "
         "changed whole-expression scan, including the transition into a "
         "repeated terminal state; an unchanged terminating scan is omitted. "
-        "For example, \"abstract steps ?xy = xxxy\" prints \"optimize: xxx "
-        "-> Nxx\", then \"optimize: Nxx -> WNx\". With \"abstract steps "
-        "?x = C*Hxx\", takeout produces W(C*H), then optimization prints "
-        "W(C*H) -> HH and HH -> MH. After the final named-bird "
+        "For example, \"abstract steps ?xy = xxxy\" first prints "
+        "\"optimize: xxxy -> Nxxy\", then \"optimize: Nxxy -> WNxy\", "
+        "before taking out y. With \"abstract steps ?x = C*Hxx\", "
+        "optimization runs before takeout and prints C*Hxx -> W(C*H)x, "
+        "W(C*H)x -> HHx, and HHx -> MHx. After the final named-bird "
         "substitutions, these scans run again whenever that named pass "
         "changed the result; the phases alternate until a named pass is "
-        "unchanged. Thus, \"abstract steps ?xy = yxxx\" ends with "
-        "\"optimize: WV -> W1\", then \"optimize: W(C*W1) -> HW1\", and "
-        "\"?=HW1\".");
+        "unchanged. Thus, \"abstract steps ?xy = yxxx\" starts with "
+        "\"optimize: yxxx -> W(yx)x\" and ends with \"optimize: "
+        "W(C*(ZBWT)) -> H(ZBWT)\" and \"?=H(ZBWT)\".");
 
     output << "\nFinding Combinators\n\n"
            << "find [all] [<num> | among <bird>...] ?<symbol_list> = "

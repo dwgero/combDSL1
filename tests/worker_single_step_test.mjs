@@ -1032,9 +1032,8 @@ test("built Studio Wasm repeatedly rescans duplicate takeout at parser boundarie
         assert.equal(steps.success, true, steps.error);
         assert.equal(
             steps.output,
-            "takeout x from BxB: CBB\n" +
-            "optimize: CBB -> WCB\n" +
-            "optimize: WC -> N\n" +
+            "optimize: BxB -> NBx\n" +
+            "takeout x from NBx: NB\n" +
             "?=NB\n",
         );
 
@@ -1048,9 +1047,9 @@ test("built Studio Wasm repeatedly rescans duplicate takeout at parser boundarie
             rescannedSteps.success, true, rescannedSteps.error);
         assert.equal(
             rescannedSteps.output,
-            "takeout y from xxxy: xxx\n" +
-            "optimize: xxx -> Nxx\n" +
-            "optimize: Nxx -> WNx\n" +
+            "optimize: xxxy -> Nxxy\n" +
+            "optimize: Nxxy -> WNxy\n" +
+            "takeout y from WNxy: WNx\n" +
             "takeout x from WNx: WN\n" +
             "?=WN\n",
         );
@@ -1064,9 +1063,10 @@ test("built Studio Wasm repeatedly rescans duplicate takeout at parser boundarie
         assert.equal(hSteps.success, true, hSteps.error);
         assert.equal(
             hSteps.output,
-            "takeout x from C*Hxx: W(C*H)\n" +
-            "optimize: W(C*H) -> HH\n" +
-            "optimize: HH -> MH\n" +
+            "optimize: C*Hxx -> W(C*H)x\n" +
+            "optimize: W(C*H)x -> HHx\n" +
+            "optimize: HHx -> MHx\n" +
+            "takeout x from MHx: MH\n" +
             "?=MH\n",
         );
 
@@ -1098,9 +1098,9 @@ test("built Studio Wasm repeatedly rescans duplicate takeout at parser boundarie
         );
         assert.equal(
             rescannedMinisteps.output,
-            "takeout y from xxxy: xxx\n" +
-            "optimize: xxx -> Nxx\n" +
-            "optimize: Nxx -> WNx\n" +
+            "optimize: xxxy -> Nxxy\n" +
+            "optimize: Nxxy -> WNxy\n" +
+            "takeout y from WNxy: WNx\n" +
             "takeout x from WNx: WN\n" +
             "?=WN\n",
         );
@@ -1114,13 +1114,12 @@ test("built Studio Wasm repeatedly rescans duplicate takeout at parser boundarie
         assert.equal(ministeps.success, true, ministeps.error);
         assert.equal(
             ministeps.output,
-            "takeout y from ya(ya): " +
-            "S[takeout y from ya][takeout y from ya]\n" +
-            "= S(Ta)[takeout y from ya]\n" +
-            "= S(Ta)(Ta)\n" +
-            "optimize: S(Ta)(Ta) -> WS(Ta)\n" +
-            "takeout x from WS(Ta): K(WS(Ta))\n" +
-            "?=K(WS(Ta))\n",
+            "optimize: ya(ya) -> Syya\n" +
+            "optimize: Syya -> WSya\n" +
+            "takeout y from WSya: C[takeout y from WSy]a\n" +
+            "= C(WS)a\n" +
+            "takeout x from C(WS)a: K(C(WS)a)\n" +
+            "?=K(C(WS)a)\n",
         );
 
         const definition = module.beginLimitedEval(
@@ -1136,7 +1135,7 @@ test("built Studio Wasm repeatedly rescans duplicate takeout at parser boundarie
         const shown = module.parseEval(
             "show WasmDup", ++requestId, false, 0);
         assert.equal(shown.success, true, shown.error);
-        assert.equal(shown.output, "arity:1 WS(Ta)\n");
+        assert.equal(shown.output, "arity:1 C(WS)a\n");
 
         const applied = module.parseEval(
             "WasmDup b", ++requestId, false, 0);
@@ -1184,20 +1183,19 @@ test("built Studio Wasm rescans duplicates after final optimization",
         assert.equal(steps.success, true, steps.error);
         assert.equal(
             steps.output,
-            "takeout y from yxxx: C(C(Tx)x)x\n" +
-            "takeout x from C(C(Tx)x)x: W(BC(W(BCT)))\n" +
+            "optimize: yxxx -> W(yx)x\n" +
+            "takeout y from W(yx)x: C(BW(Tx))x\n" +
+            "takeout x from C(BW(Tx))x: W(BC(B(BW)T))\n" +
+            "optimize: W(BC(B(BW)T)) -> W(BC(ZBWT))\n" +
             "optimize: BC -> C*\n" +
-            "optimize: BC -> C*\n" +
-            "optimize: C*T -> V\n" +
-            "optimize: WV -> W1\n" +
-            "optimize: W(C*W1) -> HW1\n" +
-            "?=HW1\n",
+            "optimize: W(C*(ZBWT)) -> H(ZBWT)\n" +
+            "?=H(ZBWT)\n",
         );
 
         const plain = module.parseEval(
             "abstract ?xy = yxxx", ++requestId, false, 0);
         assert.equal(plain.success, true, plain.error);
-        assert.equal(plain.output, "?=HW1\n");
+        assert.equal(plain.output, "?=H(ZBWT)\n");
 
         const ministeps = module.parseEval(
             "abstract ministeps ?xy = yxxx",
@@ -1208,21 +1206,19 @@ test("built Studio Wasm rescans duplicates after final optimization",
         assert.equal(ministeps.success, true, ministeps.error);
         assert.equal(
             ministeps.output,
-            "takeout y from yxxx: C[takeout y from yxx]x\n" +
-            "= C(C[takeout y from yx]x)x\n" +
-            "= C(C(Tx)x)x\n" +
-            "takeout x from C(C(Tx)x)x: " +
-            "W[takeout x from C(C(Tx)x)]\n" +
-            "= W(BC[takeout x from C(Tx)x])\n" +
-            "= W(BC(W[takeout x from C(Tx)]))\n" +
-            "= W(BC(W(BC[takeout x from Tx])))\n" +
-            "= W(BC(W(BCT)))\n" +
+            "optimize: yxxx -> W(yx)x\n" +
+            "takeout y from W(yx)x: C[takeout y from W(yx)]x\n" +
+            "= C(BW[takeout y from yx])x\n" +
+            "= C(BW(Tx))x\n" +
+            "takeout x from C(BW(Tx))x: " +
+            "W[takeout x from C(BW(Tx))]\n" +
+            "= W(BC[takeout x from BW(Tx)])\n" +
+            "= W(BC(B(BW)[takeout x from Tx]))\n" +
+            "= W(BC(B(BW)T))\n" +
+            "optimize: W(BC(B(BW)T)) -> W(BC(ZBWT))\n" +
             "optimize: BC -> C*\n" +
-            "optimize: BC -> C*\n" +
-            "optimize: C*T -> V\n" +
-            "optimize: WV -> W1\n" +
-            "optimize: W(C*W1) -> HW1\n" +
-            "?=HW1\n",
+            "optimize: W(C*(ZBWT)) -> H(ZBWT)\n" +
+            "?=H(ZBWT)\n",
         );
 
         const definition = module.beginLimitedEval(
@@ -1238,12 +1234,145 @@ test("built Studio Wasm rescans duplicates after final optimization",
         const shown = module.parseEval(
             "show WasmFinalDup", ++requestId, false, 0);
         assert.equal(shown.success, true, shown.error);
-        assert.equal(shown.output, "arity:2 HW1\n");
+        assert.equal(shown.output, "arity:2 H(ZBWT)\n");
 
         const applied = module.parseEval(
             "WasmFinalDup a b", ++requestId, false, 0);
         assert.equal(applied.success, true, applied.error);
         assert.equal(applied.output, "baaa\n");
+    });
+
+test("built Studio Wasm optimizes the RHS before first takeout",
+    async () => {
+        const module = await loadBuiltCombdslModule();
+        let requestId = 470;
+
+        const steps = module.beginLimitedEval(
+            "abstract steps ?x = abbx",
+            ++requestId,
+            1000,
+            false,
+        );
+        assert.equal(steps.success, true, steps.error);
+        assert.equal(
+            steps.output,
+            "optimize: abbx -> Wabx\n" +
+            "takeout x from Wabx: Wab\n" +
+            "?=Wab\n",
+        );
+
+        const ministeps = module.beginLimitedEval(
+            "abstract ministeps ?x = abbx",
+            ++requestId,
+            1000,
+            false,
+        );
+        assert.equal(ministeps.success, true, ministeps.error);
+        assert.equal(
+            ministeps.output,
+            "optimize: abbx -> Wabx\n" +
+            "takeout x from Wabx: Wab\n" +
+            "?=Wab\n",
+        );
+
+        const plain = module.parseEval(
+            "abstract ?x = abbx", ++requestId, false, 0);
+        assert.equal(plain.success, true, plain.error);
+        assert.equal(plain.output, "?=Wab\n");
+
+        const namedAfterTakeout = module.beginLimitedEval(
+            "abstract steps ?x = BCx",
+            ++requestId,
+            1000,
+            false,
+        );
+        assert.equal(
+            namedAfterTakeout.success,
+            true,
+            namedAfterTakeout.error,
+        );
+        assert.equal(
+            namedAfterTakeout.output,
+            "takeout x from BCx: BC\n" +
+            "optimize: BC -> C*\n" +
+            "?=C*\n",
+        );
+
+        const albatrossAfterTakeout = module.beginLimitedEval(
+            "abstract steps ?x = COx",
+            ++requestId,
+            1000,
+            false,
+        );
+        assert.equal(
+            albatrossAfterTakeout.success,
+            true,
+            albatrossAfterTakeout.error,
+        );
+        assert.equal(
+            albatrossAfterTakeout.output,
+            "takeout x from COx: CO\n" +
+            "optimize: CO -> A\n" +
+            "?=A\n",
+        );
+
+        const cycle = module.beginLimitedEval(
+            "abstract steps ?x = NNMx",
+            ++requestId,
+            1000,
+            false,
+        );
+        assert.equal(cycle.success, true, cycle.error);
+        assert.equal(
+            cycle.output,
+            "optimize: NNMx -> MNMx\n" +
+            "optimize: MNMx -> NMNx\n" +
+            "optimize: NMNx -> NNMx\n" +
+            "takeout x from NNMx: NNM\n" +
+            "optimize: NNM -> MNM\n" +
+            "optimize: MNM -> NMN\n" +
+            "optimize: NMN -> NNM\n" +
+            "?=NNM\n",
+        );
+
+        const definition = module.beginLimitedEval(
+            "define WasmInitDup = abb",
+            ++requestId,
+            1000,
+            false,
+        );
+        assert.equal(definition.success, true, definition.error);
+        assert.equal(definition.definition, true);
+        assert.equal(definition.output, "");
+
+        const shown = module.parseEval(
+            "show WasmInitDup", ++requestId, false, 0);
+        assert.equal(shown.success, true, shown.error);
+        assert.equal(shown.output, "arity:0 Wab\n");
+
+        const applied = module.parseEval(
+            "WasmInitDup c", ++requestId, false, 0);
+        assert.equal(applied.success, true, applied.error);
+        assert.equal(applied.output, "abbc\n");
+
+        const albatrossDefinition = module.beginLimitedEval(
+            "define WasmFinalA = CO",
+            ++requestId,
+            1000,
+            false,
+        );
+        assert.equal(
+            albatrossDefinition.success,
+            true,
+            albatrossDefinition.error,
+        );
+        assert.equal(albatrossDefinition.definition, true);
+        assert.equal(albatrossDefinition.output, "");
+
+        const shownAlbatross = module.parseEval(
+            "show WasmFinalA", ++requestId, false, 0);
+        assert.equal(shownAlbatross.success, true, shownAlbatross.error);
+        assert.equal(shownAlbatross.output, "arity:0 A\n");
     });
 
 test("built Studio Wasm rejects integer basis names without mutation",

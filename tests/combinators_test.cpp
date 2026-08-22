@@ -3345,7 +3345,7 @@ int main() {
     test("cross-form replacement uses its new arity",
          single_step(parse("DefReplace a b")), "ab");
 
-    test("abstract returns only its optimized expression",
+    test("abstract applies the Albatross optimizer after takeout",
          parse("abstract ?xy = x(yx)"), "?=A");
     test("abstract handles the Starling proposal example",
          parse("abstract ?xyz = xz(yz)"), "?=S");
@@ -3386,57 +3386,119 @@ int main() {
          "x(yx) 100");
     test("abstract steps traces reverse takeout and optimization",
          parse("abstract steps ?xy = x(yx)"),
-         "takeout y from x(yx): Bx(Tx)\n"
-         "optimize: Bx(Tx) -> SBTx\n"
-         "takeout x from SBTx: SBT\n"
-         "optimize: SBT -> A\n"
+         "optimize: x(yx) -> Oyx\n"
+         "takeout y from Oyx: COx\n"
+         "takeout x from COx: CO\n"
+         "optimize: CO -> A\n"
          "?=A");
+    test("abstract directly optimizes CO after takeout",
+         parse("abstract steps ?x = COx"),
+         "takeout x from COx: CO\n"
+         "optimize: CO -> A\n"
+         "?=A");
+    test("abstract recursively optimizes an exact nested CO",
+         parse("abstract steps ?x = z(C O)x"),
+         "takeout x from z(CO)x: z(CO)\n"
+         "optimize: CO -> A\n"
+         "?=zA");
+    test("define preserves the reversed OC near miss",
+         parse("define NearCOReverse = O C"),
+         "NearCOReverse");
+    test("show exposes the unchanged reversed OC near miss",
+         parse("show NearCOReverse"), "arity:0 OC");
+    test("define preserves the C-of-applied-O near miss",
+         parse("define NearCOApplied = C(Ox)"),
+         "NearCOApplied");
+    test("show exposes the unchanged C-of-applied-O near miss",
+         parse("show NearCOApplied"), "arity:0 C(Ox)");
+    test("define closes named Albatrosses through duplicate optimization",
+         parse("define FinalCOClosure = (C O)(S B T)"),
+         "FinalCOClosure");
+    test("show exposes the named-to-duplicate MA closure",
+         parse("show FinalCOClosure"), "arity:0 MA");
     test("abstract duplicate pass feeds the final optimizer",
          parse("abstract ?x = BxB"),
          "?=NB");
-    test("abstract steps aggregates duplicate normalization after takeout",
+    test("abstract steps traces duplicate normalization before first takeout",
          parse("abstract steps ?x = BxB"),
-         "takeout x from BxB: CBB\n"
-         "optimize: CBB -> WCB\n"
-         "optimize: WC -> N\n"
+         "optimize: BxB -> NBx\n"
+         "takeout x from NBx: NB\n"
          "?=NB");
     test("abstract repeatedly rescans duplicate-normalized takeout",
          parse("abstract ?xy = xxxy"),
          "?=WN");
     test("abstract steps traces each duplicate optimizer rescan",
          parse("abstract steps ?xy = xxxy"),
-         "takeout y from xxxy: xxx\n"
-         "optimize: xxx -> Nxx\n"
-         "optimize: Nxx -> WNx\n"
+         "optimize: xxxy -> Nxxy\n"
+         "optimize: Nxxy -> WNxy\n"
+         "takeout y from WNxy: WNx\n"
          "takeout x from WNx: WN\n"
          "?=WN");
-    test("abstract ministeps rescans only after the completed takeout",
+    test("abstract ministeps scans duplicates before first takeout",
          parse("abstract ministeps ?xy = xxxy"),
-         "takeout y from xxxy: xxx\n"
-         "optimize: xxx -> Nxx\n"
-         "optimize: Nxx -> WNx\n"
+         "optimize: xxxy -> Nxxy\n"
+         "optimize: Nxxy -> WNxy\n"
+         "takeout y from WNxy: WNx\n"
          "takeout x from WNx: WN\n"
          "?=WN");
+    test("abstract optimizes duplicate expressions before first takeout",
+         parse("abstract ?x = abbx"),
+         "?=Wab");
+    test("abstract steps traces duplicate optimization before first takeout",
+         parse("abstract steps ?x = abbx"),
+         "optimize: abbx -> Wabx\n"
+         "takeout x from Wabx: Wab\n"
+         "?=Wab");
+    test("abstract ministeps traces duplicate optimization before first takeout",
+         parse("abstract ministeps ?x = abbx"),
+         "optimize: abbx -> Wabx\n"
+         "takeout x from Wabx: Wab\n"
+         "?=Wab");
+    test("abstract leaves named-bird optimization until after takeout",
+         parse("abstract steps ?x = BCx"),
+         "takeout x from BCx: BC\n"
+         "optimize: BC -> C*\n"
+         "?=C*");
+    test("abstract preprocessing precedes initial duplicate optimization",
+         parse("abstract steps ?x = Wabx"),
+         "preprocess: Wabx -> abbx\n"
+         "optimize: abbx -> Wabx\n"
+         "takeout x from Wabx: Wab\n"
+         "?=Wab");
+    test("abstract initial duplicate optimization stops at its first repeat",
+         parse("abstract steps ?x = NNMx"),
+         "optimize: NNMx -> MNMx\n"
+         "optimize: MNMx -> NMNx\n"
+         "optimize: NMNx -> NNMx\n"
+         "takeout x from NNMx: NNM\n"
+         "optimize: NNM -> MNM\n"
+         "optimize: MNM -> NMN\n"
+         "optimize: NMN -> NNM\n"
+         "?=NNM");
     test("abstract repeatedly rescans nested duplicate expressions",
          parse("abstract steps ?y = p(xxxy)"),
-         "takeout y from p(xxxy): Bp(xxx)\n"
-         "optimize: Bp(xxx) -> Bp(Nxx)\n"
-         "optimize: Bp(Nxx) -> Bp(WNx)\n"
+         "optimize: p(xxxy) -> p(Nxxy)\n"
+         "optimize: p(Nxxy) -> p(WNxy)\n"
+         "takeout y from p(WNxy): Bp(WNx)\n"
          "?=Bp(WNx)");
-    test("abstract applies the H optimizer after a completed takeout",
+    test("abstract applies the H optimizer before first takeout",
          parse("abstract ?x = C*Bxx"),
          "?=HB");
     test("abstract steps trace H optimization and its next rescan",
          parse("abstract steps ?x = C*Hxx"),
-         "takeout x from C*Hxx: W(C*H)\n"
-         "optimize: W(C*H) -> HH\n"
-         "optimize: HH -> MH\n"
+         "optimize: C*Hxx -> W(C*H)x\n"
+         "optimize: W(C*H)x -> HHx\n"
+         "optimize: HHx -> MHx\n"
+         "takeout x from MHx: MH\n"
          "?=MH");
     test("abstract H optimizer captures arbitrary compound expressions",
          parse("abstract ?x = C*(a(bc))xx"),
          "?=H(a(bc))");
     test("abstract steps stops after tracing a repeated cycle state",
          parse("abstract steps ?y = NNMy"),
+         "optimize: NNMy -> MNMy\n"
+         "optimize: MNMy -> NMNy\n"
+         "optimize: NMNy -> NNMy\n"
          "takeout y from NNMy: NNM\n"
          "optimize: NNM -> MNM\n"
          "optimize: MNM -> NMN\n"
@@ -3444,22 +3506,22 @@ int main() {
          "?=NNM");
     test("abstract duplicate pass feeds the next reverse takeout",
          parse("abstract ?xy = ya(ya)"),
-         "?=K(WS(Ta))");
+         "?=K(C(WS)a)");
     test("abstract steps uses normalized output for the next takeout",
          parse("abstract steps ?xy = ya(ya)"),
-         "takeout y from ya(ya): S(Ta)(Ta)\n"
-         "optimize: S(Ta)(Ta) -> WS(Ta)\n"
-         "takeout x from WS(Ta): K(WS(Ta))\n"
-         "?=K(WS(Ta))");
+         "optimize: ya(ya) -> Syya\n"
+         "optimize: Syya -> WSya\n"
+         "takeout y from WSya: C(WS)a\n"
+         "takeout x from C(WS)a: K(C(WS)a)\n"
+         "?=K(C(WS)a)");
     test("abstract ministeps keeps stages raw until aggregate normalization",
          parse("abstract ministeps ?xy = ya(ya)"),
-         "takeout y from ya(ya): "
-         "S[takeout y from ya][takeout y from ya]\n"
-         "= S(Ta)[takeout y from ya]\n"
-         "= S(Ta)(Ta)\n"
-         "optimize: S(Ta)(Ta) -> WS(Ta)\n"
-         "takeout x from WS(Ta): K(WS(Ta))\n"
-         "?=K(WS(Ta))");
+         "optimize: ya(ya) -> Syya\n"
+         "optimize: Syya -> WSya\n"
+         "takeout y from WSya: C[takeout y from WSy]a\n"
+         "= C(WS)a\n"
+         "takeout x from C(WS)a: K(C(WS)a)\n"
+         "?=K(C(WS)a)");
     test("abstract steps omits unchanged duplicate normalization",
          parse("abstract steps ?x = xa"),
          "takeout x from xa: Ta\n"
@@ -3475,8 +3537,8 @@ int main() {
          "?=KI");
     test("abstract ministeps traces recursive takeout in place",
          parse("abstract ministeps ?xy = y(xy)"),
-         "takeout y from y(xy): O[takeout y from xy]\n"
-         "= Ox\n"
+         "optimize: y(xy) -> Oxy\n"
+         "takeout y from Oxy: Ox\n"
          "takeout x from Ox: O\n"
          "?=O");
     test("abstract ministeps traces nested recursive takeout in place",
@@ -3507,34 +3569,31 @@ int main() {
          "?=V");
     test("abstract rescans duplicate expressions after final optimization",
          parse("abstract ?xy = yxxx"),
-         "?=HW1");
+         "?=H(ZBWT)");
     test("abstract steps traces the post-final duplicate rescan",
          parse("abstract steps ?xy = yxxx"),
-         "takeout y from yxxx: C(C(Tx)x)x\n"
-         "takeout x from C(C(Tx)x)x: W(BC(W(BCT)))\n"
+         "optimize: yxxx -> W(yx)x\n"
+         "takeout y from W(yx)x: C(BW(Tx))x\n"
+         "takeout x from C(BW(Tx))x: W(BC(B(BW)T))\n"
+         "optimize: W(BC(B(BW)T)) -> W(BC(ZBWT))\n"
          "optimize: BC -> C*\n"
-         "optimize: BC -> C*\n"
-         "optimize: C*T -> V\n"
-         "optimize: WV -> W1\n"
-         "optimize: W(C*W1) -> HW1\n"
-         "?=HW1");
+         "optimize: W(C*(ZBWT)) -> H(ZBWT)\n"
+         "?=H(ZBWT)");
     test("abstract ministeps traces the post-final duplicate rescan",
          parse("abstract ministeps ?xy = yxxx"),
-         "takeout y from yxxx: C[takeout y from yxx]x\n"
-         "= C(C[takeout y from yx]x)x\n"
-         "= C(C(Tx)x)x\n"
-         "takeout x from C(C(Tx)x)x: "
-         "W[takeout x from C(C(Tx)x)]\n"
-         "= W(BC[takeout x from C(Tx)x])\n"
-         "= W(BC(W[takeout x from C(Tx)]))\n"
-         "= W(BC(W(BC[takeout x from Tx])))\n"
-         "= W(BC(W(BCT)))\n"
+         "optimize: yxxx -> W(yx)x\n"
+         "takeout y from W(yx)x: C[takeout y from W(yx)]x\n"
+         "= C(BW[takeout y from yx])x\n"
+         "= C(BW(Tx))x\n"
+         "takeout x from C(BW(Tx))x: "
+         "W[takeout x from C(BW(Tx))]\n"
+         "= W(BC[takeout x from BW(Tx)])\n"
+         "= W(BC(B(BW)[takeout x from Tx]))\n"
+         "= W(BC(B(BW)T))\n"
+         "optimize: W(BC(B(BW)T)) -> W(BC(ZBWT))\n"
          "optimize: BC -> C*\n"
-         "optimize: BC -> C*\n"
-         "optimize: C*T -> V\n"
-         "optimize: WV -> W1\n"
-         "optimize: W(C*W1) -> HW1\n"
-         "?=HW1");
+         "optimize: W(C*(ZBWT)) -> H(ZBWT)\n"
+         "?=H(ZBWT)");
     test("abstract alternates final named and structural optimization",
          parse("abstract steps ?x = C(C*T)Vx"),
          "preprocess: C(C*T)Vx -> C*TxV\n"
@@ -3555,7 +3614,7 @@ int main() {
     test("define applies duplicate normalization at its symbol boundary",
          parse("define DupRuleW x = xa(xa)"), "DupRuleW");
     test("show exposes duplicate-normalized define body",
-         parse("show DupRuleW"), "arity:1 WS(Ta)");
+         parse("show DupRuleW"), "arity:1 C(WS)a");
     test("duplicate-normalized define preserves its applied behavior",
          [] {
              auto normalized = combdsl::detail::normalize_for_compare(
@@ -3565,10 +3624,37 @@ int main() {
              }
          },
          "ba(ba)");
+    test("define optimizes a zero-symbol body before any takeout",
+         parse("define InitialDupZero = abb"), "InitialDupZero");
+    test("show exposes the initial duplicate-normalized zero-symbol body",
+         parse("show InitialDupZero"), "arity:0 Wab");
+    test("initial duplicate-normalized zero-symbol define preserves behavior",
+         [] {
+             auto normalized = combdsl::detail::normalize_for_compare(
+                 parse("InitialDupZero c"));
+             if (normalized) {
+                 normalized->print_to(std::cout);
+             }
+         },
+         "abbc");
+    test("define uses its initial duplicate result for first takeout",
+         parse("define InitDupSym x = abbx"),
+         "InitDupSym");
+    test("show exposes the initial duplicate-normalized symbol body",
+         parse("show InitDupSym"), "arity:1 Wab");
+    test("initial duplicate-normalized symbol define preserves behavior",
+         [] {
+             auto normalized = combdsl::detail::normalize_for_compare(
+                 parse("InitDupSym c"));
+             if (normalized) {
+                 normalized->print_to(std::cout);
+             }
+         },
+         "abbc");
     test("define applies duplicate normalization at recursive-name takeout",
          parse("define DupRec = DupRec a(DupRec a)"), "DupRec");
     test("show exposes duplicate-normalized recursive-name body",
-         parse("show DupRec"), "arity:0 Y(WS(Ta))");
+         parse("show DupRec"), "arity:0 Y(C(WS)a)");
     test("define repeatedly rescans duplicate-normalized takeout",
          parse("define DupRescan xy = xxxy"), "DupRescan");
     test("show exposes repeatedly normalized define body",
@@ -3587,7 +3673,7 @@ int main() {
          "FinalDupRescan");
     test("show exposes the post-final duplicate-rescanned define body",
          parse("show FinalDupRescan"),
-         "arity:2 HW1");
+         "arity:2 H(ZBWT)");
     test("post-final duplicate-rescanned define preserves behavior",
          [] {
              auto normalized = combdsl::detail::normalize_for_compare(
@@ -3801,10 +3887,10 @@ int main() {
          parse("define DefKE x = BDD"), "DefKE");
     test("show exposes the constant Zazu Dove result",
          parse("show DefKE"), "arity:1 K(ZD)");
-    test("define gives duplicate takeout precedence over BOM",
+    test("define pre-optimizes y(xxy) before takeout",
          parse("define OptU xy = y(xxy)"), "OptU");
-    test("show exposes the Lark Owl result",
-         parse("show OptU"), "arity:2 LO");
+    test("show exposes the pre-takeout optimized U result",
+         parse("show OptU"), "arity:2 U");
     test("define recursively optimizes nested BOM",
          parse("define DefKU x = BOM"), "DefKU");
     test("show exposes nested Turing bird optimization",
@@ -3821,26 +3907,30 @@ int main() {
          parse("define DefKQV x = QTC"), "DefKQV");
     test("show exposes nested unoptimized QTC",
          parse("show DefKQV"), "arity:1 K(QTC)");
-    test("define applies duplicate takeout at constant K(BB)",
+    test("define pre-optimizes BB before constant takeout",
          parse("define DefKD x = BB"), "DefKD");
-    test("show exposes Lark precedence at K(BB)",
-         parse("show DefKD"), "arity:1 LKB");
+    test("show exposes pre-optimized BB under K",
+         parse("show DefKD"), "arity:1 K(MB)");
     test("define produces R without the CC optimizer",
          parse("define DefR xyz = yzx"), "DefR");
     test("show exposes the takeout-produced Robin",
          parse("show DefR"), "arity:3 R");
     test("takeout-produced Robin preserves behavior",
          single_step(single_step(parse("DefR a b c"))), "bca");
-    test("define applies duplicate takeout at constant K(CC)",
+    test("define pre-optimizes CC before constant takeout",
          parse("define DefKR x = CC"), "DefKR");
-    test("show exposes Lark precedence at K(CC)",
-         parse("show DefKR"), "arity:1 LKC");
-    test("define optimizes SBT to A",
+    test("show exposes pre-optimized CC under K",
+         parse("show DefKR"), "arity:1 K(MC)");
+    test("define pre-optimizes x(yx) before takeout",
          parse("define DefA xy = x(yx)"), "DefA");
-    test("show exposes the optimized Albatross",
+    test("show exposes the final Albatross optimization",
          parse("show DefA"), "arity:2 A");
-    test("optimized Albatross preserves behavior",
+    test("Albatross-optimized DefA preserves behavior",
          single_step(single_step(parse("DefA a b"))), "a(ba)");
+    test("define applies the Albatross optimizer without takeout",
+         parse("define DefAZero = CO"), "DefAZero");
+    test("show exposes the zero-symbol Albatross optimization",
+         parse("show DefAZero"), "arity:0 A");
     test("define recursively optimizes nested SBT",
          parse("define DefKA x = SBT"), "DefKA");
     test("show exposes nested Albatross optimization",
@@ -3877,10 +3967,10 @@ int main() {
          parse("define DefKN x = WC"), "DefKN");
     test("show exposes nested Nightingale optimization",
          parse("show DefKN"), "arity:1 KN");
-    test("define optimizes WV to Converse warbler",
+    test("define pre-optimizes yxx before takeout",
          parse("define OptW1 xy = yxx"), "OptW1");
-    test("show exposes optimized Converse warbler",
-         parse("show OptW1"), "arity:2 W1");
+    test("show exposes the pre-takeout optimized OptW1 body",
+         parse("show OptW1"), "arity:2 CW");
     test("define recursively optimizes nested WV",
          parse("define DefKW1 x = WV"), "DefKW1");
     test("show exposes nested Converse warbler optimization",
@@ -5417,10 +5507,10 @@ int main() {
                  "abstract steps ?xy = x(yx)", output, input);
              std::cout << output.str();
          },
-         "takeout y from x(yx): Bx(Tx)\n"
-         "optimize: Bx(Tx) -> SBTx\n"
-         "takeout x from SBTx: SBT\n"
-         "optimize: SBT -> A\n"
+         "optimize: x(yx) -> Oyx\n"
+         "takeout y from Oyx: COx\n"
+         "takeout x from COx: CO\n"
+         "optimize: CO -> A\n"
          "?=A\n");
     test("parse and step displays an abstract ministeps trace once",
          [] {
@@ -5430,8 +5520,8 @@ int main() {
                  "abstract ministeps ?xy = y(xy)", output, input);
              std::cout << output.str();
          },
-         "takeout y from y(xy): O[takeout y from xy]\n"
-         "= Ox\n"
+         "optimize: y(xy) -> Oxy\n"
+         "takeout y from Oxy: Ox\n"
          "takeout x from Ox: O\n"
          "?=O\n");
     test("parse and key step displays an abstract result without pausing",
@@ -5912,6 +6002,9 @@ int main() {
     test("public takeout does not run repeated duplicate rescans",
          takeout(quoted_atomic{y}, raw_repeated_duplicate_source),
          "xxx");
+    test("public takeout does not run initial parser duplicate optimization",
+         takeout(quoted_atomic{x}, quote(a)(b)(b)(x)),
+         "abb");
     test("contextual takeout does not run repeated duplicate rescans",
          combdsl::detail::takeout_with_pending_atoms(
              quoted_atomic{y}, raw_repeated_duplicate_source, {}),
@@ -13456,6 +13549,14 @@ int main() {
                  << ' ' << rendered.str();
          },
          R"(1 \ x)");
+
+    test("an atomic user-defined CO basis is not an Albatross pattern",
+         [] {
+             static_cast<void>(parse("define CO x = x"));
+             static_cast<void>(parse("define AtomicNamedCO = CO"));
+             parse("show AtomicNamedCO").print_to(std::cout);
+         },
+         "arity:0 CO");
 
     std::cout << tests_run << " test(s) run, "
               << test_failures << " failed\n";

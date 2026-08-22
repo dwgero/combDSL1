@@ -403,7 +403,7 @@ test("documents leading-backslash basis names in Studio", () => {
     assert.match(html, /retain that direct spelling with safe\s+operand separators/);
 });
 
-test("documents ordered post-takeout duplicate optimization in Studio", () => {
+test("documents ordered duplicate optimization at abstraction boundaries", () => {
     const html = readFileSync(
         new URL("../web/index.html", import.meta.url), "utf8");
 
@@ -438,13 +438,13 @@ test("documents ordered post-takeout duplicate optimization in Studio", () => {
         /one\s+<code>optimize: &lt;before&gt; -&gt; &lt;after&gt;<\/code> line for\s+every changed whole-expression scan/);
     assert.match(
         html,
-        /<code>abstract steps \?xy = xxxy<\/code> prints\s+<code>optimize: xxx -&gt; Nxx<\/code>, then\s+<code>optimize: Nxx -&gt; WNx<\/code>/);
+        /<code>abstract steps \?xy = xxxy<\/code> first prints\s+<code>optimize: xxxy -&gt; Nxxy<\/code>, then\s+<code>optimize: Nxxy -&gt; WNxy<\/code>, before taking out\s+<code>y<\/code>/);
     assert.match(
         html,
         /final named-bird substitutions, these scans run again/);
     assert.match(
         html,
-        /<code>optimize: W\(C\*W1\) -&gt; HW1<\/code>, and\s+<code>\?=HW1<\/code>/);
+        /<code>abstract steps \?xy = yxxx<\/code> starts with\s+<code>optimize: yxxx -&gt; W\(yx\)x<\/code> and ends with\s+<code>optimize: W\(C\*\(ZBWT\)\) -&gt; H\(ZBWT\)<\/code> and\s+<code>\?=H\(ZBWT\)<\/code>/);
 });
 
 test("completes unambiguous abstract command forms", () => {

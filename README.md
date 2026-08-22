@@ -544,10 +544,10 @@ Undersaturated bases remain named, and preprocessing does not enter
 expression is `B`. If this preprocessing repeats an expression or exceeds its
 reduction limit, `define` safely abstracts the original body instead.
 
-After each complete `takeout` pass, and before taking out the next symbol,
-`define` and `abstract` repeatedly rescan the whole result for optimization
-patterns. Each scan is top-down. At each node, the first matching rule in this
-order wins:
+After saturated-basis preprocessing and before the first `takeout`, then again
+after each complete `takeout` and before taking out the next symbol, `define`
+and `abstract` repeatedly rescan the whole result for optimization patterns.
+Each scan is top-down. At each node, the first matching rule in this order wins:
 
 ```text
 W (C* A)      -> H A
@@ -562,6 +562,9 @@ A A           -> M A
 
 `A`, `B`, `A1`, and `A2` may each be an arbitrary combinator expression, and
 occurrences bearing the same placeholder must be structurally identical.
+The initial right-hand-side scan and every post-takeout scan use only these
+eight structural rules; named-bird substitutions remain in the final settling
+phase.
 Captured operands are scanned recursively, while a generated
 `H`/`N`/`W`/`O`/`Z`/`L`/`S`/`M` skeleton is reconsidered only on the next
 whole-expression scan. Rescanning stops when a scan makes no structural change
@@ -571,7 +574,8 @@ therefore only a fallback after the seven more specific shapes; for example,
 `(F X) (F X)` matches the earlier `S` rule and becomes `S F F X`, not
 `M(F X)`. This pass is part of `define` and `abstract`; the
 low-level `takeout()` and `search_for_*_subexp()` APIs continue to expose their
-raw takeout results.
+raw takeout results. `define` also performs the initial right-hand-side scan
+when its signature has no symbols and therefore requires no takeout.
 
 At the start of a line, preceded by optional whitespace,
 `abstract [steps | ministeps] ?symbol_list = combinator_expression` performs
@@ -589,23 +593,27 @@ optimizer substitution before the final `?=<expression>` line. For example,
 their positions in the full expression as
 `[takeout <symbol> from <sub-expression>]`; each resolved full expression is
 then printed on a new line beginning with `= `. Thus,
-`abstract ministeps ?xy = y(xy)` starts with
-`takeout y from y(xy): O[takeout y from xy]`, then prints `= Ox`,
-`takeout x from Ox: O`, and `?=O`. Unchanged preprocessing and optimization
-passes are omitted. Duplicate optimization is performed only after a complete
-takeout: individual ministep lines remain raw, and every changed
-whole-expression scan is followed by one
+`abstract ministeps ?x = a(b(xc))` starts with
+`takeout x from a(b(xc)): Ba[takeout x from b(xc)]`, then prints
+`= Ba(Bb[takeout x from xc])`, `= Ba(Bb(Tc))`, and `?=Ba(Bb(Tc))`.
+Unchanged preprocessing and optimization
+passes are omitted. Duplicate optimization is performed before the first
+takeout and after each complete takeout: individual ministep lines remain raw,
+and every changed whole-expression scan is followed by one
 `optimize: <before> -> <after>` line before the next scan, takeout, or final
-`?=` result. For example, `abstract steps ?xy = xxxy` prints
-`optimize: xxx -> Nxx`, then `optimize: Nxx -> WNx`. The unchanged
+`?=` result. For example, `abstract steps ?xy = xxxy` first prints
+`optimize: xxxy -> Nxxy`, then `optimize: Nxxy -> WNxy`, before taking out
+`y`. The unchanged
 terminating scan is omitted; a transition into a repeated terminal state is
-shown. The new leading rule is visible in
-`abstract steps ?x = C*Hxx`: after takeout produces `W(C*H)`, the optimizer
-prints `W(C*H) -> HH`, then rescans and prints `HH -> MH`. After the final
+shown. The leading H rule is visible in
+`abstract steps ?x = C*Hxx`: before takeout, the optimizer prints
+`C*Hxx -> W(C*H)x`, then `W(C*H)x -> HHx`, then `HHx -> MHx`; takeout
+produces `MH`. After the final
 named-bird substitutions, the ordered whole-expression scan runs again whenever
 that named pass changed the result; the two phases alternate until a named pass
-is unchanged. Thus, `abstract steps ?xy = yxxx` ends with
-`optimize: WV -> W1`, then `optimize: W(C*W1) -> HW1`, and `?=HW1`.
+is unchanged. Thus, `abstract steps ?xy = yxxx` starts with
+`optimize: yxxx -> W(yx)x` and ends with `optimize: BC -> C*`, then
+`optimize: W(C*(ZBWT)) -> H(ZBWT)`, and `?=H(ZBWT)`.
 
 The names `abstract`, `all`, `among`, `captured`, `live`, `step`, `steps`,
 `ministeps`, `limit`, `set`, `define`, `show`, `remove`, `revisions`,
@@ -628,12 +636,13 @@ parse("define Repeat x = x(Repeat x)"); // Repeat
 parse_eval("show Repeat");              // prints: arity:1 Y
 ```
 
-The resulting recursive transformation is
+The initial right-hand-side rescan feeds `previous_takeout_result` before any
+symbol takeout. The resulting recursive transformation is
 `settle(Y(rescan(takeout(rec_func, previous_takeout_result))))`, where
 `rescan` is the cycle-safe sequence of ordered post-takeout scans above and
 `settle` alternates the final named-bird pass with another ordered rescan until
 the named pass is unchanged. The named-bird pass recursively
-replaces `C*T` with `V`, `BDD` with `E`, `BOM`
+replaces `C*T` with `V`, `CO` with `A`, `BDD` with `E`, `BOM`
 with `U`, `B(QT)R` with `F`, `B(QT)B` with `Q1`, `BT` with `Q3`, `BW` with
 `W*`, `B W*` with `W**`, `BC` with `C*`, `B C*` with `C**`, `YO` with `Y`,
 `BB` with `D`, `SBT` with `A`, `SR` with `H`, `QM` with `L`, `DC` with `G`,
@@ -1106,7 +1115,7 @@ using the same direct syntax for interactive input, piped input, and loaded
 journals. Piped input remains line-oriented, while journal loading can group a
 quoted string that spans multiple physical lines into one record.
 When standard output is a terminal, it first prints
-`Combinator Read-Eval-Print Loop, version 2.14.8`. Long evaluations display
+`Combinator Read-Eval-Print Loop, version 2.14.9`. Long evaluations display
 the accumulated step count every 1,000 reductions by overwriting one status
 line; the line is cleared before evaluation output is printed. Its interactive
 prompt is `>`. Interactive input uses GNU Readline, so previous nonempty
@@ -1244,21 +1253,24 @@ optimizer substitution before that same final line. For example,
 their positions in the full expression as
 `[takeout <symbol> from <sub-expression>]`; resolving one prints the resulting
 full expression on a new line beginning with `= `. For example,
-`abstract ministeps ?xy = y(xy)` starts with
-`takeout y from y(xy): O[takeout y from xy]`, then `= Ox`,
-`takeout x from Ox: O`, and `?=O`. The command does not evaluate its result
-and ignores the stepping and color modes. After each complete takeout,
-`abstract` repeatedly rescans the whole result using the ordered optimization
-rules `W(C* A) -> HA`, `ABA -> NAB`, `ABB -> WAB`, `A(BA) -> OBA`, `A(AB) -> ZAB`,
+`abstract ministeps ?x = a(b(xc))` starts with
+`takeout x from a(b(xc)): Ba[takeout x from b(xc)]`, then
+`= Ba(Bb[takeout x from xc])`, `= Ba(Bb(Tc))`, and `?=Ba(Bb(Tc))`.
+The command does not evaluate its result
+and ignores the stepping and color modes. Before the first takeout and after
+each complete takeout, `abstract` repeatedly rescans the whole result using the
+ordered optimization rules `W(C* A) -> HA`, `ABA -> NAB`, `ABB -> WAB`, `A(BA) -> OBA`, `A(AB) -> ZAB`,
 `A(BB) -> LAB`, `(A1 A)(A2 A) -> S A1 A2 A`, and finally `AA -> MA`;
 every placeholder may be a compound expression. Rescanning stops when a scan
 is unchanged or reaches a structurally repeated state. Individual
 `ministeps` stages remain raw, while every changed whole-expression scan is
 shown on its own `optimize:` line before the next scan, takeout, or final
-`?=` result. After final named-bird substitutions change the result, these
+`?=` result. The initial scan uses only these eight structural rules; named-bird
+substitutions remain final. After final named-bird substitutions change the result, these
 whole-expression scans and named substitutions alternate until a named pass is
-unchanged. Thus, `abstract steps ?xy = yxxx` ends with
-`optimize: W(C*W1) -> HW1` and `?=HW1`.
+unchanged. Thus, `abstract steps ?xy = yxxx` starts with
+`optimize: yxxx -> W(yx)x` and ends with
+`optimize: W(C*(ZBWT)) -> H(ZBWT)` and `?=H(ZBWT)`.
 Enter `define [captured | live] <name> [<symbol_list>] =
 <combinator_expression>` to create a named basis. Enter
 `set [captured | live] <name> = [arity] <combinator_expression>` to store an
