@@ -439,6 +439,15 @@ test("built Studio Wasm reserves lowercase-leading text for symbols",
         assert.equal(registered.success, true, registered.error);
         assert.equal(registered.definition, false);
         assert.equal(registered.displayOnly, false);
+        for (const [source, output] of [
+            ["Cstarx", "satrx\n"],
+            ["K Cstarx", "trax\n"],
+        ]) {
+            const fallback = module.parseEval(
+                source, ++requestId, false, 0);
+            assert.equal(fallback.success, true, fallback.error);
+            assert.equal(fallback.output, output, source);
+        }
     });
 
 test("built Studio Wasm routes and reloads equals-prefixed basis names",
@@ -939,6 +948,9 @@ test("built Studio Wasm preserves literal and named leading backslashes",
         for (const source of [
             `set ${slash} = 3 C`,
             `set ${slash}foo = 1 I`,
+            `set ${slash}A = 1 I`,
+            `set ${slash}1 = 1 I`,
+            `set ${slash}! = 1 I`,
             `set ${slash}12345678901234 = 1 I`,
             `define ${slash} bar = rab`,
         ]) {
@@ -966,18 +978,78 @@ test("built Studio Wasm preserves literal and named leading backslashes",
 
         const ambiguousInspect = module.parseEval(
             `inspect ${slash}foobar`, ++requestId, false, 0);
-        assert.equal(ambiguousInspect.success, false);
-        assert.equal(
-            ambiguousInspect.error,
-            "Parse error at position 9 of command: unknown operand",
-        );
+        assert.equal(ambiguousInspect.success, true,
+            ambiguousInspect.error);
+        assert.match(ambiguousInspect.output, /canonical: \\@2foobar/);
+        assert.match(ambiguousInspect.output, /  \\@2 \[captured\]/);
         const ambiguousExpression = module.parseEval(
             `${slash}foobar`, ++requestId, false, 0);
-        assert.equal(ambiguousExpression.success, false);
+        assert.equal(ambiguousExpression.success, true,
+            ambiguousExpression.error);
+        assert.equal(ambiguousExpression.output, "oofbar\n");
+        const canonicalRoundTrip = module.parseEval(
+            `${slash}@2foobar`, ++requestId, false, 0);
+        assert.equal(canonicalRoundTrip.success, true,
+            canonicalRoundTrip.error);
+        assert.equal(canonicalRoundTrip.output, ambiguousExpression.output,
+            "the compact current-registry canonical spelling must reparse");
+        const neighboringInspect = module.parseEval(
+            `inspect K ${slash} x`, ++requestId, false, 0);
+        assert.equal(neighboringInspect.success, true,
+            neighboringInspect.error);
+        assert.match(neighboringInspect.output, /canonical: K \\@2x/);
+        for (const [source, canonical] of [
+            [`inspect K ${slash}A x`, `canonical: K ${slash}Ax`],
+            [`inspect K ${slash}1 x`, `canonical: K ${slash}1x`],
+            [`inspect K ${slash}! K`, `canonical: K ${slash}!K`],
+            [`inspect I  ${slash}1   K`, `canonical: I ${slash}1 K`],
+            [`inspect I  ${slash}@1   K`, `canonical: I ${slash}@1K`],
+        ]) {
+            const classified = module.parseEval(
+                source, ++requestId, false, 0);
+            assert.equal(classified.success, true, classified.error);
+            assert.ok(classified.output.includes(canonical),
+                `${source}: ${classified.output}`);
+        }
+        const retainedRevision = module.parseEval(
+            `${slash}@1foobar`, ++requestId, false, 0);
+        assert.equal(retainedRevision.success, true,
+            retainedRevision.error);
+        assert.equal(retainedRevision.output, "foobar\n",
+            "a retained backslash revision must trail compactly");
+        const commandError = module.parseEval(
+            "inspect @", ++requestId, false, 0);
+        assert.equal(commandError.success, false);
         assert.equal(
-            ambiguousExpression.error,
+            commandError.error,
+            "Parse error at position 9 of command: unknown operand",
+        );
+        const expressionError = module.parseEval(
+            "@", ++requestId, false, 0);
+        assert.equal(expressionError.success, false);
+        assert.equal(
+            expressionError.error,
             "Parse error at position 1: unknown operand",
         );
+        const delimitedLonger = module.parseEval(
+            `${slash}foo bar`, ++requestId, false, 0);
+        assert.equal(delimitedLonger.success, true,
+            delimitedLonger.error);
+        assert.equal(delimitedLonger.output, "bar\n");
+
+        applyBuiltDefinition(
+            module, `set ${slash}foobar = 1 K`, ++requestId);
+        const exactLonger = module.parseEval(
+            `${slash}foobar x y`, ++requestId, false, 0);
+        assert.equal(exactLonger.success, true, exactLonger.error);
+        assert.equal(exactLonger.output, "x\n",
+            "an exact whole name must beat every valid prefix");
+        const explicitlySpacedShorter = module.parseEval(
+            `${slash} foobar x y`, ++requestId, false, 0);
+        assert.equal(explicitlySpacedShorter.success, true,
+            explicitlySpacedShorter.error);
+        assert.equal(explicitlySpacedShorter.output, "oofbarxy\n",
+            "spacing must preserve the shorter backslash basis");
 
         const explicitLiteral = module.parseEval(
             `I ${quotedSlash}`, ++requestId, false, 0);
@@ -1014,8 +1086,12 @@ test("built Studio Wasm preserves literal and named leading backslashes",
             "references captured\n" +
             `set ${slash} = 3 C\n` +
             `set ${slash}foo = 1 I\n` +
+            `set ${slash}A = 1 I\n` +
+            `set ${slash}1 = 1 I\n` +
+            `set ${slash}! = 1 I\n` +
             `set ${slash}12345678901234 = 1 I\n` +
-            `define ${slash} bar = rab`,
+            `define ${slash} bar = rab\n` +
+            `set ${slash}foobar = 1 K`,
         );
 
         const invalidLoad = module.loadSetList(
@@ -1041,7 +1117,7 @@ test("built Studio Wasm preserves literal and named leading backslashes",
         const restored = await loadBuiltCombdslModule();
         const load = restored.loadSetList(setList, "backslash names");
         assert.equal(load.success, true, load.error);
-        assert.equal(load.loaded, 5);
+        assert.equal(load.loaded, 9);
         const restoredBare = restored.parseEval(
             `${slash}xyz`, ++requestId, false, 0);
         assert.equal(restoredBare.success, true, restoredBare.error);
@@ -1054,11 +1130,24 @@ test("built Studio Wasm preserves literal and named leading backslashes",
             `${slash}12345678901234 x`, ++requestId, false, 0);
         assert.equal(restoredMaximum.success, true, restoredMaximum.error);
         assert.equal(restoredMaximum.output, "x\n");
+        const restoredExact = restored.parseEval(
+            `${slash}foobar x y`, ++requestId, false, 0);
+        assert.equal(restoredExact.success, true, restoredExact.error);
+        assert.equal(restoredExact.output, "x\n");
         const restoredLiteral = restored.parseEval(
             `I ${quotedSlash}`, ++requestId, false, 0);
         assert.equal(restoredLiteral.success, true,
             restoredLiteral.error);
         assert.equal(restoredLiteral.output, `${quotedSlash}\n`);
+
+        applyBuiltDefinition(
+            module, `remove ${slash}!`, ++requestId);
+        const removedPunctuation = module.parseEval(
+            `K ${slash}! x`, ++requestId, false, 0);
+        assert.equal(removedPunctuation.success, true,
+            removedPunctuation.error);
+        assert.equal(removedPunctuation.output, `${slash}!\n`,
+            "a removed singleton punctuation name remains usable");
     });
 
 test("built Studio Wasm parses and reloads directly quoted strings",

@@ -4436,9 +4436,8 @@ int main() {
     test("nonterminating recursion remains step-responsive",
          single_step(single_step(single_step(parse("Loop a")))),
          "<deferred Y(I)>a");
-    test_parse_failure(
-        "a lowercase-ending recursive name requires a delimiter",
-        "define BadRec x = BadRecx", 18);
+    test("an invalid lowercase-ending recursive prefix is skipped",
+         parse("define BadRec x = BadRecx"), "BadRec");
     test("a recursive name ending in a digit needs no delimiter",
          parse("define Loop1 x = Loop1x"), "Loop1");
     test("compact recursive adjacency stores YI",
@@ -4887,8 +4886,41 @@ int main() {
          "Cstar x");
     test("quoted word opener delimits Cstar",
          parse(R"(Cstar"word")"), "Cstar word");
-    test_parse_failure("unseparated Cstar is an unknown operand",
-                       "Cstarx", 0);
+    test("an invalid Cstar prefix falls back to Cardinal",
+         single_step(parse("Cstarx")), "satrx");
+    test("the compact registered-prefix fallback prints round-trippably",
+         [] {
+             auto const expression = parse("Cstarx");
+             std::ostringstream rendered;
+             expression.print_to(rendered);
+             auto const reparsed = parse(rendered.str());
+             std::cout <<
+                 combdsl::detail::same_parser_definition_expression(
+                     expression, reparsed)
+                 << ' ' << rendered.str();
+         },
+         "1 Cstarx");
+    test("a registered invalid Cstar prefix also falls back after an operand",
+         [] {
+             auto const parsed = parse("K Cstarx");
+             auto const expected = parse("K C s t a r x");
+             std::cout <<
+                 combdsl::detail::same_parser_definition_expression(
+                     parsed, expected);
+         },
+         "1");
+    test("a spaced registered-prefix fallback prints round-trippably",
+         [] {
+             auto const expression = parse("Alias Cstarx");
+             std::ostringstream rendered;
+             expression.print_to(rendered);
+             auto const reparsed = parse(rendered.str());
+             std::cout <<
+                 combdsl::detail::same_parser_definition_expression(
+                     expression, reparsed)
+                 << ' ' << rendered.str();
+         },
+         "1 Alias C starx");
     test("parse separated Hprime", single_step(parse("Hprime x y")),
          "Hprime xy");
     test("parse G2 exact match", single_step(parse("G2")), "G2");
@@ -13514,19 +13546,206 @@ int main() {
     test("an exact longer backslash name wins over the bare name prefix",
          single_step(parse(R"(\foo x)"), true),
          "Ix");
+    auto lowercase_backslash_snapshot = parse(R"(\foo x)");
     test("a lowercase-ending backslash name prints with a safe boundary",
-         parse(R"(\foo x)"), R"(\foo x)");
+         lowercase_backslash_snapshot, R"(\foo x)");
     test("the longer backslash-prefixed name evaluates normally",
          [] { parse_eval(R"(\foo x)"); }, "x\n");
+    auto compact_backslash_short_prefix = parse(R"(\foobar)");
+    test("a compact invalid longer backslash prefix falls back to the bare name",
+         compact_backslash_short_prefix, R"(\foobar)");
+    test("a delimiter makes the longer backslash prefix valid",
+         single_step(parse(R"(\foo bar)"), true), "Ibar");
+    test("inspect omits a redundant compact backslash canonical line",
+         [] {
+             std::ostringstream inspected;
+             parse(R"(inspect \foobar)").print_to(inspected);
+             auto const value = inspected.str();
+             std::cout
+                 << (value.find("canonical:") ==
+                     std::string::npos)
+                 << (value.find("free symbols: a b f o r") !=
+                     std::string::npos)
+                 << (value.find(R"(  \ [captured])") !=
+                     std::string::npos);
+         },
+         "111");
+    test("leading whitespace keeps the same compact backslash fallback",
+         [] {
+             std::ostringstream padded;
+             std::ostringstream plain;
+             parse(R"(  inspect \foobar)").print_to(padded);
+             parse(R"(inspect \foobar)").print_to(plain);
+             std::cout << (padded.str() == plain.str());
+         },
+         "1");
+    test("a compact backslash fallback prints round-trippably",
+         [&compact_backslash_short_prefix] {
+             std::ostringstream rendered;
+             compact_backslash_short_prefix.print_to(rendered);
+             auto const reparsed = parse(rendered.str());
+             std::cout <<
+                 combdsl::detail::same_parser_definition_expression(
+                     compact_backslash_short_prefix, reparsed)
+                 << ' ' << rendered.str();
+         },
+         R"(1 \foobar)");
+    test("a bare backslash keeps its leading boundary but not a trailing one",
+         [] {
+             auto const expression = parse(R"(K \ x)");
+             std::ostringstream rendered;
+             expression.print_to(rendered);
+             auto const reparsed = parse(rendered.str());
+             std::cout <<
+                 combdsl::detail::same_parser_definition_expression(
+                     expression, reparsed)
+                 << ' ' << rendered.str();
+         },
+         R"(1 K \x)");
+    test("a lowercase-ending backslash name keeps both required boundaries",
+         [] {
+             auto const expression = parse(R"(K \foo x)");
+             std::ostringstream rendered;
+             expression.print_to(rendered);
+             auto const reparsed = parse(rendered.str());
+             std::cout <<
+                 combdsl::detail::same_parser_definition_expression(
+                     expression, reparsed)
+                 << ' ' << rendered.str();
+         },
+         R"(1 K \foo x)");
+    test("set accepts an uppercase-ending backslash name",
+         parse(R"(set \A = 1 I)"), R"(\A)");
+    test("an uppercase-ending backslash name trails compactly",
+         [] {
+             auto const expression = parse(R"(I \A x)");
+             std::ostringstream rendered;
+             expression.print_to(rendered);
+             auto const reparsed = parse(rendered.str());
+             std::cout <<
+                 combdsl::detail::same_parser_definition_expression(
+                     expression, reparsed)
+                 << ' ' << rendered.str();
+         },
+         R"(1 I \Ax)");
+    test("set accepts a digit-ending backslash name",
+         parse(R"(set \1 = 1 I)"), R"(\1)");
+    test("a current digit-ending backslash name trails compactly",
+         [] {
+             auto const expression = parse(R"(I \1 x)");
+             std::ostringstream rendered;
+             expression.print_to(rendered);
+             auto const reparsed = parse(rendered.str());
+             std::cout <<
+                 combdsl::detail::same_parser_definition_expression(
+                     expression, reparsed)
+                 << ' ' << rendered.str();
+         },
+         R"(1 I \1x)");
+    test("a digit-ending backslash name separates a following basis",
+         [] {
+             auto const expression = parse(R"(I \1 K)");
+             std::ostringstream rendered;
+             expression.print_to(rendered);
+             auto const reparsed = parse(rendered.str());
+             std::cout <<
+                 combdsl::detail::same_parser_definition_expression(
+                     expression, reparsed)
+                 << ' ' << rendered.str();
+         },
+         R"(1 I \1 K)");
+    test("a digit-ending backslash name gains a retained revision",
+         parse(R"(set \1 = 1 K)"), R"(\1)");
+    test("a retained digit-ending backslash revision trails compactly",
+         [] {
+             auto const expression = parse(R"(I \1@1 x)");
+             std::ostringstream rendered;
+             expression.print_to(rendered);
+             auto const reparsed = parse(rendered.str());
+             std::cout <<
+                 combdsl::detail::same_parser_definition_expression(
+                     expression, reparsed)
+                 << ' ' << rendered.str();
+         },
+         R"(1 I \1@1x)");
+    test("a retained backslash revision separates a following basis",
+         [] {
+             auto const expression = parse(R"(I \1@1 K)");
+             std::ostringstream rendered;
+             expression.print_to(rendered);
+             auto const reparsed = parse(rendered.str());
+             std::cout <<
+                 combdsl::detail::same_parser_definition_expression(
+                     expression, reparsed)
+                 << ' ' << rendered.str();
+         },
+         R"(1 I \1@1 K)");
+    test("the current digit-ending backslash revision remains compact",
+         [] {
+             auto const expression = parse(R"(I \1 x)");
+             std::ostringstream rendered;
+             expression.print_to(rendered);
+             auto const reparsed = parse(rendered.str());
+             std::cout <<
+                 combdsl::detail::same_parser_definition_expression(
+                     expression, reparsed)
+                 << ' ' << rendered.str();
+         },
+         R"(1 I \1x)");
+    test("set accepts a punctuation-ending backslash name",
+         parse(R"(set \! = 1 I)"), R"(\!)");
+    test("a punctuation-ending backslash name trails compactly",
+         [] {
+             auto const expression = parse(R"(I \! K)");
+             std::ostringstream rendered;
+             expression.print_to(rendered);
+             auto const reparsed = parse(rendered.str());
+             std::cout <<
+                 combdsl::detail::same_parser_definition_expression(
+                     expression, reparsed)
+                 << ' ' << rendered.str();
+         },
+         R"(1 I \!K)");
+    test("a punctuation-ending slash name self-delimits the next slash name",
+         [] {
+             auto const expression = parse(R"(\! \foo)");
+             std::ostringstream rendered;
+             expression.print_to(rendered);
+             auto const reparsed = parse(rendered.str());
+             std::cout <<
+                 combdsl::detail::same_parser_definition_expression(
+                     expression, reparsed)
+                 << ' ' << rendered.str();
+         },
+         R"(1 \!\foo)");
+    test("a punctuation-ending backslash name can be removed",
+         parse(R"(remove \!)"), R"(\!)");
+    test("a removed punctuation-ending backslash name stays compact",
+         [] {
+             auto const expression = parse(R"(I \! x)");
+             std::ostringstream rendered;
+             expression.print_to(rendered);
+             auto const reparsed = parse(rendered.str());
+             std::cout <<
+                 combdsl::detail::same_parser_definition_expression(
+                     expression, reparsed)
+                 << ' ' << rendered.str();
+         },
+         R"(1 I \!x)");
+    test("an uppercase-ending recursive backslash reference trails compactly",
+         [] {
+             auto const recursive =
+                 combdsl::detail::make_quoted_rec_func(
+                     combdsl::detail::basis_label(R"(\RecA)"));
+             quote(K)(recursive)(x).print_to(std::cout);
+         },
+         R"(K \RecAx)");
     test_parse_failure(
-        "inspect reports an ambiguous compact backslash token as a command",
-        R"(inspect \foobar)", 8, "unknown operand");
+        "inspect still labels an ordinary command parse error",
+        "inspect @", 8, "unknown operand");
     test_parse_failure(
-        "inspect keeps an absolute command position after leading whitespace",
-        R"(  inspect \foobar)", 10, "unknown operand");
-    test_parse_failure(
-        "the same ambiguous backslash token remains a plain expression error",
-        R"(\foobar)", 0, "unknown operand");
+        "the same invalid operand remains an expression error",
+        "@", 0, "unknown operand");
     test_parse_failure(
         "a command-looking plain expression retains expression wording",
         "showx @", 6, "unknown operand");
@@ -13623,6 +13842,30 @@ int main() {
     test("an explicit removed backslash revision remains usable",
          [] { parse_eval(R"(\@3 x y z)"); },
          "xzy\n");
+    test("a removed backslash revision trails compactly",
+         [] {
+             auto const expression = parse(R"(I \@3 x)");
+             std::ostringstream rendered;
+             expression.print_to(rendered);
+             auto const reparsed = parse(rendered.str());
+             std::cout <<
+                 combdsl::detail::same_parser_definition_expression(
+                     expression, reparsed)
+                 << ' ' << rendered.str();
+         },
+         R"(1 I \@3x)");
+    test("a removed bare-backslash revision stays self-delimiting",
+         [] {
+             auto const expression = parse(R"(I \@3 K)");
+             std::ostringstream rendered;
+             expression.print_to(rendered);
+             auto const reparsed = parse(rendered.str());
+             std::cout <<
+                 combdsl::detail::same_parser_definition_expression(
+                     expression, reparsed)
+                 << ' ' << rendered.str();
+         },
+         R"(1 I \@3K)");
     test("set can restore the bare backslash name after removal",
          parse(R"(set \ = 3 I)"), R"(\)");
     test("a live backslash reference follows the restored revision",
@@ -13690,6 +13933,47 @@ int main() {
     test("a removed singleton backslash-prefixed name remains parseable",
          [] { parse_eval(R"(\foo x y z)"); },
          "xyz\n");
+    test("a removed lowercase-ending backslash name keeps its delimiter",
+         [&lowercase_backslash_snapshot] {
+             std::ostringstream rendered;
+             lowercase_backslash_snapshot.print_to(rendered);
+             auto const reparsed = parse(rendered.str());
+             std::cout <<
+                 combdsl::detail::same_parser_definition_expression(
+                     lowercase_backslash_snapshot, reparsed)
+                 << ' ' << rendered.str();
+         },
+         R"(1 \foo x)");
+    test("a removed lowercase backslash name can gain another revision",
+         parse(R"(set \foo = 1 K)"), R"(\foo)");
+    test("an explicit lowercase-name revision trails compactly",
+         [] {
+             auto const expression = parse(R"(K \foo@2 x)");
+             std::ostringstream rendered;
+             expression.print_to(rendered);
+             auto const reparsed = parse(rendered.str());
+             std::cout <<
+                 combdsl::detail::same_parser_definition_expression(
+                     expression, reparsed)
+                 << ' ' << rendered.str();
+         },
+         R"(1 K \foo@2x)");
+    test("a lowercase-name revision separates a following basis",
+         [] {
+             auto const expression = parse(R"(K \foo@2 K)");
+             std::ostringstream rendered;
+             expression.print_to(rendered);
+             auto const reparsed = parse(rendered.str());
+             std::cout <<
+                 combdsl::detail::same_parser_definition_expression(
+                     expression, reparsed)
+                 << ' ' << rendered.str();
+         },
+         R"(1 K \foo@2 K)");
+    test("the multiply revised lowercase backslash name can be removed",
+         parse(R"(remove \foo)"), R"(\foo)");
+    test("a removed invalid longer prefix still permits the bare backslash",
+         parse(R"(\foobar)"), R"(\foobar)");
     test("the set list journals replayable visible backslash commands",
          [] {
              auto const definitions = set_list();
@@ -13711,6 +13995,39 @@ int main() {
                  << definitions.ends_with(R"(remove \foo)");
          },
          "1111111");
+    test("set accepts the formerly ambiguous exact backslash name",
+         parse(R"(set \foobar = 1 K)"), R"(\foobar)");
+    test("an exact backslash name wins over every shorter valid prefix",
+         single_step(parse(R"(\foobar x)"), true), "Kx");
+    test("the exact backslash name prints round-trippably",
+         [] {
+             auto const expression = parse(R"(\foobar x)");
+             std::ostringstream rendered;
+             expression.print_to(rendered);
+             auto const reparsed = parse(rendered.str());
+             std::cout <<
+                 combdsl::detail::same_parser_definition_expression(
+                     expression, reparsed)
+                 << ' ' << rendered.str();
+         },
+         R"(1 \foobar x)");
+    test("an earlier bare-backslash fallback survives exact registration",
+         [&compact_backslash_short_prefix] {
+             std::ostringstream rendered;
+             compact_backslash_short_prefix.print_to(rendered);
+             auto const reparsed = parse(rendered.str());
+             std::cout <<
+                 combdsl::detail::same_parser_definition_expression(
+                     compact_backslash_short_prefix, reparsed)
+                 << ' ' << rendered.str();
+         },
+         R"(1 \@1foobar)");
+    test("explicit spacing still selects the bare backslash after collision",
+         [] {
+             parse_eval(R"(\foobar x y)");
+             parse_eval(R"(\ foobar x y)");
+         },
+         "x\nfoobarxy\n");
     test("a direct escaped quote can be saved",
          parse(R"(set DirectRawQuote = 0 "a\" b")"),
          "DirectRawQuote");
@@ -13759,7 +14076,7 @@ int main() {
     test("a quoted literal slash remains distinct after all registrations",
          parse(R"("\\")"), R"("\\")");
     test("a one-byte backslash basis recognizes an adjacent symbol",
-         parse(R"(\x)"), R"(\ x)");
+         parse(R"(\x)"), R"(\x)");
     test("a one-byte backslash application prints round-trippably",
          [] {
              auto const expression = parse(R"(\x)");
@@ -13771,7 +14088,79 @@ int main() {
                      expression, reparsed)
                  << ' ' << rendered.str();
          },
-         R"(1 \ x)");
+         R"(1 \x)");
+
+    test("set accepts a non-backslash one-character prefix basis",
+         parse("set ! = 1 K"), "!");
+    test("set accepts its longer lowercase-ending sibling",
+         parse("set !foo = 1 I"), "!foo");
+    test("a non-backslash invalid longer prefix falls back to one character",
+         single_step(parse("!foobar"), true), "Kfoobar");
+    test("a delimiter selects the longer non-backslash prefix",
+         single_step(parse("!foo bar"), true), "Ibar");
+    test("the non-backslash short-prefix spelling round trips",
+         [] {
+             auto const expression = parse("!foobar");
+             std::ostringstream rendered;
+             expression.print_to(rendered);
+             auto const reparsed = parse(rendered.str());
+             std::cout <<
+                 combdsl::detail::same_parser_definition_expression(
+                     expression, reparsed)
+                 << ' ' << rendered.str();
+         },
+         "1 !foobar");
+    test("an invalid recursive long prefix permits the shorter named basis",
+         [] {
+             auto const parsed = combdsl::detail::parse_input(
+                 "define ARec = K ARecx",
+                 combdsl::detail::parser_definition_mode::
+                     inspect_definitions);
+             std::cout <<
+                 combdsl::detail::same_parser_definition_expression(
+                     single_step(parsed.expression, true),
+                     parse("K A R e c x"));
+         },
+         "1");
+    test("the longer non-backslash name gains a second revision",
+         parse("set !foo = 1 K"), "!foo");
+    test("an explicit revision remains a valid compact prefix",
+         single_step(parse("!foo@1bar"), true), "Ibar");
+    test("the longer non-backslash name can be removed",
+         parse("remove !foo"), "!foo");
+    test("a removed invalid longer prefix still permits the shorter name",
+         single_step(parse("!foobar"), true), "Kfoobar");
+    test("an explicit removed revision remains a valid compact prefix",
+         single_step(parse("!foo@1bar"), true), "Ibar");
+    test("set creates a spaced-prefix removed-singleton candidate",
+         parse("set ADead = 1 I"), "ADead");
+    test("that longer lowercase-ending singleton can be removed",
+         parse("remove ADead"), "ADead");
+    test("an invalid removed prefix permits a shorter name after an operand",
+         [] {
+             auto const parsed = parse("K ADeadx");
+             auto const expected = parse("K A D e a d x");
+             std::cout <<
+                 combdsl::detail::same_parser_definition_expression(
+                     parsed, expected);
+         },
+         "1");
+    test("set accepts the exact non-backslash whole token",
+         parse("set !foobar = 1 I"), "!foobar");
+    test("the exact non-backslash token wins over the shorter prefix",
+         single_step(parse("!foobar x"), true), "Ix");
+    test("the exact non-backslash name prints round-trippably",
+         [] {
+             auto const expression = parse("!foobar x");
+             std::ostringstream rendered;
+             expression.print_to(rendered);
+             auto const reparsed = parse(rendered.str());
+             std::cout <<
+                 combdsl::detail::same_parser_definition_expression(
+                     expression, reparsed)
+                 << ' ' << rendered.str();
+         },
+         "1 !foobar x");
 
     test("an atomic user-defined CO basis is not an Albatross pattern",
          [] {

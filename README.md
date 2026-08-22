@@ -481,17 +481,26 @@ error.
 
 A backslash may also begin a CREPL or Studio basis name. `set \ = 3 C` and
 `set \foo = 1 I` define the names `\` and `\foo`; `define \ bar = rab`
-defines `\` with the symbol list `bar`. An exact registered
-backslash-prefixed name takes precedence over the literal-backslash operand.
-To enter that literal after a collision, use the quoted string consisting of
-a double quote, two backslashes, and a double quote:
+defines `\` with the symbol list `bar`. An exact whole registered name wins.
+Otherwise, usable named and recursive prefixes are considered from longest to
+shortest, and the longest prefix valid at that operand boundary is used. Thus,
+with `\` and `\foo` registered, compact `\foobar` skips the lowercase-ending
+`\foo`, which lacks its required delimiter, and reads as `\ f o o b a r`;
+`\foo bar` selects the longer name, and an exact registered `\foobar` wins over
+both. The same longest-valid-prefix rule applies to non-backslash names. To
+enter the literal-backslash operand after a collision, use the quoted string
+consisting of a double quote, two backslashes, and a double quote:
 
 ```text
 "\\"
 ```
 
-Backslash names retain their direct spelling when printed as expressions,
-with safe separators on both sides. Saved definitions use that same spelling.
+Backslash names retain their direct spelling when printed as expressions. A
+separator is kept before a backslash-leading name when needed, while its
+following boundary uses the ordinary name-ending rules. Thus a bare `\`
+followed by the symbols `foobar` prints compactly as `\foobar`, while the
+lowercase-ending name `\foo` still prints separately in `\foo x`. Saved
+definitions use that same spelling.
 
 At the start of a line, preceded by optional whitespace,
 `define [captured | live]` followed by whitespace creates a named basis
@@ -1118,7 +1127,7 @@ using the same direct syntax for interactive input, piped input, and loaded
 journals. Piped input remains line-oriented, while journal loading can group a
 quoted string that spans multiple physical lines into one record.
 When standard output is a terminal, it first prints
-`Combinator Read-Eval-Print Loop, version 2.14.11`. Long evaluations display
+`Combinator Read-Eval-Print Loop, version 2.14.13`. Long evaluations display
 the accumulated step count every 1,000 reductions by overwriting one status
 line; the line is cleared before evaluation output is printed. Its interactive
 prompt is `>`. Interactive input uses GNU Readline, so previous nonempty
@@ -1336,9 +1345,12 @@ an ASCII letter or digit is self-delimiting on both sides, so
 `CstarW*` means `Cstar W*`, and a captured `Tail+@2` retains the compact
 boundaries of `Tail+`. When the entire compact token is itself a registered
 name, that exact name takes precedence. Other names ending in `a` through `z`
-still require whitespace, parentheses, or a quoted-string opener as a
-delimiter. Thus `Cstar x` means `Cstar` applied to `x`, while `Cstarx` is an
-unknown operand; it does not fall back to `C` followed by five symbols.
+still require whitespace, parentheses, or a quoted-string opener to be used as
+a prefix. A candidate without that delimiter is skipped in favor of the next
+longest valid prefix. Thus `Cstar x` selects `Cstar`, while compact `Cstarx`
+uses `C` followed by the symbols `s t a r x`; the same fallback applies after
+a preceding operand because `Cstar` is registered. An exact registered
+`Cstarx` would instead win as the whole token.
 The leading-boundary rule follows the underlying name, so `Q1@2` inherits it
 but an ordinary captured name does not gain it merely from its `@2` suffix.
 
@@ -1369,13 +1381,19 @@ parser syntax. Every backslash inside a string must be part of one of the two
 escapes above; every other backslash-led sequence is rejected. Empty and
 unterminated strings are also rejected.
 
-Outside a string, an exact registered backslash-prefixed name or valid
-registered-name prefix takes precedence. When no such name matches, one
-backslash is a one-character symbolic backslash operand. Use the quoted
-string `"\\"` to force that literal after a name collision. Registered
-slash-leading names use safe separators when printed, and quoted
-slash-leading raw values C-escape embedded quotes and backslashes. A string
-whose spelling matches a primitive or registered basis remains raw.
+Outside a string, an exact registered backslash-prefixed name takes precedence.
+Otherwise the longest usable named or recursive prefix that is valid at the
+current operand boundary wins; an invalid longer lowercase-ending candidate
+does not block a valid shorter prefix. With `\` and `\foo` registered,
+`\foobar` therefore uses `\`, while `\foo bar` uses `\foo`. When no usable
+named or recursive name matches, one backslash is a one-character symbolic
+backslash operand. Use the quoted string `"\\"` to force that literal after a
+name collision. Registered slash-leading names keep a safe leading boundary
+when printed, while following operands use the ordinary name-ending rules; a
+bare `\` followed by symbols therefore prints compactly, but `\foo x` remains
+separated. Quoted slash-leading raw values C-escape embedded quotes and
+backslashes. A string whose spelling matches a primitive or registered basis
+remains raw.
 
 Malformed or empty input throws `combdsl::parse_error`. Its `position()` is the
 zero-based byte position of the error; an error at the end of input reports the

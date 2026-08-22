@@ -388,9 +388,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             color: #c33;
         }
     </style>
-    <script src="./evaluation_watchdog.js?v=2.14.11" defer></script>
-    <script src="./input_history.js?v=2.14.11" defer></script>
-    <script src="./app.js?v=2.14.11" defer></script>
+    <script src="./evaluation_watchdog.js?v=2.14.13" defer></script>
+    <script src="./input_history.js?v=2.14.13" defer></script>
+    <script src="./app.js?v=2.14.13" defer></script>
 </head>
 <body>
     <main aria-labelledby="studio-title">
@@ -634,7 +634,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             symbols even after whitespace: <code>SBT xy</code> means
             <code>S B T x y</code>, and <code>SBT xC</code> means
             <code>S B T x C</code>. Exact registered names and valid registered
-            multi-character prefixes still win. When an unresolved mixed-case
+            multi-character prefixes still win. Within a compact token,
+            usable named and recursive prefixes are considered from longest to
+            shortest, and a candidate without its required delimiter is
+            skipped. Thus <code>Cstarx</code>, including after a preceding
+            operand, skips registered <code>Cstar</code> and uses
+            <code>C</code> followed by symbols. When an unresolved mixed-case
             token beginning with an uppercase ASCII letter follows another
             operand across whitespace in the same expression or parenthesized
             group, it is instead an intended basis name. Thus
@@ -678,17 +683,25 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             <code>set \ = 3 C</code> and <code>set \foo = 1 I</code> define
             the names <code>\</code> and <code>\foo</code>;
             <code>define \ bar = rab</code> defines <code>\</code> with the
-            symbol list <code>bar</code>. An exact registered
-            backslash-prefixed name takes precedence over the literal
-            backslash operand. Use the quoted string <code>"\\"</code> for
-            that literal. A bare double quote opens or closes a string.
+            symbol list <code>bar</code>. An exact whole name wins; otherwise
+            the longest usable named or recursive prefix valid at that boundary
+            is used. With both names registered, <code>\foobar</code> uses
+            <code>\</code> because lowercase-ending <code>\foo</code> lacks a
+            delimiter, while <code>\foo bar</code> uses <code>\foo</code>; an
+            exact registered <code>\foobar</code> wins over both. The same
+            rule applies to non-backslash names. Use the quoted string
+            <code>"\\"</code> for the literal-backslash operand. A bare double
+            quote opens or closes a string.
             Inside strings, use C-style
             <code>\"</code> for a double quote and <code>\\</code> for a
             backslash; every other backslash escape is a parse error. Studio
             passes input directly to the parser, so each visible backslash
             occupies one byte of the 15-byte stored-name limit. Parsed and
-            saved backslash names retain that direct spelling with safe
-            operand separators.
+            saved backslash names retain that direct spelling. A leading
+            separator is added when needed, while following operands use the
+            ordinary name-ending rules: a bare <code>\</code> followed by
+            symbols prints compactly, but <code>\foo x</code> remains
+            separated.
             <br><br>
             The optional <code>captured</code> or <code>live</code> modifier
             on <code>set</code> and <code>define</code> overrides the current
@@ -1166,7 +1179,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             data-dialog-initial-focus>About</h2>
         <div class="license-text">
             <!-- Keep this version and the app.js cache key in sync. -->
-            <p>Combinator Studio, version 2.14.11<br>
+            <p>Combinator Studio, version 2.14.13<br>
                 Part of the C++ Combinator DSL<br>
                 Copyright (C) 2026  David W. Gero</p>
             <p>This program is free software: you can redistribute it and/or modify

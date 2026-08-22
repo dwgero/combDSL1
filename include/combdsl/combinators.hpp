@@ -202,11 +202,8 @@ enum class printed_token : long {
 
 [[nodiscard]] constexpr printed_token basis_printed_token(
     std::string_view name) noexcept {
-    if ((!name.empty() && name.front() == '\\') ||
-        is_query_marker_shaped_basis_name(name)) {
-        // A compact neighbour could extend this into a different exact
-        // basis name or make a restricted-Find catalog name look like its
-        // query marker, so delimit both sides.
+    if (is_query_marker_shaped_basis_name(name)) {
+        // Keep a restricted-Find catalog name distinct from its query marker.
         return printed_token::separated_basis;
     }
     if (ends_with_non_alphanumeric(name)) {
@@ -309,12 +306,21 @@ inline void print_token(
     auto const follows_separated_uppercase_fallback_run =
         previous == printed_token::separated_uppercase_fallback_run &&
         contains_lowercase_ascii;
+    // Keep a slash-leading name distinct on its left; its ending still
+    // determines the ordinary boundary on its right.
+    auto const backslash_basis_requires_leading_separator =
+        is_multicharacter_basis(token) &&
+        !text.empty() && text.front() == '\\' &&
+        previous != printed_token::nonalphanumeric_terminated_basis &&
+        previous != printed_token::none &&
+        !is_parenthesis(previous);
 
     auto const requires_separator =
         numeric_requires_separator ||
         follows_multicharacter_basis ||
         is_unseparated_multicharacter_basis ||
-        follows_separated_uppercase_fallback_run;
+        follows_separated_uppercase_fallback_run ||
+        backslash_basis_requires_leading_separator;
     if (requires_separator) {
         output.put(' ');
     }
@@ -4887,11 +4893,8 @@ public:
         auto const& displayed_name = style.revision_qualified
             ? revision_name_
             : definition_name_;
-        auto const starts_with_backslash =
-            !definition_name_.empty() &&
-            definition_name_.front() == '\\';
         auto const token =
-            style.requires_trailing_separator || starts_with_backslash ||
+            style.requires_trailing_separator ||
                 is_query_marker_shaped_basis_name(definition_name_)
             ? printed_token::separated_basis
             : ends_with_non_alphanumeric(definition_name_)
@@ -9522,8 +9525,8 @@ private:
         // The general prefix parser starts at two-byte names.  Give a
         // one-byte backslash basis (or recursive definition) the same prefix
         // precedence before falling back to the literal-backslash operand.
-        // This must precede the recursive-prefix ambiguity guard below for
-        // compact one-byte recursion.
+        // Longer registered or recursive names that are valid prefixes have
+        // already won in the greedy scan above.
         if (current() == '\\' && has_next()) {
             if (auto recursive_function =
                     parse_single_character_recursive_function()) {
@@ -9533,11 +9536,6 @@ private:
                     parse_single_character_basis()) {
                 return std::move(*named_basis);
             }
-        }
-
-        if (begins_with_unseparated_recursive_function(
-                current_basis_token())) {
-            fail("unknown operand");
         }
 
         // Registered basis names take precedence over the symbolic
@@ -9780,12 +9778,6 @@ private:
         return versions->second.front();
     }
 
-    [[nodiscard]] bool has_unversioned_expression_basis(
-        std::string_view name) const {
-        return registered_bases_.contains(name) ||
-            removed_single_revision(name) != nullptr;
-    }
-
     [[nodiscard]] quoted_expression parser_basis_reference(
         registered_parser_basis_ptr const& basis) const {
         if (basis->predefined()) {
@@ -9992,19 +9984,6 @@ private:
         return false;
     }
 
-    [[nodiscard]] bool begins_with_unseparated_recursive_function(
-        std::string_view token) const noexcept {
-        if (!recursive_function_) {
-            return false;
-        }
-
-        auto const name =
-            quoted_access::root(*recursive_function_)->atomic_name();
-        return name.size() > 1 &&
-               token.size() > name.size() &&
-               token.starts_with(name);
-    }
-
     void reject_spaced_unknown_uppercase_name(
         bool has_previous_atom) const {
         auto const name = current_basis_token();
@@ -10027,9 +10006,34 @@ private:
         auto const separated_from_previous =
             has_previous_atom && position_ != 0 &&
             is_whitespace(source_[position_ - 1]);
-        if (separated_from_previous) {
+        if (separated_from_previous &&
+            !begins_with_ineligible_lowercase_terminated_name(name)) {
             fail("unknown operand");
         }
+    }
+
+    [[nodiscard]] bool
+    begins_with_ineligible_lowercase_terminated_name(
+        std::string_view token) const {
+        constexpr std::size_t maximum_basis_name_size = 15;
+        auto const maximum_prefix_size = std::min(
+            token.size() - 1, maximum_basis_name_size);
+        for (auto prefix_size = maximum_prefix_size;
+             prefix_size > 1;
+             --prefix_size) {
+            auto const prefix = token.substr(0, prefix_size);
+            if (!ends_with_lowercase_ascii_letter(prefix) ||
+                begins_with_basis_requiring_no_leading_separator(
+                    token.substr(prefix_size))) {
+                continue;
+            }
+            if (is_recursive_function_name(prefix) ||
+                registered_bases_.contains(prefix) ||
+                removed_single_revision(prefix)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     [[nodiscard]] bool is_basis_token_start() const noexcept {
@@ -10087,11 +10091,6 @@ private:
             return std::nullopt;
         }
 
-        if (begins_with_unseparated_multicharacter_basis(
-                current_basis_token())) {
-            fail("unknown operand");
-        }
-
         ++position_;
         return match != registered_bases_.end()
             ? parser_basis_reference(match->second)
@@ -10105,21 +10104,6 @@ private:
             ++end;
         }
         return source_.substr(position_, end - position_);
-    }
-
-    [[nodiscard]] bool begins_with_unseparated_multicharacter_basis(
-        std::string_view token) const {
-        constexpr std::size_t maximum_basis_name_size = 15;
-        for (std::size_t length = 2;
-             length < token.size() &&
-             length <= maximum_basis_name_size;
-             ++length) {
-            if (has_unversioned_expression_basis(
-                    token.substr(0, length))) {
-                return true;
-            }
-        }
-        return false;
     }
 
     [[nodiscard]] bool is_basis_token_delimiter(

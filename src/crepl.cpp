@@ -66,7 +66,7 @@
 
 namespace {
 
-constexpr std::string_view crepl_version = "2.14.11";
+constexpr std::string_view crepl_version = "2.14.13";
 constexpr std::string_view no_further_reductions_message =
     "No further reductions";
 
@@ -2026,7 +2026,11 @@ void print_help_full(std::ostream& output) {
         "token beginning with a through z is read as symbols even after "
         "whitespace: 'SBT xy' means 'S B T x y', and 'SBT xC' means 'S B T "
         "x C'. Exact registered names and valid registered multi-character "
-        "prefixes still win. When an unresolved mixed-case token beginning "
+        "prefixes still win. Within a compact token, usable named and "
+        "recursive prefixes are considered from longest to shortest, and a "
+        "candidate without its required delimiter is skipped. Thus Cstarx, "
+        "including after a preceding operand, skips registered Cstar and "
+        "uses C followed by symbols. When an unresolved mixed-case token beginning "
         "with an uppercase ASCII letter follows another operand across "
         "whitespace in the same expression or parenthesized group, it is "
         "instead an intended "
@@ -2072,15 +2076,22 @@ void print_help_full(std::ostream& output) {
         "A backslash may also begin a basis name. 'set \\ = 3 C' and "
         "'set \\foo = 1 I' define the names '\\' and '\\foo'; "
         "'define \\ bar = rab' defines '\\' with the symbol list 'bar'. "
-        "An exact registered backslash-prefixed name takes precedence over "
-        "the literal-backslash operand. Use the quoted string '\"\\\\\"' "
-        "for that literal. A bare double quote opens or closes a string. "
+        "An exact whole name wins; otherwise the longest usable named or "
+        "recursive prefix valid at that boundary is used. With both names "
+        "registered, '\\foobar' uses '\\' because lowercase-ending "
+        "'\\foo' lacks a delimiter, while '\\foo bar' uses '\\foo'; an "
+        "exact registered '\\foobar' wins over both. The same rule applies "
+        "to non-backslash names. Use the quoted string '\"\\\\\"' for the "
+        "literal-backslash operand. A bare double quote opens or closes a string. "
         "Inside strings, use C-style '\\\"' "
         "for a double quote and '\\\\' for a backslash; every other "
         "backslash escape is a parse error. CREPL passes input directly to "
         "the parser, so each visible backslash occupies one byte of the "
         "15-byte stored-name limit. Parsed and saved backslash names retain "
-        "that direct spelling with safe operand separators.");
+        "that direct spelling. A leading separator is added when needed, "
+        "while following operands use the ordinary name-ending rules: a "
+        "bare '\\' followed by symbols prints compactly, but '\\foo x' "
+        "remains separated.");
     output.put('\n');
     write_wrapped_paragraph(
         output,

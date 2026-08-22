@@ -372,6 +372,12 @@ test("documents compact restricted Find catalogs in Studio", () => {
         /<code>SBT xC<\/code> means\s+<code>S B T x C<\/code>/);
     assert.match(
         html,
+        /usable named and recursive prefixes are considered from longest to\s+shortest/);
+    assert.match(
+        html,
+        /<code>Cstarx<\/code>, including after a preceding\s+operand, skips registered <code>Cstar<\/code>/);
+    assert.match(
+        html,
         /<code>SBT Cstar<\/code> is a parse error\s+until <code>Cstar<\/code> is\s+registered/);
 });
 
@@ -406,15 +412,24 @@ test("documents leading-backslash basis names in Studio", () => {
     assert.match(html, /set \\ = 3 C/);
     assert.match(html, /set \\foo = 1 I/);
     assert.match(html, /define \\ bar = rab/);
-    assert.match(html, /exact registered\s+backslash-prefixed name takes precedence/);
-    assert.match(html, /quoted string <code>"\\\\"<\/code>/);
-    assert.match(html, /bare double quote opens or closes a string/);
+    assert.match(html, /An exact whole name wins/);
+    assert.match(html, /longest usable named or recursive prefix valid at that boundary/);
+    assert.match(html, /<code>\\foobar<\/code> uses\s+<code>\\<\/code>/);
+    assert.match(html, /<code>\\foo bar<\/code> uses <code>\\foo<\/code>/);
+    assert.match(html, /exact registered <code>\\foobar<\/code> wins over both/);
+    assert.match(html, /quoted string\s+<code>"\\\\"<\/code>/);
+    assert.match(html, /bare double\s+quote opens or closes a string/);
     assert.match(html, /<code>\\"<\/code> for a double quote/);
     assert.match(html, /<code>\\\\<\/code> for a\s+backslash/);
     assert.match(html, /every other backslash escape is a parse error/);
     assert.match(html, /passes input directly to the parser/);
     assert.match(html, /each visible backslash\s+occupies one byte/);
-    assert.match(html, /retain that direct spelling with safe\s+operand separators/);
+    assert.match(html, /retain that direct spelling/);
+    assert.match(html, /A leading\s+separator is added when needed/);
+    assert.match(html, /following operands use the\s+ordinary name-ending rules/);
+    assert.match(html,
+        /a bare <code>\\<\/code> followed by\s+symbols prints compactly/);
+    assert.match(html, /<code>\\foo x<\/code> remains\s+separated/);
 });
 
 test("documents ordered duplicate optimization at abstraction boundaries", () => {

@@ -242,6 +242,14 @@ def main():
             raise AssertionError(
                 f"expected registered Cstar to parse after SBT; received {output!r}")
 
+        write_all(master, b"K Cstarx\n")
+        output = reader.read_until(b">")
+        normalized_output = normalized(output)
+        if b"trax\n" not in normalized_output or b"Parse error" in normalized_output:
+            raise AssertionError(
+                f"expected the registered invalid Cstar prefix to fall back; "
+                f"received {output!r}")
+
         write_all(master, b"key   st\t\n")
         output = reader.read_until(b">")
         require_completed_line(output, b"key   step \n")
@@ -392,18 +400,108 @@ def main():
 
         write_all(master, b"inspect \\foobar\n")
         output = reader.read_until(b">")
-        if (b"Parse error at position 9 of command: unknown operand\n"
-                not in normalized(output)):
+        normalized_output = normalized(output)
+        if (b"canonical:" in normalized_output or
+                b"  \\ [live]\n" not in normalized_output or
+                b"Parse error" in normalized_output):
             raise AssertionError(
-                f"expected command-relative wording at absolute position 9; "
+                f"expected inspect to use the valid bare-backslash prefix; "
+                f"received {output!r}")
+
+        write_all(master, b"inspect K \\ x\n")
+        output = reader.read_until(b">")
+        normalized_output = normalized(output)
+        if (b"canonical: K \\x\n" not in normalized_output or
+                b"Parse error" in normalized_output):
+            raise AssertionError(
+                f"expected a leading boundary and compact backslash suffix; "
                 f"received {output!r}")
 
         write_all(master, b"\\foobar\n")
         output = reader.read_until(b">")
+        normalized_output = normalized(output)
+        if (b"\nfoobar\n" not in normalized_output or
+                b"Parse error" in normalized_output):
+            raise AssertionError(
+                f"expected compact bare-backslash fallback; received {output!r}")
+
+        write_all(master, b"inspect @\n")
+        output = reader.read_until(b">")
+        if (b"Parse error at position 9 of command: unknown operand\n"
+                not in normalized(output)):
+            raise AssertionError(
+                f"expected command-context parse error; received {output!r}")
+
+        write_all(master, b"@\n")
+        output = reader.read_until(b">")
         if (b"Parse error at position 1: unknown operand\n"
                 not in normalized(output)):
             raise AssertionError(
-                f"expected plain-expression error wording; received {output!r}")
+                f"expected expression-context parse error; received {output!r}")
+
+        write_all(master, b"\\foo bar\n")
+        output = reader.read_until(b">")
+        normalized_output = normalized(output)
+        if b"bra\n" not in normalized_output or b"Parse error" in normalized_output:
+            raise AssertionError(
+                f"expected the delimited longer backslash name; "
+                f"received {output!r}")
+
+        write_all(master, b"set \\foobar = 1 K\n")
+        output = reader.read_until(b">")
+        if b"Parse error" in normalized(output):
+            raise AssertionError(
+                f"expected exact longer backslash registration; "
+                f"received {output!r}")
+
+        write_all(master, b"\\foobar x y\n")
+        output = reader.read_until(b">")
+        normalized_output = normalized(output)
+        if b"x\n" not in normalized_output or b"Parse error" in normalized_output:
+            raise AssertionError(
+                f"expected the exact backslash name to win; "
+                f"received {output!r}")
+
+        write_all(master, b"\\ foobar x y\n")
+        output = reader.read_until(b">")
+        normalized_output = normalized(output)
+        if (b"foobarxy\n" not in normalized_output or
+                b"Parse error" in normalized_output):
+            raise AssertionError(
+                f"expected spacing to preserve the bare backslash basis; "
+                f"received {output!r}")
+
+        write_all(master, b"set \\ = 3 I\n")
+        output = reader.read_until(b">")
+        if b"Parse error" in normalized(output):
+            raise AssertionError(
+                f"expected a second bare-backslash revision; "
+                f"received {output!r}")
+
+        write_all(master, b"inspect \\@1foobar\n")
+        output = reader.read_until(b">")
+        normalized_output = normalized(output)
+        if (b"canonical:" in normalized_output or
+                b"  \\@1 [captured]\n" not in normalized_output or
+                b"Parse error" in normalized_output):
+            raise AssertionError(
+                f"expected a retained slash revision to trail compactly; "
+                f"received {output!r}")
+
+        write_all(master, b"remove \\foo\n")
+        output = reader.read_until(b">")
+        if b"Parse error" in normalized(output):
+            raise AssertionError(
+                f"expected removal of the longer backslash name; "
+                f"received {output!r}")
+
+        write_all(master, b"\\foo xyz\n")
+        output = reader.read_until(b">")
+        normalized_output = normalized(output)
+        if b"xzy\n" not in normalized_output or b"Parse error" in normalized_output:
+            raise AssertionError(
+                f"expected a removed singleton backslash name to remain usable; "
+                f"received {output!r}")
 
         write_all(master, b"dependso\ta\tDepSource\n")
         output = reader.read_until(b">")
