@@ -219,9 +219,10 @@ name compact on its left.
 
 Basis names are copied into the expression and may contain up to 15
 bytes. Names cannot be empty or begin with a null character; a later null
-character terminates the copied name. Because leading whitespace, parentheses,
-and double quotes belong to the parser grammar, names cannot begin with one of
-those characters. A visible name cannot end in `@` or consist
+character terminates the copied name. Names cannot begin with a lowercase ASCII
+letter (`a` through `z`). Because leading whitespace, parentheses, and double
+quotes belong to the parser grammar, names cannot begin with one of those
+characters either. A visible name cannot end in `@` or consist
 entirely of ASCII decimal digits:
 non-negative integer literal spellings such as `0`, `42`, and `00042` are
 reserved for integer values. Names such as `+4`, `-4`, `4.0`, `4e2`, and `4x`
@@ -496,13 +497,15 @@ At the start of a line, preceded by optional whitespace,
 `define [captured | live]` followed by whitespace creates a named basis
 from a combinator expression with zero or more lowercase symbols. Their count
 becomes the basis arity, and abstraction proceeds from the last symbol back to
-the first. With no symbols, `define` stores an arity-zero basis directly. An
-all-lowercase token immediately before `=` is the complete zero-arity name, so
-`define foo=x` defines `foo`, not `f` with the symbols `oo`. Symbols may be
-adjacent or separated by whitespace. For a one-character basis name that does
-not begin with a lowercase ASCII letter, the separating space may be omitted;
-all following lowercase letters before `=` become symbols. A space before the
-symbols keeps the preceding token as a multicharacter name:
+the first. With no symbols, `define` stores an arity-zero basis directly. A
+basis name cannot begin with a lowercase ASCII letter, so a lowercase-leading
+signature token is not a name. Symbols may be adjacent or separated by
+whitespace. For a one-character basis name, the separating space may be
+omitted; all following lowercase letters before `=` become symbols. A space
+before the symbols keeps the preceding token as a multicharacter name. Compact
+one-character-name parsing still applies when the remainder of the signature
+token consists entirely of lowercase ASCII letters, even if whitespace
+precedes `=`; use `set` for a zero-arity name with that shape:
 
 ```cpp
 parse("define Flip xy = yx");            // Flip
@@ -513,18 +516,18 @@ parse("define Apply xyz = xz(yz)");      // Apply
 single_step(parse("Apply a b c"), true); // Sabc
 single_step(parse("Apply a b c"));       // ac(bc)
 
-parse("define foo=x");                   // foo, with arity 0
-parse("show foo");                       // arity:0 x
+parse("define Stored0 = x");             // Stored0, with arity 0
+parse("show Stored0");                    // arity:0 x
 
 parse("define Gx = xSTK(KK)(SK)");       // G
 parse("define Gxyz = x(yz)");            // G
 parse("define Gx y = y");                // Gx
 ```
 
-Under the hood, `define` uses contextual `takeout` passes. For `define foo xyz = exp`,
-the first pass takes out `z` with `x`, `y`, and recursive `foo` pending. The `y` pass
-similarly has `x` and `foo` pending, while the `x` pass has only `foo` pending.
-If the definition is recursive, the final `foo` pass has no pending atoms.
+Under the hood, `define` uses contextual `takeout` passes. For `define Foo xyz = exp`,
+the first pass takes out `z` with `x`, `y`, and recursive `Foo` pending. The `y` pass
+similarly has `x` and `Foo` pending, while the `x` pass has only `Foo` pending.
+If the definition is recursive, the final `Foo` pass has no pending atoms.
 The resulting expression has arity `3`. As with `set`, the definition command
 is silent under `parse_eval`, `read_parse_eval`, `parse_and_step`, and
 `parse_and_key_step`. Malformed definitions are not registered.
@@ -540,7 +543,7 @@ Before `takeout`, saturated named bases in the expression are applied,
 including reachable saturated bases nested inside other applications.
 Undersaturated bases remain named, and preprocessing does not enter
 `K`-protected arguments or `Y` recursion boundaries. For example,
-`define foo xyz = C(CB)xyz` first reduces the body to `x(yz)`, so the stored
+`define Foo xyz = C(CB)xyz` first reduces the body to `x(yz)`, so the stored
 expression is `B`. If this preprocessing repeats an expression or exceeds its
 reduction limit, `define` safely abstracts the original body instead.
 
@@ -774,7 +777,7 @@ find 4 ?xyzw = xy(xwz)
 find all ?xy = x(yx)
 find all 2 ?xy = x(yx)
 find among BCS ?xy = x(yx)
-find all among BC foofoo@1 ?xy = x(yx)
+find all among BC Double@1 ?xy = x(yx)
 ```
 
 The required `?` marks the unknown combinator expression. The optional number
@@ -1115,7 +1118,7 @@ using the same direct syntax for interactive input, piped input, and loaded
 journals. Piped input remains line-oriented, while journal loading can group a
 quoted string that spans multiple physical lines into one record.
 When standard output is a terminal, it first prints
-`Combinator Read-Eval-Print Loop, version 2.14.9`. Long evaluations display
+`Combinator Read-Eval-Print Loop, version 2.14.10`. Long evaluations display
 the accumulated step count every 1,000 reductions by overwriting one status
 line; the line is cleared before evaluation output is printed. Its interactive
 prompt is `>`. Interactive input uses GNU Readline, so previous nonempty
@@ -1339,19 +1342,19 @@ unknown operand; it does not fall back to `C` followed by five symbols.
 The leading-boundary rule follows the underlying name, so `Q1@2` inherits it
 but an ordinary captured name does not gain it merely from its `@2` suffix.
 
-Whitespace also distinguishes an intended lowercase basis name from compact
-symbols. An unregistered run of two or more lowercase letters is an unknown
-operand when whitespace separates it from another operand in the same
-expression or parenthesized group. Consequently, `x foo y`, `x(foo y)`, and
-`x(y foo)` are errors unless `foo` is registered. In `x(foo)y`, an exact
-registered `foo` still wins; otherwise the run becomes the three symbols `f`,
-`o`, and `o`. Leading or trailing whitespace used only as padding does not
-make a run a basis name. Neither does whitespace used to delimit a preceding
-multi-character basis or word operand; whitespace after a multi-character
-basis remains a token separator even when it is optional. Everywhere else,
-each lowercase ASCII letter (`a` through `z`) becomes a single-character
-symbol, so compact primitive and symbol expressions such as `SKIx` remain
-valid.
+Because basis names cannot begin with a lowercase ASCII letter, a token that
+begins with `a` through `z` is parsed as symbols even when whitespace separates
+it from another operand. Thus `SBT xy` means `S B T x y`, and `SBT xC` means
+`S B T x C`. Exact registered names and valid registered multi-character
+prefixes still take precedence. By contrast, when an unresolved mixed-case
+token beginning with an uppercase letter follows another operand across
+whitespace in the same expression or parenthesized group, it is treated as an
+intended basis name rather than falling back to one-letter birds and symbols.
+Therefore `SBT Cstar` is an unknown-operand error until `Cstar` is registered.
+At the beginning of an expression or group, the same bytes retain their
+compact-expression fallback; leading or trailing padding alone does not
+trigger this rule. Compact primitive and symbol expressions such as `SKIx`
+remain valid.
 
 A bare double quote opens or closes a quoted string. Inside the string, `\\`
 represents one backslash and `\"` represents one double quote. This input:

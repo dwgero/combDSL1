@@ -139,7 +139,7 @@ const auto Hprime = basis(
 const auto H1 = basis("H1", 1, Y(Hprime));
 const auto G2 = basis("G2", 1, Vstar(V4(S)(T)(K))(K(K))(S(K)));
 const auto bazTest =
-    basis("bazTest", 3, B(W)(B(B(C))(
+    basis("BazTest", 3, B(W)(B(B(C))(
         B(B(S(u)))(C(B(B)(B))(T)))));
 
 constexpr auto add = [](int left) {
@@ -1253,36 +1253,94 @@ int main() {
          quote(42), "<42>");
     test("ordinary nonnumeric C++ values retain opaque notation",
          quote(named_value{}), "<named>");
-    test_parse_failure(
-        "spaced unknown lowercase basis",
-        "x foo y", 2, "unknown operand");
-    test_parse_failure(
-        "unknown lowercase basis before spaced argument",
-        "x(foo y)", 2, "unknown operand");
-    test_parse_failure(
-        "unknown lowercase basis after spaced argument",
-        "x(y foo)", 4, "unknown operand");
+    test("a spaced lowercase run is always symbols",
+         parse("x foo y"), "xfooy");
+    test("a parenthesized lowercase run is always symbols",
+         parse("x(foo y)"), "x(fooy)");
+    test("a lowercase run after a spaced symbol is always symbols",
+         parse("x(y foo)"), "x(yfoo)");
     test("parentheses preserve an unspaced compact symbol run",
          parse("x(foo)y"), "x(foo)y");
     test("outer whitespace remains padding",
          parse(" \tfoo \n"), "foo");
     test("parenthetical whitespace remains padding",
          parse("x( foo )y"), "x(foo)y");
-    test("compact symbols after a single-character basis remain valid",
+    test("a root mixed-case fallback may precede a spaced operand",
          parse("Cxyz w"), "Cxyzw");
-    static_cast<void>(basis("foo", 1, I));
-    test("registered lowercase basis wins between spaces",
-         parse("x foo y"), "x foo y");
-    test("registered lowercase basis wins before a spaced argument",
-         parse("x(foo y)"), "x(foo y)");
-    test("registered lowercase basis wins after a spaced argument",
-         parse("x(y foo)"), "x(y foo)");
-    test("registered lowercase basis wins inside parentheses",
-         parse("x(foo)y"), "x foo y");
+    test("a spaced lowercase run after compact birds remains symbols",
+         parse("SBT xy"), "SBTxy");
+    test("a spaced lowercase symbol followed by a bird remains split",
+         parse("SBT xC"), "SBTxC");
+    test("spaced lowercase symbols preserve compact-bird behavior",
+         [] { parse_eval("SBT xy"); }, "x(yx)\n");
+    test("a spaced lowercase symbol before a bird preserves behavior",
+         [] { parse_eval("SBT xC"); }, "x(Cx)\n");
+    test_parse_failure(
+        "an unregistered uppercase-leading mixed-case token is a name",
+        "SBT Unknownmixed", 4, "unknown operand");
+    test_parse_failure(
+        "a preceding exact multicharacter atom makes mixed case a name",
+        "Alias Unknownmixed", 6, "unknown operand");
+    test("a root mixed-case fallback may precede an exact name",
+         parse("Unknownmixed Alias"), "Unknownmixed Alias");
+    test("an isolated uppercase-leading mixed-case token keeps fallback",
+         parse("Unknownmixed"), "Unknownmixed");
+    test("padding alone does not turn mixed case into a name",
+         parse(" \tUnknownmixed\n"), "Unknownmixed");
+    test("a lowercase-leading token keeps an internal mixed-case fallback",
+         parse("xUnknownmixed y"), "xUnknownmixedy");
+    test("a root compact fallback round trips before an exact name",
+         [] {
+             auto const expression = parse("SBTxy Alias");
+             std::ostringstream rendered;
+             expression.print_to(rendered);
+             auto const reparsed = parse(rendered.str());
+             std::cout
+                 << combdsl::detail::same_parser_definition_expression(
+                        expression, reparsed)
+                 << ' ' << rendered.str();
+         },
+         "1 SBTxy Alias");
+    test("a shorter root fallback round trips before an exact name",
+         [] {
+             auto const expression = parse("CKx Alias");
+             std::ostringstream rendered;
+             expression.print_to(rendered);
+             auto const reparsed = parse(rendered.str());
+             std::cout
+                 << combdsl::detail::same_parser_definition_expression(
+                        expression, reparsed)
+                 << ' ' << rendered.str();
+         },
+         "1 CKx Alias");
+    auto const lowercase_cpp_registry_before =
+        combdsl::detail::registered_parser_lookup_snapshot();
+    test("the C++ basis API rejects a lowercase-leading name",
+         [] {
+             try {
+                 static_cast<void>(basis("foo", 1, I));
+             } catch (std::invalid_argument const& error) {
+                 std::cout << error.what();
+             }
+         },
+         "combdsl::basis names cannot begin with a lowercase ASCII letter");
+    test("a rejected lowercase C++ basis does not enter the registry",
+         [&] {
+             auto const after =
+                 combdsl::detail::registered_parser_lookup_snapshot();
+             std::cout
+                 << (after.bases.size() ==
+                     lowercase_cpp_registry_before.bases.size())
+                 << (after.versions.size() ==
+                     lowercase_cpp_registry_before.versions.size())
+                 << !after.bases.contains("foo");
+         },
+         "111");
     test("show exposes a named basis definition",
          parse("show M"), "arity:1 SII");
-    test("show exposes a registered lowercase basis definition",
-         parse("show foo"), "arity:1 I");
+    test_parse_failure(
+        "show keeps lowercase text as a non-mutating name lookup",
+        "show foo", 5, "foo is not a defined name");
     test("show identifies S as fundamental",
          parse("show S"), "S is a fundamental name with arity:3");
     test("show identifies K as fundamental",
@@ -4075,12 +4133,12 @@ int main() {
                       : "changed");
          },
          "unchanged");
-    test("an adjacent equals makes a lowercase word a zero-arity name",
-         parse("define zerodef=x"), "zerodef");
+    test("an internal uppercase letter makes a full name zero-arity",
+         parse("define ZeroDef = x"), "ZeroDef");
     test("show exposes a zero-symbol define by its full name",
-         parse("show zerodef"), "arity:0 x");
+         parse("show ZeroDef"), "arity:0 x");
     test("a zero-symbol define expands with trailing arguments",
-         single_step(parse("zerodef y")), "xy");
+         single_step(parse("ZeroDef y")), "xy");
     test("a zero-symbol define has a replayable canonical signature",
          [] {
              auto const definitions = set_list();
@@ -4090,47 +4148,54 @@ int main() {
                      ? 0
                      : line_position + 1);
          },
-         "define zerodef = x");
+         "define ZeroDef = x");
     test("a spaced zero-symbol canonical define can be reparsed",
-         parse("define zerodef = x"), "zerodef");
+         parse("define ZeroDef = x"), "ZeroDef");
     test("zero-symbol define inspection identifies a replacement",
          [] {
              auto inspected = combdsl::detail::parse_input(
-                 "define zerodef=K",
+                 "define ZeroDef = K",
                  combdsl::detail::parser_definition_mode::
                      inspect_definitions);
              std::cout << inspected.replaced_definition;
          },
-         "zerodef=0 x");
+         "ZeroDef=0 x");
     test("a zero-symbol define can be redefined",
-         parse("define zerodef=K"), "zerodef");
+         parse("define ZeroDef = K"), "ZeroDef");
     test("show exposes a zero-symbol define replacement",
-         parse("show zerodef"), "arity:0 K");
+         parse("show ZeroDef"), "arity:0 K");
     test("a replaced zero-symbol define expands with arguments",
-         single_step(parse("zerodef x y")), "Kxy");
+         single_step(parse("ZeroDef x y")), "Kxy");
     test("zero-symbol define history keeps canonical revisions",
          [] {
              auto const definitions = set_list();
              std::cout
-                 << (definitions.find("define zerodef = x") !=
+                 << (definitions.find("define ZeroDef = x") !=
                          std::string::npos)
-                 << (definitions.find("define zerodef = K") !=
+                 << (definitions.find("define ZeroDef = K") !=
                          std::string::npos);
          },
          "11");
-    test("a spaced parameter preserves a lowercase one-letter name",
-         parse("define f x=x"), "f");
-    test("show exposes the lowercase one-letter definition",
-         parse("show f"), "arity:1 I");
-    test("the lowercase one-letter definition keeps its parameter",
-         single_step(parse("f y")), "y");
-    test("the lowercase one-letter test definition is removable",
-         parse("remove f"), "f");
-    test("a complete removed lowercase singleton remains usable",
-         single_step(parse("f y")), "y");
-    test("an unseparated removed lowercase singleton remains symbols",
-         parse("foox"), "foox");
-    test("define accepts a symbol adjacent to a one-letter name",
+    constexpr std::string_view lowercase_name_error =
+        "combdsl::basis names cannot begin with a lowercase ASCII letter";
+    test_parse_failure(
+        "set rejects a lowercase-leading name",
+        "set lower = 1 I", 4, lowercase_name_error);
+    test_parse_failure(
+        "define rejects a lowercase-leading name",
+        "define lower x=x", 7, lowercase_name_error);
+    test_parse_failure(
+        "define rejects a lowercase one-letter name",
+        "define f x=x", 7, lowercase_name_error);
+    test_parse_failure(
+        "remove rejects a lowercase-leading name",
+        "remove lower", 7, lowercase_name_error);
+    test_parse_failure(
+        "revisions rejects a lowercase-leading name",
+        "revisions lower", 10, lowercase_name_error);
+    test("lowercase symbols remain usable after rejected registrations",
+         parse("f lower"), "flower");
+    test("a lowercase suffix stays symbols despite whitespace before equals",
          parse("define Xx = xSTK(KK)(SK)"), "X");
     test("compact one-letter define preserves its behavior",
          single_step(
@@ -4758,7 +4823,7 @@ int main() {
         "M", "W", "B", "O", "T", "U", "N", "R", "C", "C*", "C**",
         "W*", "W**", "Q", "Q1", "Q3", "V", "D", "L", "W1", "Z", "A", "E",
         "F", "G", "H", "J", "Cstar", "Vstar", "V4", "G2", "G1",
-        "bazTest", "Hprime", "H1",
+        "BazTest", "Hprime", "H1",
     };
     for (auto const name : expected_registered_basis_names) {
         auto title = std::string("parse named basis ");
@@ -4821,9 +4886,9 @@ int main() {
          "otherx");
     test("registered basis outlives local handle",
          single_step(parse("Scope x")), "x");
-    test("lowercase registered basis uses an exact token",
-         single_step(parse("foo x")), "x");
-    test("unseparated lowercase name remains symbols",
+    test("spaced lowercase symbols remain separate operands",
+         parse("foo x"), "foox");
+    test("unseparated lowercase run remains symbols",
          parse("foox"), "foox");
     test("parse compact Eagle",
          single_step(parse("Exyzwv")), "xy(zwv)");
@@ -5366,7 +5431,7 @@ int main() {
          },
          "define NoArgs = x");
     constexpr std::string_view zero_symbol_define_without_expression =
-        "define EmptyZero=";
+        "define EmptyZero =";
     test_parse_failure(
         "zero-symbol define requires an expression",
         zero_symbol_define_without_expression,
@@ -5446,12 +5511,12 @@ int main() {
              }
          },
          "invalid");
-    const auto interior_quote_cpp_basis = basis("bad\"name", 1, I);
-    const auto trailing_quote_cpp_basis = basis("bad\"", 1, I);
+    const auto interior_quote_cpp_basis = basis("Bad\"name", 1, I);
+    const auto trailing_quote_cpp_basis = basis("Bad\"", 1, I);
     test("the C++ basis API retains an interior double quote",
-         interior_quote_cpp_basis, "bad\"name");
+         interior_quote_cpp_basis, "Bad\"name");
     test("the C++ basis API retains a trailing double quote",
-         trailing_quote_cpp_basis, "bad\"");
+         trailing_quote_cpp_basis, "Bad\"");
     test("an interior-quote C++ basis remains usable natively",
          single_step(quote(interior_quote_cpp_basis)(x)), "x");
     test_parse_failure(
@@ -6341,7 +6406,7 @@ int main() {
          "Bz(Qwy)");
     const auto contextual_recursive_foo =
         combdsl::detail::make_quoted_rec_func(
-            combdsl::detail::basis_label("foo"));
+            combdsl::detail::basis_label("Foo"));
     const std::vector<quoted_atomic> pending_foo_x_y{
         quoted_atomic{contextual_recursive_foo},
         quoted_atomic{x},
@@ -6357,7 +6422,7 @@ int main() {
              quoted_atomic{z},
              quote(y)(contextual_recursive_foo(z)),
              pending_foo_x_y),
-         "Q foo y");
+         "Q Foo y");
     const std::vector<quoted_atomic> pending_foo_x{
         quoted_atomic{contextual_recursive_foo},
         quoted_atomic{x}};
@@ -6380,13 +6445,13 @@ int main() {
              quoted_atomic{x},
              contextual_recursive_foo(quote(z)(x)),
              pending_foo),
-         "Qz foo");
+         "Qz Foo");
     test("x abstraction keeps Bluebird when t contains foo",
          combdsl::detail::takeout_with_pending_atoms(
              quoted_atomic{x},
              quote(u)(contextual_recursive_foo(x)),
              pending_foo),
-         "Bu foo");
+         "Bu Foo");
     test("recursive function abstraction keeps Bluebird",
          combdsl::detail::takeout_with_pending_atoms(
              quoted_atomic{contextual_recursive_foo},
@@ -6860,7 +6925,6 @@ int main() {
              static_cast<void>(parse("set Longtail = 2 A"));
              static_cast<void>(parse("set CompactBang! = 2 A"));
              static_cast<void>(parse("set Compact1 = 2 A"));
-             static_cast<void>(parse("set lowerbird = 2 A"));
              static_cast<void>(parse("set CompactQuest? = 2 A"));
              static_cast<void>(parse("set CompactRemoved = 2 A"));
              static_cast<void>(parse("set CompactLive = 2 A"));
@@ -6884,9 +6948,10 @@ int main() {
     test("find among parses adjacent digit-ending user names",
          parse("find among KCompact1A ?xy = x(yx)"),
          "?=Compact1\n?=A");
-    test("find among parses adjacent lowercase user names",
-         parse("find among KlowerbirdA ?xy = x(yx)"),
-         "?=lowerbird\n?=A");
+    test_parse_failure(
+        "find among rejects a lowercase-leading user name",
+        "find among lowerbird ?xy = x(yx)", 11,
+        "lowerbird is not a defined name");
     test_parse_failure(
         "find among does not treat an integer as a basis name",
         "find among 7 ?xy = x(yx)", 11,
@@ -10121,15 +10186,15 @@ int main() {
          },
          "0");
     const auto recursive_x = combdsl::detail::make_quoted_rec_func(
-        combdsl::detail::basis_label("x"));
+        combdsl::detail::basis_label("X"));
     test("recursive function atom prints like its name",
-         recursive_x, "x");
+         recursive_x, "X");
     test("takeout matches the same recursive function atom",
          takeout(quoted_atomic{recursive_x}, recursive_x), "I");
     test("recursive function atom does not match a symbol",
          takeout(quoted_atomic{recursive_x}, quote(x)), "Kx");
     test("symbol atom does not match a recursive function",
-         takeout(quoted_atomic{x}, recursive_x), "Kx");
+         takeout(quoted_atomic{x}, recursive_x), "KX");
     test("recursive function atom does not match a symbolic string",
          takeout(quoted_atomic{recursive_x}, quote("x")), "Kx");
     test("quoted atomic rejects a primitive",
@@ -11875,7 +11940,7 @@ int main() {
                  << ' ' << rendered.str();
          },
          "1 KQ1 Q3 Q1 KQ1 CstarQ1 W*x");
-    test("recursive digit-ending name round trips after lowercase basis",
+    test("recursive digit-ending name round trips after mixed-case basis",
          [] {
              static_cast<void>(parse(
                  "define RecDigit1 x = CstarRecDigit1 Vstar"));
@@ -11895,9 +11960,9 @@ int main() {
                                : "changed");
          },
          "define RecDigit1 x = CstarRecDigit1 Vstar same");
-    static_cast<void>(basis("xLeftDigit1", 0, I));
+    static_cast<void>(basis("XLeftDigit1", 0, I));
     test("exact longer digit-ending basis wins compact parsing",
-         single_step(parse("xLeftDigit1")), "I");
+         single_step(parse("XLeftDigit1")), "I");
     test("an ordinary explicit sole revision prints without its suffix",
          [] {
              static_cast<void>(parse("references captured"));
@@ -12070,27 +12135,104 @@ int main() {
              copied_name_basis();
          },
          "x Alias");
+    test("an uppercase fallback run after a multicharacter basis is split",
+         quote(copied_name_basis)(C)(s)(t)(a)(r),
+         "Alias C star");
+    test("a registered mixed-case atom keeps exact precedence after Alias",
+         [&] {
+             auto const parsed = parse("Alias Cstar");
+             auto const expected = quote(copied_name_basis)(Cstar);
+             std::cout
+                 << combdsl::detail::same_parser_definition_expression(
+                        parsed, expected)
+                 << ' ';
+             parsed.print_to(std::cout);
+         },
+         "1 Alias Cstar");
+    test("the split fallback after a multicharacter basis round trips",
+         [&] {
+             auto const expression =
+                 quote(copied_name_basis)(C)(s)(t)(a)(r);
+             std::ostringstream rendered;
+             expression.print_to(rendered);
+             auto const reparsed = parse(rendered.str());
+             std::cout
+                 << combdsl::detail::same_parser_definition_expression(
+                        expression, reparsed)
+                 << ' ' << rendered.str();
+         },
+         "1 Alias C star");
+    test("an uppercase fallback run after an exact name stays separated",
+         [&] {
+             auto const expression = quote(copied_name_basis)(C)(K)(x);
+             std::ostringstream rendered;
+             expression.print_to(rendered);
+             auto const reparsed = parse(rendered.str());
+             std::cout
+                 << combdsl::detail::same_parser_definition_expression(
+                        expression, reparsed)
+                 << ' ' << rendered.str();
+         },
+         "1 Alias CK x");
+    test("a punctuation basis preserves a separated uppercase fallback run",
+         [&] {
+             auto const expression =
+                 quote(copied_name_basis)(C)(W_star)(x);
+             std::ostringstream rendered;
+             expression.print_to(rendered);
+             auto const reparsed = parse(rendered.str());
+             std::cout
+                 << combdsl::detail::same_parser_definition_expression(
+                        expression, reparsed)
+                 << ' ' << rendered.str();
+         },
+         "1 Alias CW* x");
+    test("the split fallback after a word remains parser-readable",
+         [] {
+             auto const expression =
+                 parse(R"("word")")(C)(s)(t)(a)(r);
+             std::ostringstream rendered;
+             expression.print_to(rendered);
+             static_cast<void>(parse(rendered.str()));
+             std::cout << rendered.str();
+         },
+         "word C star");
+    test("the split fallback after an integer round trips",
+         [] {
+             auto const expression =
+                 parse("42")(C)(s)(t)(a)(r);
+             std::ostringstream rendered;
+             expression.print_to(rendered);
+             auto const reparsed = parse(rendered.str());
+             std::cout
+                 << combdsl::detail::same_parser_definition_expression(
+                        expression, reparsed)
+                 << ' ' << rendered.str();
+         },
+         "1 42 C star");
     test("single-character basis after primitive", K(M), "KM");
     test("single-character basis after symbol", x(M), "xM");
     test("opaque print_as_operand_to remains opaque",
          x(operand_named_value{}), "x<operand>");
-    test("spaced primitive and lowercase basis", parse("S foo"), "S foo");
-    test("longer basis remains atomic", parse("Sfoo"), "Sfoo");
-    test("multi-character basis separates only its next token",
-         quote(S)(parse("foo"))(x)(y), "S foo xy");
-    test("multi-character basis output round trips through parser",
-         [&] {
-             auto expression = quote(S)(parse("foo"))(x)(y);
-             std::ostringstream rendered;
-             expression.print_to(rendered);
-
-             auto reduced = parse(rendered.str());
-             reduced = single_step(reduced);
-             reduced = single_step(reduced);
-             reduced = single_step(reduced);
-             reduced();
+    test("a spaced lowercase run after a primitive remains symbols",
+         [] {
+             auto const parsed = parse("S foo");
+             auto const expected = quote(S)(f)(o)(o);
+             std::cout
+                 << combdsl::detail::same_parser_definition_expression(
+                        parsed, expected);
          },
-         "y(xy)");
+         "1");
+    test("longer basis remains atomic", parse("Sfoo"), "Sfoo");
+    test("the longer basis and spaced lowercase symbols stay distinct",
+         [] {
+             auto const named = parse("Sfoo");
+             auto const symbols = parse("S foo");
+             std::cout
+                 << !combdsl::detail::same_parser_definition_expression(
+                        named, symbols);
+         },
+         "1");
     test("x", (x), "x");
     test("xy", (x)(y), "xy");
     test("xyz", (x)(y)(z), "xyz");
@@ -12286,7 +12428,7 @@ int main() {
     test("G1D", (G1)(D), "K");
     test("G2", (G2), "G2");
     test("G2 xw", (G2)(x)(w), "xSTK(KK)(SK)w");
-    test("bazTest zxy", (bazTest)(z)(x)(y), "uy(z(yx))x");
+    test("BazTest zxy", (bazTest)(z)(x)(y), "uy(z(yx))x");
     test("Hprime zxy", (Hprime)(z)(x)(y), "ySTK(KK)(SK)(z(yx))x");
     test("H1xK", (H1)(x)(K), "x");
     test("H1xBKyz", (H1)(x)(B)(K)(y)(z), "x(yz)");
@@ -12328,6 +12470,21 @@ int main() {
     auto numeric_name_preserved_pointer =
         std::move(numeric_name_preserved_expression)(0);
     check(*numeric_name_preserved_pointer == 31);
+
+    auto lowercase_name_preserved_expression =
+        K(std::make_unique<int>(37));
+    bool lowercase_basis_rejected = false;
+    try {
+        static_cast<void>(basis(
+            "lower", 1,
+            std::move(lowercase_name_preserved_expression)));
+    } catch (std::invalid_argument const&) {
+        lowercase_basis_rejected = true;
+    }
+    check(lowercase_basis_rejected);
+    auto lowercase_name_preserved_pointer =
+        std::move(lowercase_name_preserved_expression)(0);
+    check(*lowercase_name_preserved_pointer == 37);
 
     bool empty_basis_rejected = false;
     try {
@@ -12544,29 +12701,27 @@ int main() {
     }
     check(generator_lifetime.expired());
 
-    test("removed lowercase singleton boundary setup defines g",
-         parse("define g x=x"), "g");
-    auto removed_lowercase_singleton_snapshot = parse("g x");
-    test("a current lowercase singleton function remains compact",
-         removed_lowercase_singleton_snapshot, "gx");
-    test("removed lowercase singleton boundary setup removes g",
-         parse("remove g"), "g");
-    test("a compact removed lowercase singleton prefix stays symbols",
-         parse("gx"), "gx");
-    test("a retained removed lowercase singleton adds a safe boundary",
-         [&removed_lowercase_singleton_snapshot] {
+    test("removed mixed-case boundary setup defines Gsingle",
+         parse("define Gsingle x=x"), "Gsingle");
+    auto removed_mixed_case_snapshot = parse("Gsingle x");
+    test("a current mixed-case function has a token boundary",
+         removed_mixed_case_snapshot, "Gsingle x");
+    test("removed mixed-case boundary setup removes Gsingle",
+         parse("remove Gsingle"), "Gsingle");
+    test("a retained removed mixed-case name adds a safe boundary",
+         [&removed_mixed_case_snapshot] {
              std::ostringstream rendered;
-             removed_lowercase_singleton_snapshot.print_to(rendered);
+             removed_mixed_case_snapshot.print_to(rendered);
              auto const reparsed = parse(rendered.str());
              std::cout
                  << combdsl::detail::same_parser_definition_expression(
-                        removed_lowercase_singleton_snapshot, reparsed)
+                        removed_mixed_case_snapshot, reparsed)
                  << ' ' << rendered.str();
          },
-         "1 g x");
-    test("a removed lowercase singleton function prints unambiguously",
+         "1 Gsingle x");
+    test("a removed mixed-case function prints unambiguously",
          [] {
-             auto const expression = parse("g x");
+             auto const expression = parse("Gsingle x");
              std::ostringstream rendered;
              expression.print_to(rendered);
              auto const reparsed = parse(rendered.str());
@@ -12575,10 +12730,10 @@ int main() {
                         expression, reparsed)
                  << ' ' << rendered.str();
          },
-         "1 g x");
-    test("a removed lowercase singleton argument prints unambiguously",
+         "1 Gsingle x");
+    test("a removed mixed-case argument prints unambiguously",
          [] {
-             auto const expression = parse("x g");
+             auto const expression = parse("x Gsingle");
              std::ostringstream rendered;
              expression.print_to(rendered);
              auto const reparsed = parse(rendered.str());
@@ -12587,7 +12742,7 @@ int main() {
                         expression, reparsed)
                  << ' ' << rendered.str();
          },
-         "1 x g");
+         "1 x Gsingle");
 
     test("the C++ basis API accepts a name beginning with equals",
          basis("=CppApi", 1, I), "=CppApi");
@@ -13408,11 +13563,11 @@ int main() {
          [] { parse_eval("SlashCaptured xyz"); }, "zyx\n");
     test("disconnected path output beginning with slash stays unquoted",
          [] {
-             static_cast<void>(parse("set zAside = 1 I"));
-             parse(R"(usedby path \ zAside)")
+             static_cast<void>(parse("set ZAside = 1 I"));
+             parse(R"(usedby path \ ZAside)")
                  .print_to(std::cout);
          },
-         R"(\ and zAside have no dependency path)");
+         R"(ZAside and \ have no dependency path)");
     test("the quoted raw backslash remains literal after registration",
          [] {
              auto const parsed = parse(R"("\\")");
@@ -13443,7 +13598,7 @@ int main() {
                      reparsed)
                  << ' ' << rendered.str();
          },
-         R"(1 "\\" foo)");
+         R"(1 "\\"foo)");
     test("the longest direct backslash name within 15 bytes is accepted",
          parse(R"(set \12345678901234 = 1 I)"),
          R"(\12345678901234)");

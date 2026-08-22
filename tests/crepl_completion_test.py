@@ -154,6 +154,90 @@ def main():
         reader = PtyReader(master)
         reader.read_until(b">")
 
+        write_all(master, b"SBT xy\n")
+        output = reader.read_until(b">")
+        require_completed_line(output, b"SBT xy\n")
+        normalized_output = normalized(output)
+        if b"Parse error" in normalized_output or b"x(yx)\n" not in normalized_output:
+            raise AssertionError(
+                f"expected spaced lowercase symbols after SBT; received {output!r}")
+
+        write_all(master, b"SBT xC\n")
+        output = reader.read_until(b">")
+        require_completed_line(output, b"SBT xC\n")
+        normalized_output = normalized(output)
+        if b"Parse error" in normalized_output or b"x(Cx)\n" not in normalized_output:
+            raise AssertionError(
+                f"expected a spaced lowercase symbol before C; received {output!r}")
+
+        write_all(master, b"Cstar\n")
+        output = reader.read_until(b">")
+        if b"Parse error" in normalized(output):
+            raise AssertionError(
+                f"expected bare Cstar to retain compact fallback; received {output!r}")
+
+        write_all(master, b"Cstar x\n")
+        output = reader.read_until(b">")
+        require_completed_line(output, b"Cstar x\n")
+        normalized_output = normalized(output)
+        if b"Parse error" in normalized_output or b"satrx\n" not in normalized_output:
+            raise AssertionError(
+                f"expected root Cstar to retain fallback before x; received {output!r}")
+
+        write_all(master, b"SBT Cstar\n")
+        output = reader.read_until(b">")
+        if b"Parse error at position 5: unknown operand\n" not in normalized(output):
+            raise AssertionError(
+                f"expected spaced fresh Cstar to be an unknown name; received {output!r}")
+
+        lowercase_name_error = (
+            b"combdsl::basis names cannot begin with a lowercase ASCII letter")
+        write_all(master, b"set lower = 1 I\n")
+        output = reader.read_until(b">")
+        if (b"Parse error at position 5: " + lowercase_name_error + b"\n"
+                not in normalized(output)):
+            raise AssertionError(
+                f"expected lowercase set-name rejection; received {output!r}")
+
+        write_all(master, b"define lower x=x\n")
+        output = reader.read_until(b">")
+        if (b"Parse error at position 8: " + lowercase_name_error + b"\n"
+                not in normalized(output)):
+            raise AssertionError(
+                f"expected lowercase define-name rejection; received {output!r}")
+
+        write_all(master, b"revisions lower\n")
+        output = reader.read_until(b">")
+        if (b"Parse error at position 11: " + lowercase_name_error + b"\n"
+                not in normalized(output)):
+            raise AssertionError(
+                f"expected lowercase revisions-name rejection; received {output!r}")
+
+        write_all(master, b"show lower\n")
+        output = reader.read_until(b">")
+        if (b"Parse error at position 6: lower is not a defined name\n"
+                not in normalized(output)):
+            raise AssertionError(
+                f"expected show to remain a name lookup; received {output!r}")
+
+        write_all(master, b"set Cstar = 4 C*\n")
+        output = reader.read_until(b">")
+        if b"Parse error" in normalized(output):
+            raise AssertionError(
+                f"expected uppercase-leading Cstar registration; received {output!r}")
+
+        write_all(master, b"show Cstar\n")
+        output = reader.read_until(b">")
+        if b"arity:4 C*\n" not in normalized(output):
+            raise AssertionError(
+                f"expected registered Cstar definition; received {output!r}")
+
+        write_all(master, b"SBT Cstar\n")
+        output = reader.read_until(b">")
+        if b"Parse error" in normalized(output):
+            raise AssertionError(
+                f"expected registered Cstar to parse after SBT; received {output!r}")
+
         write_all(master, b"key   st\t\n")
         output = reader.read_until(b">")
         require_completed_line(output, b"key   step \n")

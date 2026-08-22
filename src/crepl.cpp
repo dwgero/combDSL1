@@ -66,7 +66,7 @@
 
 namespace {
 
-constexpr std::string_view crepl_version = "2.14.9";
+constexpr std::string_view crepl_version = "2.14.10";
 constexpr std::string_view no_further_reductions_message =
     "No further reductions";
 
@@ -1994,17 +1994,36 @@ void print_help_full(std::ostream& output) {
         "letters) after the name, infers the arity from their count, and "
         "computes a series of combinators that will reproduce the "
         "combinator_expression. With no symbols, it stores an arity-zero "
-        "basis directly. An all-lowercase token immediately before '=' is "
-        "assumed to be the basis name, as in \"define foo=x\". For a "
-        "one-character name that does not begin with a lowercase ASCII "
-        "letter, the space before symbols may be omitted. For example, if "
-        "the Eagle bird wasn't already defined, it could be added by:");
+        "basis directly. A basis name cannot begin with a lowercase ASCII "
+        "letter, so a lowercase-leading signature token is not a name. For a "
+        "one-character name, the space before symbols may be omitted. A "
+        "multi-character name must be separated from its symbols. Compact "
+        "one-character-name parsing still applies when the remainder of the "
+        "signature token is entirely lowercase ASCII, even if whitespace "
+        "precedes '='; use set for a zero-arity name with that shape. For "
+        "example, if the Eagle bird "
+        "wasn't already defined, it could be added by:");
     output << "define Exyzwv = xy(zwv)\n\n";
     write_wrapped_paragraph(
         output,
-        "A basis name can't begin with \", can't end with @, "
-        "can't contain ) or ( anywhere, and can't be a non-negative integer "
-        "literal.");
+        "A basis name can't begin with a lowercase ASCII letter or \", can't "
+        "end with @, can't contain ) or ( anywhere, and can't be a "
+        "non-negative integer literal.");
+    output.put('\n');
+    write_wrapped_paragraph(
+        output,
+        "Because a basis name can't begin with a lowercase ASCII letter, a "
+        "token beginning with a through z is read as symbols even after "
+        "whitespace: 'SBT xy' means 'S B T x y', and 'SBT xC' means 'S B T "
+        "x C'. Exact registered names and valid registered multi-character "
+        "prefixes still win. When an unresolved mixed-case token beginning "
+        "with an uppercase ASCII letter follows another operand across "
+        "whitespace in the same expression or parenthesized group, it is "
+        "instead an intended "
+        "basis name, so 'SBT Cstar' is a parse error until Cstar is "
+        "registered. At the beginning of an expression or group, the same "
+        "bytes retain their compact-expression fallback; leading or trailing "
+        "padding alone doesn't trigger this rule.");
     output.put('\n');
     write_wrapped_paragraph(
         output,

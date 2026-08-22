@@ -223,22 +223,22 @@ int main() {
         ++failures;
     }
 
-    auto const zero_symbol_definition = parse("define foo=x");
+    auto const zero_symbol_definition = parse("define Stored0 = x");
     auto const& zero_symbol_basis = as_basis(zero_symbol_definition);
-    if (zero_symbol_basis.name() != "foo" ||
+    if (zero_symbol_basis.name() != "Stored0" ||
         zero_symbol_basis.arity() != 0 ||
         expression_string(zero_symbol_basis.body()) != "x") {
-        std::cerr << "FAILED: define foo=x produced name "
+        std::cerr << "FAILED: define Stored0 = x produced name "
                   << zero_symbol_basis.name() << ", arity "
                   << zero_symbol_basis.arity() << ", body "
                   << expression_string(zero_symbol_basis.body())
                   << '\n';
         ++failures;
     }
-    auto const shown_zero_symbol_definition = parse("show foo");
+    auto const shown_zero_symbol_definition = parse("show Stored0");
     if (expression_string(shown_zero_symbol_definition) !=
         "arity:0 x") {
-        std::cerr << "FAILED: show foo produced "
+        std::cerr << "FAILED: show Stored0 produced "
                   << expression_string(shown_zero_symbol_definition)
                   << '\n';
         ++failures;

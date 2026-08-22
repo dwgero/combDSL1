@@ -270,6 +270,48 @@ int main() {
           shown_definition("FileInteger") == "arity:0 42" &&
           shown_definition("FileNumber") == "arity:1 K 7");
 
+    auto const before_lowercase_name_load = combdsl::set_list();
+    auto const lowercase_names = load_set_list(
+        "set FileBeforeLC = 0 I\n"
+        "set lower = 1 I\n"
+        "define anotherlower x=x\n"
+        "set FileAfterLC = 0 I\n");
+    constexpr std::string_view lowercase_name_error =
+        "combdsl::basis names cannot begin with a lowercase ASCII letter";
+    check("a file rejects lowercase-leading set and define names",
+          !lowercase_names.success &&
+          !lowercase_names.aborted &&
+          lowercase_names.loaded == 0 &&
+          lowercase_names.diagnostics.size() == 2);
+    check("lowercase-name diagnostics retain their source lines",
+          lowercase_names.diagnostics.size() == 2 &&
+          lowercase_names.diagnostics[0].line == 2 &&
+          lowercase_names.diagnostics[1].line == 3);
+    check("lowercase-name diagnostics point at each definition name",
+          lowercase_names.diagnostics.size() == 2 &&
+          lowercase_names.diagnostics[0].position == 4 &&
+          lowercase_names.diagnostics[1].position == 7);
+    check("lowercase-name diagnostics preserve their exact detail",
+          lowercase_names.diagnostics.size() == 2 &&
+          lowercase_names.diagnostics[0].detail ==
+              lowercase_name_error &&
+          lowercase_names.diagnostics[1].detail ==
+              lowercase_name_error);
+    check("lowercase-name file errors use one-based display positions",
+          format_file_load_diagnostics(
+              "lowercase.cmb", lowercase_names) ==
+          "Parse error in file lowercase.cmb on line 2 at position 5: "
+          "combdsl::basis names cannot begin with a lowercase ASCII letter\n"
+          "Parse error in file lowercase.cmb on line 3 at position 8: "
+          "combdsl::basis names cannot begin with a lowercase ASCII letter\n"
+          "Errors are preventing any changes from being made");
+    check("a lowercase-name file failure rolls back every valid record",
+          !defined_name("FileBeforeLC") &&
+          !defined_name("FileAfterLC") &&
+          !defined_name("lower") &&
+          !defined_name("anotherlower") &&
+          combdsl::set_list() == before_lowercase_name_load);
+
     auto const legacy_live_update = load_set_list(
         "set FileGood = 0 K\n");
     check("a dependency loaded after legacy snapshot off follows changes",

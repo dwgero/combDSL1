@@ -340,7 +340,9 @@ test("documents compact restricted Find catalogs in Studio", () => {
     assert.match(
         html,
         /longest valid bird name or revision is taken from/);
-    assert.match(html, /A basis name cannot begin with <code>"<\/code>,/);
+    assert.match(
+        html,
+        /A basis name cannot begin with a lowercase ASCII letter or\s+<code>"<\/code>,/);
     assert.match(html, /cannot end\s+with\s+<code>@<\/code>/);
     assert.match(html, /cannot contain\s+<code>\)<\/code> or <code>\(<\/code> anywhere/);
     assert.match(html, /cannot be a\s+non-negative integer literal/);
@@ -359,6 +361,18 @@ test("documents compact restricted Find catalogs in Studio", () => {
         /If <code>\?x=<\/code> is\s+absent, <code>find among \?x=xx<\/code> has an empty catalog/);
     assert.match(html,
         /if it is\s+present, that bird is consumed and the unresolved <code>xx<\/code>\s+is not a marker/);
+    assert.match(
+        html,
+        /token beginning with <code>a<\/code> through <code>z<\/code> is read as\s+symbols even after whitespace/);
+    assert.match(
+        html,
+        /<code>SBT xy<\/code> means\s+<code>S B T x y<\/code>/);
+    assert.match(
+        html,
+        /<code>SBT xC<\/code> means\s+<code>S B T x C<\/code>/);
+    assert.match(
+        html,
+        /<code>SBT Cstar<\/code> is a parse error\s+until <code>Cstar<\/code> is\s+registered/);
 });
 
 test("documents special question names and ordinary ampersand names in Studio", () => {

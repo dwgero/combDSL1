@@ -350,6 +350,93 @@ const applyBuiltDefinition = (module, source, requestId) => {
     assert.equal(result.output, "", source);
 };
 
+test("built Studio Wasm reserves lowercase-leading text for symbols",
+    async () => {
+        const module = await loadBuiltCombdslModule();
+        let requestId = 240;
+
+        for (const [source, output] of [
+            ["SBT xy", "x(yx)\n"],
+            ["SBT xC", "x(Cx)\n"],
+            ["Cstar x", "satrx\n"],
+        ]) {
+            const result = module.parseEval(
+                source, ++requestId, false, 0);
+            assert.equal(result.success, true, result.error);
+            assert.equal(result.output, output, source);
+        }
+
+        for (const source of ["Cstar", " \tCstar\n"]) {
+            const fallback = module.inspectDefinition(source);
+            assert.equal(fallback.success, true, fallback.error);
+            assert.equal(fallback.definition, false, source);
+        }
+        const spacedUnknown = module.inspectDefinition("SBT Cstar");
+        assert.equal(spacedUnknown.success, false);
+        assert.equal(
+            spacedUnknown.error,
+            "Parse error at position 5: unknown operand",
+        );
+
+        const lowercaseNameError =
+            "combdsl::basis names cannot begin with a lowercase ASCII letter";
+        for (const [source, position] of [
+            ["set lower = 1 I", 5],
+            ["define lower x=x", 8],
+            ["define f x=x", 8],
+            ["remove lower", 8],
+            ["revisions lower", 11],
+        ]) {
+            const inspection = module.inspectDefinition(source);
+            assert.equal(inspection.success, false, source);
+            assert.equal(
+                inspection.error,
+                `Parse error at position ${position}: ${lowercaseNameError}`,
+                source,
+            );
+        }
+        const showLower = module.inspectDefinition("show lower");
+        assert.equal(showLower.success, false);
+        assert.equal(
+            showLower.error,
+            "Parse error at position 6: lower is not a defined name",
+        );
+        assert.equal(module.setList(), "",
+            "rejected lowercase-leading names must not be registered");
+
+        const invalidLoad = module.loadSetList(
+            "set WasmBeforeLC = 0 I\n" +
+            "set lower = 1 I\n" +
+            "define anotherlower x=x\n" +
+            "set WasmAfterLC = 0 I\n",
+            "lowercase names",
+        );
+        assert.equal(invalidLoad.success, false);
+        assert.equal(invalidLoad.loaded, 0);
+        assert.equal(
+            invalidLoad.error,
+            "Parse error in file lowercase names on line 2 at position 5: " +
+            lowercaseNameError + "\n" +
+            "Parse error in file lowercase names on line 3 at position 8: " +
+            lowercaseNameError + "\n" +
+            "Errors are preventing any changes from being made",
+        );
+        assert.equal(module.setList(), "",
+            "a rejected lowercase-name load must restore the journal");
+        for (const name of ["WasmBeforeLC", "WasmAfterLC"]) {
+            const absent = module.inspectDefinition(`show ${name}`);
+            assert.equal(absent.success, false, name);
+            assert.match(absent.error, /is not a defined name/, name);
+        }
+
+        applyBuiltDefinition(
+            module, "set Cstar = 4 C*", ++requestId);
+        const registered = module.inspectDefinition("SBT Cstar");
+        assert.equal(registered.success, true, registered.error);
+        assert.equal(registered.definition, false);
+        assert.equal(registered.displayOnly, false);
+    });
+
 test("built Studio Wasm routes and reloads equals-prefixed basis names",
     async () => {
         const module = await loadBuiltCombdslModule();

@@ -388,9 +388,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             color: #c33;
         }
     </style>
-    <script src="./evaluation_watchdog.js?v=2.14.9" defer></script>
-    <script src="./input_history.js?v=2.14.9" defer></script>
-    <script src="./app.js?v=2.14.9" defer></script>
+    <script src="./evaluation_watchdog.js?v=2.14.10" defer></script>
+    <script src="./input_history.js?v=2.14.10" defer></script>
+    <script src="./app.js?v=2.14.10" defer></script>
 </head>
 <body>
     <main aria-labelledby="studio-title">
@@ -613,17 +613,35 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             (lower case letters) after the name, infers the arity from their
             count, and computes a series of combinators that will reproduce the
             <code>combinator_expression</code>. With no symbols, it stores an
-            arity-zero basis directly. An all-lowercase token immediately before
-            <code>=</code> is the complete basis name, as in
-            <code>define foo=x</code>. For a one-character name that does not
-            begin with a lowercase ASCII letter, the space before symbols may
-            be omitted. For example, to add the Eagle bird:<br>
+            arity-zero basis directly. A basis name cannot begin with a
+            lowercase ASCII letter, so a lowercase-leading signature token is
+            not a name. For a one-character name, the space before symbols may
+            be omitted. A multi-character name must be separated from its
+            symbols. Compact one-character-name parsing still applies when the
+            remainder of the signature token is entirely lowercase ASCII, even
+            if whitespace precedes <code>=</code>; use <code>set</code> for a
+            zero-arity name with that shape. For example, to add the Eagle
+            bird:<br>
             <code>define Exyzwv = xy(zwv)</code>
             <br><br>
-            A basis name cannot begin with <code>"</code>, cannot end with
-            <code>@</code>, cannot contain
+            A basis name cannot begin with a lowercase ASCII letter or
+            <code>"</code>, cannot end with <code>@</code>, cannot contain
             <code>)</code> or <code>(</code> anywhere, and cannot be a
             non-negative integer literal.
+            <br><br>
+            Because a basis name cannot begin with a lowercase ASCII letter, a
+            token beginning with <code>a</code> through <code>z</code> is read as
+            symbols even after whitespace: <code>SBT xy</code> means
+            <code>S B T x y</code>, and <code>SBT xC</code> means
+            <code>S B T x C</code>. Exact registered names and valid registered
+            multi-character prefixes still win. When an unresolved mixed-case
+            token beginning with an uppercase ASCII letter follows another
+            operand across whitespace in the same expression or parenthesized
+            group, it is instead an intended basis name. Thus
+            <code>SBT Cstar</code> is a parse error until <code>Cstar</code> is
+            registered. At the beginning of an expression or group, the same
+            bytes retain their compact-expression fallback; leading or trailing
+            padding alone does not trigger this rule.
             <br><br>
             An equals sign or question mark may begin a basis name. For such a
             name, whitespace must separate the name from the assignment
@@ -1148,7 +1166,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             data-dialog-initial-focus>About</h2>
         <div class="license-text">
             <!-- Keep this version and the app.js cache key in sync. -->
-            <p>Combinator Studio, version 2.14.9<br>
+            <p>Combinator Studio, version 2.14.10<br>
                 Part of the C++ Combinator DSL<br>
                 Copyright (C) 2026  David W. Gero</p>
             <p>This program is free software: you can redistribute it and/or modify

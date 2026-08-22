@@ -181,6 +181,64 @@ if(NOT rollback_contents STREQUAL
         "actual:\n${rollback_contents}\n")
 endif()
 
+set(lowercase_broken_file
+    "${CREPL_WORKING_DIRECTORY}/broken lowercase definitions.cmb")
+set(lowercase_rollback_file
+    "${CREPL_WORKING_DIRECTORY}/lowercase rollback result.cmb")
+set(lowercase_rollback_input
+    "${CREPL_WORKING_DIRECTORY}/lowercase-rollback-load-input.cmb")
+file(WRITE "${lowercase_broken_file}"
+    "set LowerBefore = 0 I\n"
+    "set lower = 1 I\n"
+    "define anotherlower x=x\n"
+    "set LowerAfter = 0 K")
+file(REMOVE "${lowercase_rollback_file}")
+file(WRITE "${lowercase_rollback_input}"
+    "set LowerKeep = 0 I\n"
+    "load broken lowercase definitions.cmb\n"
+    "save lowercase rollback result.cmb\n"
+    "exit\n")
+execute_process(
+    COMMAND "${CREPL_EXECUTABLE}"
+    INPUT_FILE "${lowercase_rollback_input}"
+    WORKING_DIRECTORY "${CREPL_WORKING_DIRECTORY}"
+    OUTPUT_VARIABLE lowercase_rollback_output
+    ERROR_VARIABLE lowercase_rollback_error
+    RESULT_VARIABLE lowercase_rollback_result
+    TIMEOUT 10
+)
+if(NOT lowercase_rollback_result EQUAL 0)
+    message(FATAL_ERROR
+        "lowercase-name rollback load exited with "
+        "${lowercase_rollback_result}\n"
+        "stderr:\n${lowercase_rollback_error}")
+endif()
+if(NOT lowercase_rollback_output STREQUAL
+        "Saved lowercase rollback result.cmb\n")
+    message(FATAL_ERROR
+        "unexpected lowercase-name rollback-load output:\n"
+        "${lowercase_rollback_output}")
+endif()
+string(CONCAT expected_lowercase_rollback_error
+    "Parse error in file broken lowercase definitions.cmb on line 2 at position 5: combdsl::basis names cannot begin with a lowercase ASCII letter\n"
+    "Parse error in file broken lowercase definitions.cmb on line 3 at position 8: combdsl::basis names cannot begin with a lowercase ASCII letter\n"
+    "Errors are preventing any changes from being made\n")
+if(NOT lowercase_rollback_error STREQUAL
+        expected_lowercase_rollback_error)
+    message(FATAL_ERROR
+        "unexpected lowercase-name rollback error\n"
+        "expected:\n${expected_lowercase_rollback_error}"
+        "actual:\n${lowercase_rollback_error}")
+endif()
+file(READ "${lowercase_rollback_file}" lowercase_rollback_contents)
+if(NOT lowercase_rollback_contents STREQUAL
+        "references captured\nset LowerKeep = 0 I")
+    message(FATAL_ERROR
+        "lowercase-name failed load was not rolled back\n"
+        "expected:\nreferences captured\nset LowerKeep = 0 I\n"
+        "actual:\n${lowercase_rollback_contents}\n")
+endif()
+
 set(question_broken_file
     "${CREPL_WORKING_DIRECTORY}/broken question definitions.cmb")
 set(question_rollback_input

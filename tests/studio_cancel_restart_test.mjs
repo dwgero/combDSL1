@@ -812,7 +812,7 @@ const beginFindEvaluation = (
     {
         expression = "find ?xy = x(yx)",
         findAmong = false,
-        setList = "set userBird = 1 I\n",
+        setList = "set UserBird = 1 I\n",
     } = {},
 ) => {
     const source = harness.element("source");
@@ -2149,7 +2149,7 @@ test("replays a submission after cancellation and definition restore", () => {
     const harness = createHarness();
     const source = harness.element("source");
     const firstWorker = harness.workers[0];
-    const savedSetList = "set userBird = 1 I\n";
+    const savedSetList = "set UserBird = 1 I\n";
 
     assert.ok(firstWorker);
     firstWorker.send({type: "ready", setList: savedSetList});

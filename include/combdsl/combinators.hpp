@@ -146,7 +146,8 @@ enum class printed_token : long {
     compact_multicharacter_basis,
     digit_terminated_basis,
     nonalphanumeric_terminated_basis,
-    separated_basis
+    separated_basis,
+    separated_uppercase_fallback_run
 };
 
 [[nodiscard]] constexpr bool is_parenthesis(printed_token token) noexcept {
@@ -301,15 +302,44 @@ inline void print_token(
         previous != printed_token::nonalphanumeric_terminated_basis &&
         previous != printed_token::none &&
         !is_parenthesis(previous);
+    auto const contains_lowercase_ascii = std::any_of(
+        text.begin(), text.end(), [](char character) {
+            return character >= 'a' && character <= 'z';
+        });
+    auto const follows_separated_uppercase_fallback_run =
+        previous == printed_token::separated_uppercase_fallback_run &&
+        contains_lowercase_ascii;
 
-    if (numeric_requires_separator ||
+    auto const requires_separator =
+        numeric_requires_separator ||
         follows_multicharacter_basis ||
-        is_unseparated_multicharacter_basis) {
+        is_unseparated_multicharacter_basis ||
+        follows_separated_uppercase_fallback_run;
+    if (requires_separator) {
         output.put(' ');
     }
 
     output.write(text.data(), static_cast<std::streamsize>(text.size()));
-    record_printed_token(output, token);
+    auto const starts_separated_uppercase_fallback_run =
+        requires_separator && token == printed_token::other &&
+        text.size() == 1 && text.front() >= 'A' && text.front() <= 'Z';
+    auto const contains_basis_token_delimiter = std::any_of(
+        text.begin(), text.end(), [](char character) {
+            return character == ' ' || character == '\t' ||
+                   character == '\n' || character == '\r' ||
+                   character == '\f' || character == '\v' ||
+                   character == '(' || character == ')' ||
+                   character == '"';
+        });
+    auto const continues_separated_uppercase_fallback_run =
+        previous == printed_token::separated_uppercase_fallback_run &&
+        !requires_separator && !contains_basis_token_delimiter;
+    record_printed_token(
+        output,
+        starts_separated_uppercase_fallback_run ||
+                continues_separated_uppercase_fallback_run
+            ? printed_token::separated_uppercase_fallback_run
+            : token);
 }
 
 inline void print_token(
@@ -578,6 +608,12 @@ private:
         if (name.empty() || name[0] == '\0') {
             throw std::invalid_argument(
                 "combdsl::basis names cannot be empty");
+        }
+
+        if (name[0] >= 'a' && name[0] <= 'z') {
+            throw std::invalid_argument(
+                "combdsl::basis names cannot begin with a lowercase "
+                "ASCII letter");
         }
 
         if (name[0] == '(' || name[0] == ')' || name[0] == '"' ||
@@ -9374,25 +9410,17 @@ private:
     [[nodiscard]] quoted_expression parse_expression(
         bool stop_at_equals = false) {
         std::optional<quoted_expression> result;
-        bool previous_atom_requires_token_separator = false;
         skip_whitespace();
 
         while (!at_end() && current() != ')' &&
                (!stop_at_equals || current() != '=')) {
-            reject_spaced_unregistered_lowercase_name(
-                result.has_value(),
-                previous_atom_requires_token_separator);
-            auto const atom_requires_token_separator =
-                current_atom_requires_token_separator();
-            auto atom = parse_atom();
+            auto atom = parse_atom(result.has_value());
             if (result.has_value()) {
                 auto application = (*result)(std::move(atom));
                 result = std::move(application);
             } else {
                 result = std::move(atom);
             }
-            previous_atom_requires_token_separator =
-                atom_requires_token_separator;
             skip_whitespace();
         }
 
@@ -9402,7 +9430,8 @@ private:
         return std::move(*result);
     }
 
-    [[nodiscard]] quoted_expression parse_atom() {
+    [[nodiscard]] quoted_expression parse_atom(
+        bool has_previous_atom) {
         if (current() == '(') {
             ++position_;
             auto nested = parse_expression();
@@ -9430,6 +9459,8 @@ private:
                 parse_unseparated_multicharacter_name()) {
             return std::move(*named_expression);
         }
+
+        reject_spaced_unknown_uppercase_name(has_previous_atom);
 
         // The general prefix parser starts at two-byte names.  Give a
         // one-byte backslash basis (or recursive definition) the same prefix
@@ -9917,39 +9948,36 @@ private:
                token.starts_with(name);
     }
 
-    void reject_spaced_unregistered_lowercase_name(
-        bool has_previous_atom,
-        bool previous_atom_requires_token_separator) const {
+    void reject_spaced_unknown_uppercase_name(
+        bool has_previous_atom) const {
         auto const name = current_basis_token();
         if (name.size() < 2 ||
-            !is_lowercase_name(name) ||
             !is_basis_token_start() ||
-            has_unversioned_expression_basis(name) ||
-            is_recursive_function_name(name)) {
+            name.front() < 'A' || name.front() > 'Z') {
+            return;
+        }
+
+        auto const has_lowercase_suffix = std::any_of(
+            name.begin() + 1,
+            name.end(),
+            [](char character) {
+                return character >= 'a' && character <= 'z';
+            });
+        if (!has_lowercase_suffix) {
             return;
         }
 
         auto const separated_from_previous =
-            has_previous_atom &&
-            !previous_atom_requires_token_separator &&
-            position_ != 0 &&
+            has_previous_atom && position_ != 0 &&
             is_whitespace(source_[position_ - 1]);
-        if (separated_from_previous ||
-            is_separated_from_next_atom(name.size())) {
+        if (separated_from_previous) {
             fail("unknown operand");
         }
     }
 
-    [[nodiscard]] bool current_atom_requires_token_separator()
-        const noexcept {
-        if (current() == '\\') {
-            return true;
-        }
-
-        auto const name = current_basis_token();
-        return name.size() > 1 &&
-               (has_unversioned_expression_basis(name) ||
-                is_recursive_function_name(name));
+    [[nodiscard]] bool is_basis_token_start() const noexcept {
+        return position_ == 0 ||
+               is_basis_token_delimiter(position_ - 1);
     }
 
     [[nodiscard]] static bool is_lowercase_name(
@@ -9958,14 +9986,6 @@ private:
             name.begin(), name.end(), [](char character) {
                 return character >= 'a' && character <= 'z';
             });
-    }
-
-    [[nodiscard]] bool is_basis_token_start() const noexcept {
-        if (position_ == 0 ||
-            is_basis_token_delimiter(position_ - 1)) {
-            return true;
-        }
-        return false;
     }
 
     [[nodiscard]] bool is_recursive_function_name(
@@ -9977,21 +9997,6 @@ private:
         auto const recursive_name =
             quoted_access::root(*recursive_function_)->atomic_name();
         return recursive_name == name;
-    }
-
-    [[nodiscard]] bool is_separated_from_next_atom(
-        std::size_t name_size) const noexcept {
-        auto next = position_ + name_size;
-        if (next == source_.size() ||
-            !is_whitespace(source_[next])) {
-            return false;
-        }
-
-        while (next < source_.size() &&
-               is_whitespace(source_[next])) {
-            ++next;
-        }
-        return next < source_.size() && source_[next] != ')';
     }
 
     [[nodiscard]] std::optional<quoted_expression>
